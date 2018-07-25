@@ -38,7 +38,7 @@ FLAGS = tf.app.flags.FLAGS
 tf.app.flags.DEFINE_enum('image_format', 'png', ['jpg', 'jpeg', 'png'],
                          'Image format.')
 
-tf.app.flags.DEFINE_enum('label_format', 'png', ['png'],
+tf.app.flags.DEFINE_enum('label_format', 'png', ['png', 'npy'],
                          'Segmentation label format.')
 
 # A map from image format to expected data format.
@@ -116,6 +116,9 @@ def _int64_list_feature(values):
 
   return tf.train.Feature(int64_list=tf.train.Int64List(value=values))
 
+def _float_list_feature(values):
+    """Ref: https://stackoverflow.com/questions/41246438/tensorflow-record-with-float-numpy-array"""
+    return tf.train.Feature(float_list=tf.train.FloatList(value=values.flatten()))
 
 def _bytes_list_feature(values):
   """Returns a TF-Feature of bytes.
@@ -132,6 +135,33 @@ def _bytes_list_feature(values):
   return tf.train.Feature(
       bytes_list=tf.train.BytesList(value=[norm2bytes(values)]))
 
+
+def image_posemap_to_tfexample(image_data, filename, height, width, posemap_data, posemap_format='npy'):
+  """Converts one image/posemap pair to tf example.
+
+  Args:
+    image_data: string of image data.
+    filename: image filename.
+    height: image height.
+    width: image width.
+    posemap_data: np array of semantic posemap data.
+
+  Returns:
+    tf example of one image/posemap pair.
+  """
+  return tf.train.Example(features=tf.train.Features(feature={
+      'image/encoded': _bytes_list_feature(image_data),
+      'image/filename': _bytes_list_feature(filename),
+      'image/format': _bytes_list_feature(
+          _IMAGE_FORMAT_MAP[FLAGS.image_format]),
+      'image/height': _int64_list_feature(height),
+      'image/width': _int64_list_feature(width),
+      'image/channels': _int64_list_feature(3),
+      'image/posemap/class/encoded': (
+          _float_list_feature(posemap_data)),
+      'image/posemap/class/format': _bytes_list_feature(
+          posemap_format),
+  }))
 
 def image_seg_to_tfexample(image_data, filename, height, width, seg_data):
   """Converts one image/segmentation pair to tf example.
