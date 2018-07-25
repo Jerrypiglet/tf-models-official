@@ -53,6 +53,6 @@ mkdir -p "${OUTPUT_DIR}"
 BUILD_SCRIPT="${CURRENT_DIR}/build_cityscapes_data.py"
 
 echo "Converting Cityscapes dataset..."
-python "${BUILD_SCRIPT}" \
+LD_LIBRARY_PATH="$LD_LIBRARY_PATH:/home/zhurui/Documents/tmp/libc6_2.17/lib/x86_64-linux-gnu/" /home/zhurui/Documents/tmp/libc6_2.17/lib/x86_64-linux-gnu/ld-2.17.so ~/anaconda2/bin/python "${BUILD_SCRIPT}" \
   --cityscapes_root="${CITYSCAPES_ROOT}" \
   --output_dir="${OUTPUT_DIR}" \

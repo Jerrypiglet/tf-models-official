@@ -117,7 +117,16 @@ def _int64_list_feature(values):
   return tf.train.Feature(int64_list=tf.train.Int64List(value=values))
 
 def _float_list_feature(values):
-    """Ref: https://stackoverflow.com/questions/41246438/tensorflow-record-with-float-numpy-array"""
+    """Ref: https://stackoverflow.com/questions/41246438/tensorflow-record-with-float-numpy-array
+
+    Returns a TF-Feature of floats.
+
+    Args:
+        values: a numpy array of floats
+
+    Returns:
+        A TF-Feature
+    """
     return tf.train.Feature(float_list=tf.train.FloatList(value=values.flatten()))
 
 def _bytes_list_feature(values):
