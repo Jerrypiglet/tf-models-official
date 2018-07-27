@@ -17,6 +17,7 @@
 import tensorflow as tf
 from deeplab.core import feature_extractor
 from deeplab.core import preprocess_utils
+import numpy as np
 
 
 # The probability of flipping the images and labels
@@ -34,7 +35,7 @@ def preprocess_image_and_label(image,
                                min_scale_factor=1.,
                                max_scale_factor=1.,
                                scale_factor_step_size=0,
-                               ignore_label=255,
+                               ignore_label=np.inf,
                                is_training=True,
                                model_variant=None):
   """Preprocesses the image and label.
@@ -79,7 +80,7 @@ def preprocess_image_and_label(image,
   processed_image = tf.cast(image, tf.float32)
 
   if label is not None:
-    label = tf.cast(label, tf.int32)
+    label = tf.cast(label, tf.float32)
 
   # Resize image and label to the desired range.
   if min_resize_value is not None or max_resize_value is not None:
@@ -91,6 +92,7 @@ def preprocess_image_and_label(image,
             max_size=max_resize_value,
             factor=resize_factor,
             align_corners=True))
+    tf.logging.warning('++++ if min_resize_value is not None or max_resize_value is not None! @input_preprocess.py')
     # The `original_image` becomes the resized image.
     original_image = tf.identity(processed_image)
 
@@ -127,7 +129,7 @@ def preprocess_image_and_label(image,
   processed_image.set_shape([crop_height, crop_width, 3])
 
   if label is not None:
-    label.set_shape([crop_height, crop_width, 1])
+    label.set_shape([crop_height, crop_width, 6])
 
   if is_training:
     # Randomly left-right flip the image and label.

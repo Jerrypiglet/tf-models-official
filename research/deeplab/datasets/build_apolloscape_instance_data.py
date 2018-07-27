@@ -50,7 +50,7 @@ tf.app.flags.DEFINE_string(
     './apolloscape/3d_car_instance_sample/split',
     'Path to splits files (.txt) for train/val.')
 
-_NUM_SHARDS = 10
+_NUM_SHARDS = 1
 
 # A map from data type to folder name that saves the data.
 _FOLDERS_MAP = {
@@ -110,10 +110,11 @@ def _convert_dataset(dataset_split):
     RuntimeError: If loaded image and label have different shape, or if the
       image file with specified postfix could not be found.
   """
-  image_files = _get_files('image', dataset_split)
-  label_files = _get_files('label', dataset_split)
+  image_files = _get_files('image', dataset_split)[:1]
+  label_files = _get_files('label', dataset_split)[:1]
   num_images = len(image_files)
   num_per_shard = int(math.ceil(num_images / float(_NUM_SHARDS)))
+  print 'num_images, num_labels, num_per_shard: ', num_images, len(label_files), num_per_shard
 
   image_reader = build_data.ImageReader('jpg', channels=3)
   # label_reader = build_data.ImageReader('png', channels=1)

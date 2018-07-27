@@ -17,13 +17,20 @@
 import tensorflow as tf
 from deeplab import common
 from deeplab import input_preprocess
-
+from deeplab.datasets.regression_dataset import DatasetDescriptor, _DATASETS_INFORMATION, _APOLLOSCAPE_INFORMATION
 slim = tf.contrib.slim
 
 dataset_data_provider = slim.dataset_data_provider
 
+# print tf.flags.FLAGS.__flags
+# flags = tf.app.flags
+# FLAGS = flags.FLAGS
+# flags.DEFINE_string('dataset', 'apolloscape',
+#                     'Name of the segmentation dataset.')
+# print FLAGS.dataset
 
-def _get_data(data_provider, dataset_split):
+
+def _get_data(dataset, data_provider, dataset_split):
   """Gets data from data provider.
 
   Args:
@@ -55,6 +62,8 @@ def _get_data(data_provider, dataset_split):
   label = None
   if dataset_split != common.TEST_SET:
     label, = data_provider.get([common.LABELS_CLASS])
+  if dataset.name == 'apolloscape':
+    label = tf.reshape(label, [_DATASETS_INFORMATION[dataset.name].height, _DATASETS_INFORMATION[dataset.name].width, 6])
 
   return image, label, image_name, height, width
 
@@ -78,7 +87,7 @@ def get(dataset,
   This functions gets the dataset split for semantic segmentation. In
   particular, it is a wrapper of (1) dataset_data_provider which returns the raw
   dataset split, (2) input_preprcess which preprocess the raw data, and (3) the
-  Tensorflow operation of batching the preprocessed data. Then, the output could
+  Tset_data_provider.DatasetDataProviderensorflow operation of batching the preprocessed data. Then, the output could
   be directly used by training, evaluation or visualization.
 
   Args:
@@ -119,18 +128,22 @@ def get(dataset,
       num_readers=num_readers,
       num_epochs=None if is_training else 1,
       shuffle=is_training)
-  image, label, image_name, height, width = _get_data(data_provider,
+  image, label, image_name, height, width = _get_data(dataset, data_provider,
                                                       dataset_split)
   if label is not None:
     if label.shape.ndims == 2:
       label = tf.expand_dims(label, 2)
-    elif label.shape.ndims == 3 and label.shape.dims[2] == 1:
+    # elif label.shape.ndims == 3 and label.shape.dims[2] == 1:
+    elif label.shape.ndims == 3 and label.shape.dims[2] in [1, 6]: # 1 for segmentation label maps, and 6 for posemaps
       pass
     else:
       raise ValueError('Input label shape must be [height, width], or '
-                       '[height, width, 1].')
-
+                       '[height, width, {1,6}].')
+  if dataset.name == 'apolloscape':
+    label.set_shape([None, None, 6])
+  else:
     label.set_shape([None, None, 1])
+
   original_image, image, label = input_preprocess.preprocess_image_and_label(
       image,
       label,
@@ -145,6 +158,7 @@ def get(dataset,
       ignore_label=dataset.ignore_label,
       is_training=is_training,
       model_variant=model_variant)
+
   sample = {
       common.IMAGE: image,
       common.IMAGE_NAME: image_name,
