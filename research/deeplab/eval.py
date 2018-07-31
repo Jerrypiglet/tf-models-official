@@ -156,6 +156,14 @@ def main(unused_argv):
     tf.logging.info('Eval batch size %d and num batch %d',
                     FLAGS.eval_batch_size, num_batches)
 
+
+    trainables = [v.name for v in tf.trainable_variables()]
+    alls =[v.name for v in tf.all_variables()]
+    print '----- Trainables %d: '%len(trainables), trainables[:10]
+    print '----- All %d: '%len(alls), alls[:10]
+    print '===== ', len(list(set(trainables) - set(alls)))
+    print '===== ', len(list(set(alls) - set(trainables)))
+
     num_eval_iters = None
     if FLAGS.max_number_of_evaluations > 0:
       num_eval_iters = FLAGS.max_number_of_evaluations

@@ -159,6 +159,7 @@ def get(dataset,
       is_training=is_training,
       model_variant=model_variant)
 
+  original_label = tf.identity(label)
   sample = {
       common.IMAGE: image,
       common.IMAGE_NAME: image_name,
@@ -167,6 +168,7 @@ def get(dataset,
   }
   if label is not None:
     sample[common.LABEL] = label
+    sample['original_label'] = original_label
 
   if not is_training:
     # Original image is only used during visualization.

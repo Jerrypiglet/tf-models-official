@@ -18,7 +18,7 @@ import tensorflow as tf
 from deeplab.core import feature_extractor
 from deeplab.core import preprocess_utils
 import numpy as np
-
+np.set_printoptions(threshold=np.nan)
 
 # The probability of flipping the images and labels
 # left-right during training
@@ -35,7 +35,7 @@ def preprocess_image_and_label(image,
                                min_scale_factor=1.,
                                max_scale_factor=1.,
                                scale_factor_step_size=0,
-                               ignore_label=np.inf,
+                               ignore_label=255.,
                                is_training=True,
                                model_variant=None):
   """Preprocesses the image and label.

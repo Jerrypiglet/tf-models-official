@@ -86,7 +86,7 @@ def get_extra_layer_scopes(last_layers_contain_logits_only=False):
     ]
 
 
-def predict_labels_multi_scale(images,
+def not_predict_labels_multi_scale(images,
                                model_options,
                                eval_scales=(1.0,),
                                add_flipped_images=False):
@@ -207,7 +207,8 @@ def multi_scale_logits(images,
                        image_pyramid,
                        weight_decay=0.0001,
                        is_training=False,
-                       fine_tune_batch_norm=False):
+                       fine_tune_batch_norm=False,
+                       fine_tune_feature_extractor=True):
   """Gets the logits for multi-scale inputs.
 
   The returned logits are all downsampled (due to max-pooling layers)
@@ -220,6 +221,7 @@ def multi_scale_logits(images,
     weight_decay: The weight decay for model variables.
     is_training: Is training or not.
     fine_tune_batch_norm: Fine-tune the batch norm parameters or not.
+    fine_tune_feature_extractor: Fine-tune the feature extractor params or not.
 
   Returns:
     outputs_to_scales_to_logits: A map of maps from output_type (e.g.,
@@ -262,9 +264,10 @@ def multi_scale_logits(images,
   outputs_to_scales_to_logits = {
       k: {}
       for k in model_options.outputs_to_num_classes
-  }
+  } # {'regression': {}}
 
   for image_scale in image_pyramid:
+    # print image_scale
     if image_scale != 1.0:
       scaled_height = scale_dimension(crop_height, image_scale)
       scaled_width = scale_dimension(crop_width, image_scale)
@@ -278,13 +281,15 @@ def multi_scale_logits(images,
       scaled_images = images
 
     updated_options = model_options._replace(crop_size=scaled_crop_size)
-    outputs_to_logits = _get_logits(
+    outputs_to_logits = _get_logits( # Here we get the regression 'logits' from features!
         scaled_images,
         updated_options,
         weight_decay=weight_decay,
         reuse=tf.AUTO_REUSE,
         is_training=is_training,
-        fine_tune_batch_norm=fine_tune_batch_norm)
+        fine_tune_batch_norm=fine_tune_batch_norm,
+        fine_tune_feature_extractor=fine_tune_feature_extractor) # {'regression': <tf.Tensor 'logits/regression/BiasAdd:0' shape=(4, 49, 49, 12) dtype=float32>}
+    outputs_to_logits['regression'] = tf.identity(outputs_to_logits['regression'], name='regression')
 
     # Resize the logits to have the same dimension before merging.
     for output in sorted(outputs_to_logits):
@@ -326,7 +331,8 @@ def extract_features(images,
                      weight_decay=0.0001,
                      reuse=None,
                      is_training=False,
-                     fine_tune_batch_norm=False):
+                     fine_tune_batch_norm=False,
+                     fine_tune_feature_extractor=True):
   """Extracts features by the particular model_variant.
 
   Args:
@@ -430,7 +436,8 @@ def _get_logits(images,
                 weight_decay=0.0001,
                 reuse=None,
                 is_training=False,
-                fine_tune_batch_norm=False):
+                fine_tune_batch_norm=False,
+                fine_tune_feature_extractor=True):
   """Gets the logits by atrous/image spatial pyramid pooling.
 
   Args:
@@ -444,13 +451,18 @@ def _get_logits(images,
   Returns:
     outputs_to_logits: A map from output_type to logits.
   """
+  # images = tf.identity(images, name='tmp')
   features, end_points = extract_features(
       images,
       model_options,
       weight_decay=weight_decay,
       reuse=reuse,
       is_training=is_training,
-      fine_tune_batch_norm=fine_tune_batch_norm)
+      fine_tune_batch_norm=fine_tune_batch_norm,
+      fine_tune_feature_extractor=fine_tune_feature_extractor)
+  print features.get_shape(), 'features.get_shape() @_get_logits() @model.py'
+  # features = tf.identity(features, name='tmp')
+  # print model_options, weight_decay, reuse, is_training, fine_tune_batch_norm
 
   if model_options.decoder_output_stride is not None:
     decoder_height = scale_dimension(model_options.crop_size[0],
@@ -469,8 +481,10 @@ def _get_logits(images,
         is_training=is_training,
         fine_tune_batch_norm=fine_tune_batch_norm)
 
+  # features = tf.identity(features, name='tmp')
   outputs_to_logits = {}
   for output in sorted(model_options.outputs_to_num_classes):
+    # print '+++++', output, model_options.outputs_to_num_classes
     outputs_to_logits[output] = get_branch_logits(
         features,
         model_options.outputs_to_num_classes[output],

@@ -50,7 +50,7 @@ tf.app.flags.DEFINE_string(
     './apolloscape/3d_car_instance_sample/split',
     'Path to splits files (.txt) for train/val.')
 
-_NUM_SHARDS = 1
+_NUM_SHARDS = 5
 
 # A map from data type to folder name that saves the data.
 _FOLDERS_MAP = {
@@ -110,8 +110,8 @@ def _convert_dataset(dataset_split):
     RuntimeError: If loaded image and label have different shape, or if the
       image file with specified postfix could not be found.
   """
-  image_files = _get_files('image', dataset_split)[:1]
-  label_files = _get_files('label', dataset_split)[:1]
+  image_files = _get_files('image', dataset_split)
+  label_files = _get_files('label', dataset_split)
   num_images = len(image_files)
   num_per_shard = int(math.ceil(num_images / float(_NUM_SHARDS)))
   print 'num_images, num_labels, num_per_shard: ', num_images, len(label_files), num_per_shard
@@ -136,6 +136,8 @@ def _convert_dataset(dataset_split):
         # Read the semantic segmentation annotation.
         # seg_data = tf.gfile.FastGFile(label_files[i], 'rb').read()
         posemap_data = np.load(label_files[i])
+        posemap_data[posemap_data==np.inf] = 255.
+        print np.sum(posemap_data), np.max(posemap_data), np.min(posemap_data)
         # print seg_data.shape, seg_data.dtype
         # seg_height, seg_width = label_reader.read_image_dims(seg_data)
         posemap_height, posemap_width = posemap_data.shape[0], posemap_data.shape[1]

@@ -210,7 +210,8 @@ def extract_features(images,
                      regularize_depthwise=False,
                      preprocess_images=True,
                      num_classes=None,
-                     global_pool=False):
+                     global_pool=False,
+                     fine_tune_feature_extractor=True):
   """Extracts features by the particular model_variant.
 
   Args:
@@ -295,6 +296,7 @@ def extract_features(images,
   else:
     raise ValueError('Unknown model variant %s.' % model_variant)
 
+  print '////////////////', is_training, fine_tune_batch_norm, '@feature_extractor.py'
   return features, end_points
 
 

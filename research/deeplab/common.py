@@ -83,7 +83,7 @@ FLAGS = flags.FLAGS
 # Constants
 
 # Perform semantic segmentation predictions.
-OUTPUT_TYPE = 'semantic'
+OUTPUT_TYPE = 'regression'
 
 # Semantic segmentation item names.
 LABELS_CLASS = 'labels_class'
@@ -93,6 +93,7 @@ WIDTH = 'width'
 IMAGE_NAME = 'image_name'
 LABEL = 'label'
 ORIGINAL_IMAGE = 'original_image'
+PEAK = 'peak_name' # for a peak into a node
 
 # Test set name.
 TEST_SET = 'test'
@@ -127,9 +128,9 @@ class ModelOptions(
     """Constructor to set default values.
 
     Args:
-      outputs_to_num_classes: A dictionary from output type to the number of
-        classes. For example, for the task of semantic segmentation with 21
-        semantic classes, we would have outputs_to_num_classes['semantic'] = 21.
+      # outputs_to_num_classes: A dictionary from output type to the number of
+      #   classes. For example, for the task of semantic segmentation with 21
+      #   semantic classes, we would have outputs_to_num_classes['semantic'] = 21.
       crop_size: A tuple [crop_height, crop_width].
       atrous_rates: A list of atrous convolution rates for ASPP.
       output_stride: The ratio of input to output spatial resolution.

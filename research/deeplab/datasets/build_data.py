@@ -172,29 +172,29 @@ def image_posemap_to_tfexample(image_data, filename, height, width, posemap_data
           _float_list_feature(posemap_data)),
   }))
 
-# def image_seg_to_tfexample(image_data, filename, height, width, seg_data):
-#   """Converts one image/segmentation pair to tf example.
+def image_seg_to_tfexample(image_data, filename, height, width, seg_data):
+  """Converts one image/segmentation pair to tf example.
 
-#   Args:
-#     image_data: string of image data.
-#     filename: image filename.
-#     height: image height.
-#     width: image width.
-#     seg_data: string of semantic segmentation data.
+  Args:
+    image_data: string of image data.
+    filename: image filename.
+    height: image height.
+    width: image width.
+    seg_data: string of semantic segmentation data.
 
-#   Returns:
-#     tf example of one image/segmentation pair.
-#   """
-#   return tf.train.Example(features=tf.train.Features(feature={
-#       'image/encoded': _bytes_list_feature(image_data),
-#       'image/filename': _bytes_list_feature(filename),
-#       'image/format': _bytes_list_feature(
-#           _IMAGE_FORMAT_MAP[FLAGS.image_format]),
-#       'image/height': _int64_list_feature(height),
-#       'image/width': _int64_list_feature(width),
-#       'image/channels': _int64_list_feature(3),
-#       'image/segmentation/class/encoded': (
-#           _bytes_list_feature(seg_data)),
-#       'image/segmentation/class/format': _bytes_list_feature(
-#           FLAGS.label_format),
-#   }))
+  Returns:
+    tf example of one image/segmentation pair.
+  """
+  return tf.train.Example(features=tf.train.Features(feature={
+      'image/encoded': _bytes_list_feature(image_data),
+      'image/filename': _bytes_list_feature(filename),
+      'image/format': _bytes_list_feature(
+          _IMAGE_FORMAT_MAP[FLAGS.image_format]),
+      'image/height': _int64_list_feature(height),
+      'image/width': _int64_list_feature(width),
+      'image/channels': _int64_list_feature(3),
+      'image/segmentation/class/encoded': (
+          _bytes_list_feature(seg_data)),
+      'image/segmentation/class/format': _bytes_list_feature(
+          FLAGS.label_format),
+  }))
