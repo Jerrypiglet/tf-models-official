@@ -89,8 +89,8 @@ _APOLLOSCAPE_INFORMATION = DatasetDescriptor(
     },
     num_classes=6,
     ignore_label=255.,
-    height=816,
-    width=1016,
+    height=544,
+    width=680,
 )
 
 _DATASETS_INFORMATION = {

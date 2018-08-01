@@ -43,7 +43,7 @@ tf.app.flags.DEFINE_string('apolloscape_root',
 
 tf.app.flags.DEFINE_string(
     'output_dir',
-    './apolloscape/3d_car_instance_sample/tfrecord',
+    './apolloscape/3d_car_instance_sample/tfrecord_02_compressed',
     'Path to save converted SSTable of TensorFlow examples.')
 
 tf.app.flags.DEFINE_string(
@@ -55,8 +55,8 @@ _NUM_SHARDS = 5
 
 # A map from data type to folder name that saves the data.
 _FOLDERS_MAP = {
-    'image': 'pose_maps',
-    'label': 'pose_maps',
+    'image': 'pose_maps_02',
+    'label': 'pose_maps_02',
 }
 
 # A map from data type to filename postfix.
