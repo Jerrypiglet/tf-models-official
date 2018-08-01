@@ -124,8 +124,8 @@ def _convert_dataset(dataset_split):
     shard_filename = '%s-%05d-of-%05d.tfrecord' % (
         dataset_split, shard_id, _NUM_SHARDS)
     output_filename = os.path.join(FLAGS.output_dir, shard_filename)
-    options = tf.python_io.TFRecordOptions(tf.python_io.TFRecordCompressionType.GZIP)
-    with tf.python_io.TFRecordWriter(output_filename, options=options) as tfrecord_writer:
+    # options = tf.python_io.TFRecordOptions(tf.python_io.TFRecordCompressionType.GZIP)
+    with tf.python_io.TFRecordWriter(output_filename) as tfrecord_writer:
       start_idx = shard_id * num_per_shard
       end_idx = min((shard_id + 1) * num_per_shard, num_images)
       for i in range(start_idx, end_idx):

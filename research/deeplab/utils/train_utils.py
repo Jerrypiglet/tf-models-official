@@ -153,14 +153,15 @@ def get_model_init_fn(train_logdir,
     Initialization function.
   """
   if tf_initial_checkpoint is None:
-    tf.logging.info('======== Not initializing the model from a checkpoint.')
-    return None
+    tf.logging.info('======== Not initializing the model from the initial checkpoint (not given).')
+    # return None
 
   if tf.train.latest_checkpoint(train_logdir):
-    tf.logging.info('======== Ignoring initialization; other checkpoint exists')
-    return None
+    tf_initial_checkpoint = tf.train.latest_checkpoint(train_logdir)
+    tf.logging.info('======== Ignoring initialization; other checkpoint exists: %s'%tf_initial_checkpoint)
+    # return None
 
-  tf.logging.info('Initializing model from path: %s', tf_initial_checkpoint)
+  tf.logging.info('======== Initializing model from path: %s', tf_initial_checkpoint)
 
   # Variables that will not be restored.
   exclude_list = ['global_step']

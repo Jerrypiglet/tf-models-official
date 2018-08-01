@@ -146,13 +146,13 @@ flags.DEFINE_boolean('fine_tune_feature_extractor', True,
 flags.DEFINE_boolean('fine_tune_batch_norm', True,
                      'Fine tune the batch norm parameters or not.')
 
-flags.DEFINE_float('min_scale_factor', 0.5,
+flags.DEFINE_float('min_scale_factor', 1.0,
                    'Mininum scale factor for data augmentation.')
 
-flags.DEFINE_float('max_scale_factor', 2.,
+flags.DEFINE_float('max_scale_factor', 1.0,
                    'Maximum scale factor for data augmentation.')
 
-flags.DEFINE_float('scale_factor_step_size', 0.25,
+flags.DEFINE_float('scale_factor_step_size', 0.,
                    'Scale factor step size for data augmentation.')
 
 # For `xception_65`, use atrous_rates = [12, 24, 36] if output_stride = 8, or
@@ -321,22 +321,27 @@ def main(unused_argv):
       # # Scale up summary image pixel values for better visualization.
       summary_label = tf.gather(first_clone_label, [0, 1, 2], axis=3)
       pixel_scaling = tf.div(255., tf.reduce_max(tf.where(tf.not_equal(summary_label, 255.), summary_label, tf.zeros_like(summary_label))))
-      summary_label = tf.cast(summary_label * pixel_scaling, tf.uint8)
-      summaries.add(tf.summary.image('samples/%s' % common.LABEL, summary_label))
+      summary_label_uint8 = tf.cast(summary_label * pixel_scaling, tf.uint8)
+      summaries.add(tf.summary.image('samples/%s' % common.LABEL, summary_label_uint8))
+
+      def scale_to_255(tensor):
+          pixel_scaling = tf.div(255., tf.reduce_max(tensor))
+          summary_tensor_uint8 = tf.cast(tensor * pixel_scaling, tf.uint8)
+          return summary_tensor_uint8
 
       first_clone_output = graph.get_tensor_by_name(
           ('%s/scaled_logits:0' % first_clone_scope).strip('/'))
       # predictions = tf.expand_dims(tf.argmax(first_clone_output, 3), -1)
       # summary_predictions = tf.cast(predictions * pixel_scaling, tf.uint8)
       summary_first3posedims = tf.gather(first_clone_output, [0, 1, 2], axis=3)
-      pixel_scaling = tf.div(255., tf.reduce_max(summary_first3posedims))
-      summary_first3posedims = tf.cast(summary_first3posedims * pixel_scaling, tf.uint8)
+      # pixel_scaling = tf.div(255., tf.reduce_max(summary_first3posedims))
+      # summary_first3posedims_uint8 = tf.cast(summary_first3posedims * pixel_scaling, tf.uint8)
       summaries.add(tf.summary.image(
-              'samples/%s' % 'scaled_logits', summary_first3posedims))
+          'samples/%s' % 'scaled_logits', scale_to_255(summary_first3posedims)))
 
       summary_diff = tf.abs(summary_label - summary_first3posedims)
       summary_diff = tf.where(tf.equal(summary_mask, 1.), summary_diff, tf.zeros_like(summary_diff))
-      summaries.add(tf.summary.image('samples/%s' % 'diff', summary_diff))
+      summaries.add(tf.summary.image('samples/%s' % 'diff', scale_to_255(summary_diff)))
 
     # Add summaries for losses.
     for loss in tf.get_collection(tf.GraphKeys.LOSSES, first_clone_scope):
@@ -368,7 +373,7 @@ def main(unused_argv):
       print '////last layers', last_layers
 
       # Filter trainable variables for last layers ONLY.
-      grads_and_vars = train_utils.filter_gradients(last_layers, grads_and_vars)
+      # grads_and_vars = train_utils.filter_gradients(last_layers, grads_and_vars)
 
       grad_mult = train_utils.get_model_gradient_multipliers(
           last_layers, FLAGS.last_layer_gradient_multiplier)

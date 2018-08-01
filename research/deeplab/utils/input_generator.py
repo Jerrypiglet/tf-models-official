@@ -122,10 +122,12 @@ def get(dataset,
     tf.logging.warning('Please specify a model_variant. See '
                        'feature_extractor.network_map for supported model '
                        'variants.')
-
+  # options = {'options': tf.python_io.TFRecordOptions(tf.python_io.TFRecordCompressionType.GZIP)}
+  options = {}
   data_provider = dataset_data_provider.DatasetDataProvider(
       dataset,
       num_readers=num_readers,
+      reader_kwargs=options,
       num_epochs=None if is_training else 1,
       shuffle=is_training)
   image, label, image_name, height, width = _get_data(dataset, data_provider,

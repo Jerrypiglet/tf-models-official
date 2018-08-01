@@ -131,6 +131,20 @@ def _float_list_feature(values):
     # print len(float_list)
     return tf.train.Feature(float_list=tf.train.FloatList(value=float_list))
 
+# def _floats_feature(values):
+#     """Ref: https://stackoverflow.com/questions/49588382/how-to-convert-float-array-list-to-tfrecord
+#     Returns a TF-Feature of floats.
+
+#     Args:
+#         values: a numpy array of floats
+
+#     Returns:
+#         A TF-Feature
+#     """
+#     float_list = [float(value) for value in values.flatten()]
+#     # print len(float_list)
+#     return tf.train.Feature(float_list=tf.train.FloatList(value=float_list))
+
 def _bytes_list_feature(values):
   """Returns a TF-Feature of bytes.
 

@@ -89,8 +89,8 @@ _APOLLOSCAPE_INFORMATION = DatasetDescriptor(
     },
     num_classes=6,
     ignore_label=255.,
-    height=1356,
-    width=1692,
+    height=816,
+    width=1016,
 )
 
 _DATASETS_INFORMATION = {
@@ -141,8 +141,9 @@ def get_dataset(dataset_name, split_name, dataset_dir):
           (), tf.int64, default_value=0),
       'image/width': tf.FixedLenFeature(
           (), tf.int64, default_value=0),
-      'image/posemap/class/encoded': tf.FixedLenFeature(
-          [_DATASETS_INFORMATION[dataset_name].height*_DATASETS_INFORMATION[dataset_name].width*6], tf.float32),
+      # 'image/posemap/class/encoded': tf.FixedLenFeature(
+          # [_DATASETS_INFORMATION[dataset_name].height*_DATASETS_INFORMATION[dataset_name].width*6], tf.float32),
+      'image/posemap/class/encoded': tf.VarLenFeature(dtype=tf.float32),
   }
   items_to_handlers = {
       'image': tfexample_decoder.Image(
@@ -157,7 +158,6 @@ def get_dataset(dataset_name, split_name, dataset_dir):
 
   decoder = tfexample_decoder.TFExampleDecoder(
       keys_to_features, items_to_handlers)
-
   return dataset.Dataset(
       data_sources=file_pattern,
       reader=tf.TFRecordReader,
