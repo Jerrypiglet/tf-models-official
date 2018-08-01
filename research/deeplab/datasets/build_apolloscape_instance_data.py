@@ -33,6 +33,7 @@ import build_data
 import tensorflow as tf
 import numpy as np
 import ntpath
+import h5py
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -67,7 +68,7 @@ _POSTFIX_MAP = {
 # A map from data type to data format.
 _DATA_FORMAT_MAP = {
     'image': 'jpg',
-    'label': 'npy',
+    'label': 'h5',
 }
 
 # Image file pattern.
@@ -123,7 +124,8 @@ def _convert_dataset(dataset_split):
     shard_filename = '%s-%05d-of-%05d.tfrecord' % (
         dataset_split, shard_id, _NUM_SHARDS)
     output_filename = os.path.join(FLAGS.output_dir, shard_filename)
-    with tf.python_io.TFRecordWriter(output_filename) as tfrecord_writer:
+    options = tf.python_io.TFRecordOptions(tf.python_io.TFRecordCompressionType.GZIP)
+    with tf.python_io.TFRecordWriter(output_filename, options=options) as tfrecord_writer:
       start_idx = shard_id * num_per_shard
       end_idx = min((shard_id + 1) * num_per_shard, num_images)
       for i in range(start_idx, end_idx):
@@ -134,8 +136,9 @@ def _convert_dataset(dataset_split):
         image_data = tf.gfile.FastGFile(image_files[i], 'rb').read()
         height, width = image_reader.read_image_dims(image_data)
         # Read the semantic segmentation annotation.
-        # seg_data = tf.gfile.FastGFile(label_files[i], 'rb').read()
-        posemap_data = np.load(label_files[i])
+        # posemap_data = np.load(label_files[i])
+        with h5py.File(label_files[i], 'r') as hf:
+            posemap_data = hf['posemap'][:]
         posemap_data[posemap_data==np.inf] = 255.
         print np.sum(posemap_data), np.max(posemap_data), np.min(posemap_data)
         # print seg_data.shape, seg_data.dtype
