@@ -76,7 +76,7 @@ def add_regression_l2_loss_for_each_scale(scales_to_logits,
             weights=not_ignore_mask,
             scope=loss_scope
             )
-    return not_ignore_mask
+    return not_ignore_mask, logits
 
 
 # def add_softmax_cross_entropy_loss_for_each_scale(scales_to_logits,
@@ -209,6 +209,14 @@ def get_model_gradient_multipliers(last_layers, last_layer_gradient_multiplier):
 
   return gradient_multipliers
 
+def filter_gradients(last_layers, grads_and_vars):
+    filtered_grads_and_vars = []
+    for grad_and_var in grads_and_vars:
+        var_name = grad_and_var[1].op.name
+        for layer in last_layers:
+            if layer in var_name:
+                filtered_grads_and_vars.append(grad_and_var)
+    return filtered_grads_and_vars
 
 def get_model_learning_rate(
     learning_policy, base_learning_rate, learning_rate_decay_step,
