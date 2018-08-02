@@ -184,6 +184,8 @@ def image_posedict_to_tfexample(image_data, seg_data, filename, height, width, p
       'image/height': _int64_list_feature(height),
       'image/width': _int64_list_feature(width),
       'image/channels': _int64_list_feature(3),
+      'seg/format': _bytes_list_feature(
+          _IMAGE_FORMAT_MAP['png']),
       'posedict/encoded': (
           _float_list_feature(pose_dict)),
   }))

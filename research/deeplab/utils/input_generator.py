@@ -21,14 +21,6 @@ slim = tf.contrib.slim
 
 dataset_data_provider = slim.dataset_data_provider
 
-# print tf.flags.FLAGS.__flags
-# flags = tf.app.flags
-# FLAGS = flags.FLAGS
-# flags.DEFINE_string('dataset', 'apolloscape',
-#                     'Name of the segmentation dataset.')
-# print FLAGS.dataset
-
-
 def _get_data(dataset, data_provider, dataset_split):
   """Gets data from data provider.
 
@@ -46,7 +38,8 @@ def _get_data(dataset, data_provider, dataset_split):
   Raises:
     ValueError: Failed to find label.
   """
-  if common.LABELS_CLASS not in data_provider.list_items():
+  # if common.LABELS_CLASS not in data_provider.list_items():
+  if 'seg' not in data_provider.list_items():
     raise ValueError('Failed to find labels.')
 
   image, height, width = data_provider.get(
@@ -60,15 +53,24 @@ def _get_data(dataset, data_provider, dataset_split):
 
   label = None
   if dataset_split != common.TEST_SET:
-    label, = data_provider.get([common.LABELS_CLASS])
+    # label, = data_provider.get([common.LABELS_CLASS])
+    seg, pose_dict = data_provider.get(['seg', 'pose_dict'])
   if dataset.name == 'apolloscape':
-    label = tf.reshape(label, [_DATASETS_INFORMATION[dataset.name].height, _DATASETS_INFORMATION[dataset.name].width, 6])
-    ## Getting masks outof the posemap
-    # label = tf.reduce_mean(label, axis=2, keepdims=True)
-    # label = tf.where(label==255., tf.ones_like(label), tf.zeros_like(label))
+    pose_dict = tf.reshape(pose_dict, [-1, 6])
+    print '+++++++++++', seg.get_shape(), pose_dict.get_shape()
+    # pose_map = tf.zeros([_DATASETS_INFORMATION[dataset.name].height, _DATASETS_INFORMATION[dataset.name].width, 6], dtype=tf.float32)
+    seg = tf.reshape(seg, [_DATASETS_INFORMATION[dataset.name].height, _DATASETS_INFORMATION[dataset.name].width])
+    seg_one_hot = tf.one_hot(tf.squeeze(seg), depth=tf.shape(pose_dict)[0])
+    print '+++++++++++', seg_one_hot.get_shape(), tf.shape(seg_one_hot)
+    pose_map = tf.matmul(seg_one_hot, tf.tile(tf.expand_dims(pose_dict,0), [tf.shape(seg_one_hot)[0], 1, 1]))
+
+    # label = tf.reshape(label, [_DATASETS_INFORMATION[dataset.name].height, _DATASETS_INFORMATION[dataset.name].width, 6])
+    # ## Getting masks outof the posemap
+    # # label = tf.reduce_mean(label, axis=2, keepdims=True)
+    # # label = tf.where(label==255., tf.ones_like(label), tf.zeros_like(label))
 
     ## Getting inverse depth outof the posemap
-    label = tf.gather(label, [5], axis=2)
+    label = tf.gather(pose_map, [5], axis=2)
     label = tf.where(tf.equal(label, dataset.ignore_label), label, 1./label)
 
   return image, label, image_name, height, width

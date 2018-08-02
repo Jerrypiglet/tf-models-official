@@ -145,6 +145,8 @@ def _convert_dataset(dataset_split):
         assert height == height_seg and width == width_seg, 'W and H for image and seg must match!'
         # Read the semantic segmentation annotation.
         pose_dict_data = np.load(pose_dict_files[i])
+        pose_dict_data = np.vstack((np.zeros((1, 6)) + 255., pose_dict_data))
+        # pose_dict_data = np.hstack((np.arange(0, pose_dict_data.shape[0]).reshape((-1, 1)), pose_dict_data))
         # Convert to tf example.
         re_match = _IMAGE_FILENAME_RE.search(image_files[i])
         if re_match is None:

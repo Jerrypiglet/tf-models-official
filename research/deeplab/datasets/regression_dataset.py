@@ -129,9 +129,11 @@ def get_dataset(dataset_name, split_name, dataset_dir):
   file_pattern = _FILE_PATTERN
   file_pattern = os.path.join(dataset_dir, file_pattern % split_name)
 
-  # Specify how the TF-Examples are decoded.
+  # Specify how the TF-Examples are **decoded**.
   keys_to_features = {
       'image/encoded': tf.FixedLenFeature(
+          (), tf.string, default_value=''),
+      'seg/encoded': tf.FixedLenFeature(
           (), tf.string, default_value=''),
       'image/filename': tf.FixedLenFeature(
           (), tf.string, default_value=''),
@@ -141,19 +143,25 @@ def get_dataset(dataset_name, split_name, dataset_dir):
           (), tf.int64, default_value=0),
       'image/width': tf.FixedLenFeature(
           (), tf.int64, default_value=0),
-      # 'image/posemap/class/encoded': tf.FixedLenFeature(
-          # [_DATASETS_INFORMATION[dataset_name].height*_DATASETS_INFORMATION[dataset_name].width*6], tf.float32),
-      'image/posemap/class/encoded': tf.VarLenFeature(dtype=tf.float32),
+      # 'image/posemap/class/encoded': tf.VarLenFeature(dtype=tf.float32),
+      'posedict/encoded': tf.VarLenFeature(dtype=tf.float32),
+      'seg/format': tf.FixedLenFeature(
+          (), tf.string, default_value='png'),
   }
   items_to_handlers = {
       'image': tfexample_decoder.Image(
           image_key='image/encoded',
           format_key='image/format',
           channels=3),
+      'seg': tfexample_decoder.Image(
+          image_key='seg/encoded',
+          format_key='seg/format',
+          channels=1),
       'image_name': tfexample_decoder.Tensor('image/filename'),
       'height': tfexample_decoder.Tensor('image/height'),
       'width': tfexample_decoder.Tensor('image/width'),
-      'labels_class': tfexample_decoder.Tensor('image/posemap/class/encoded')
+      # 'labels_class': tfexample_decoder.Tensor('image/posemap/class/encoded')
+      'pose_dict': tfexample_decoder.Tensor('posedict/encoded')
   }
 
   decoder = tfexample_decoder.TFExampleDecoder(
