@@ -71,7 +71,7 @@ flags.DEFINE_integer('save_interval_secs', 300,
 flags.DEFINE_integer('save_summaries_secs', 30,
                      'How often, in seconds, we compute the summaries.')
 
-flags.DEFINE_boolean('save_summaries_images', True,
+flags.DEFINE_boolean('save_summaries_images', False,
                      'Save sample inputs, labels, and semantic predictions as '
                      'images to summary.')
 
@@ -315,7 +315,7 @@ def main(unused_argv):
 
       summary_image = graph.get_tensor_by_name(
           ('%s/%s:0' % (first_clone_scope, common.IMAGE)).strip('/'))
-      summaries.add(tf.summary.image('samples/%s' % common.IMAGE, tf.gather(summary_image, [0, 1, 2])))
+      summaries.add(tf.summary.image('samples/%s' % common.IMAGE, summary_image))
 
       summary_label = graph.get_tensor_by_name(
           ('%s/%s:0' % (first_clone_scope, common.LABEL)).strip('/'))
@@ -325,7 +325,7 @@ def main(unused_argv):
       pixel_scaling = tf.div(255., tf.reduce_max(tf.where(tf.not_equal(summary_label, 255.), summary_label, tf.zeros_like(summary_label))))
       summary_label = tf.where(tf.equal(summary_mask, 1.), summary_label, tf.zeros_like(summary_label))
       summary_label_uint8 = tf.cast(summary_label * pixel_scaling, tf.uint8)
-      summaries.add(tf.summary.image('samples/%s' % common.LABEL, tf.gather(summary_label_uint8, [0, 1, 2])))
+      summaries.add(tf.summary.image('samples/%s' % common.LABEL, summary_label_uint8))
 
       def scale_to_255(tensor, pixel_scaling=None):
           if pixel_scaling == None:
@@ -333,7 +333,7 @@ def main(unused_argv):
           else:
               new_pixel_scaling = pixel_scaling
           summary_tensor_uint8 = tf.cast(tensor * new_pixel_scaling, tf.uint8)
-          return tf.gather(summary_tensor_uint8, [0, 1, 2])
+          return summary_tensor_uint8
 
       summary_regression = graph.get_tensor_by_name(
           ('%s/scaled_logits:0' % first_clone_scope).strip('/'))
@@ -346,7 +346,6 @@ def main(unused_argv):
           'samples/%s' % 'scaled_logits', scale_to_255(summary_regression, pixel_scaling)))
 
       summary_diff = tf.abs(summary_label - summary_regression)
-      summary_diff = tf.where(tf.equal(summary_mask, 1.), summary_diff, tf.zeros_like(summary_diff))
       summary_diff = tf.where(tf.equal(summary_mask, 1.), summary_diff, tf.zeros_like(summary_diff))
       summaries.add(tf.summary.image('samples/%s' % 'diff', scale_to_255(summary_diff, pixel_scaling)))
 
@@ -416,22 +415,22 @@ def main(unused_argv):
         train_step_fn.step += 1  # or use global_step.eval(session=sess)
 
         # calc training losses
-        loss, should_stop = slim.learning.train_step(sess, train_op, global_step, train_step_kwargs)
-        print 'loss: ', loss
+        # loss, should_stop = slim.learning.train_step(sess, train_op, global_step, train_step_kwargs)
+        # print 'loss: ', loss
         should_stop = 0
 
-        # first_clone_label = graph.get_tensor_by_name(
-        #         ('%s/%s:0' % (first_clone_scope, 'original_label')).strip('/'))
-        # first_clone_logit = graph.get_tensor_by_name(
-        #         ('%s/%s:0' % (first_clone_scope, 'regression')).strip('/'))
-        # not_ignore_mask = graph.get_tensor_by_name(
-        #         ('%s/%s:0' % (first_clone_scope, 'not_ignore_mask')).strip('/'))
-        # label, logits, mask = sess.run([first_clone_label, first_clone_logit, not_ignore_mask])
+        first_clone_label = graph.get_tensor_by_name(
+                ('%s/%s:0' % (first_clone_scope, 'original_label')).strip('/'))
+        first_clone_logit = graph.get_tensor_by_name(
+                ('%s/%s:0' % (first_clone_scope, 'regression')).strip('/'))
+        not_ignore_mask = graph.get_tensor_by_name(
+                ('%s/%s:0' % (first_clone_scope, 'not_ignore_mask')).strip('/'))
+        label, logits, mask = sess.run([first_clone_label, first_clone_logit, not_ignore_mask])
         # mask = np.reshape(mask, (-1, FLAGS.train_crop_size[0], FLAGS.train_crop_size[1], dataset.num_classes))
 
         # print '... shapes, types, loss', label.shape, label.dtype, logits.shape, logits.dtype, loss
         # print 'mask', mask.shape, np.mean(mask)
-        # print 'label', label.shape, np.mean(label)
+        print 'label', label.shape, np.mean(label)
         # # print 'training....... logits stats: ', np.max(logits), np.min(logits), np.mean(logits)
         # # label_one_piece = label[0, :, :, 0]
         # # print 'training....... label stats', np.max(label_one_piece), np.min(label_one_piece), np.sum(label_one_piece[label_one_piece!=255.])
