@@ -460,7 +460,7 @@ def _get_logits(images,
       is_training=is_training,
       fine_tune_batch_norm=fine_tune_batch_norm,
       fine_tune_feature_extractor=fine_tune_feature_extractor)
-  print features.get_shape(), 'features.get_shape() @_get_logits() @model.py'
+  # print features.get_shape(), 'features.get_shape() @_get_logits() @model.py'
   # features = tf.identity(features, name='tmp')
   # print model_options, weight_decay, reuse, is_training, fine_tune_batch_norm
 

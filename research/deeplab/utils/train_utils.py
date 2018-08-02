@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-# ==============================================================================
+#  ==============================================================================
 """Utility functions for training."""
 
 import six
@@ -68,12 +68,13 @@ def add_regression_l2_loss_for_each_scale(scales_to_logits,
     assert scaled_labels.dtype == logits.dtype, 'The potentially reshaped logits and labels should match in types!'
     scaled_labels_flattened = tf.reshape(scaled_labels, shape=[-1])
     not_ignore_mask = tf.to_float(tf.not_equal(scaled_labels_flattened,
-                                               ignore_label)) * loss_weight
+                                               ignore_label))
     scaled_logits_flattened = tf.reshape(logits, shape=[-1])
-    tf.losses.mean_squared_error(
+    # tf.losses.mean_squared_error(
+    tf.losses.absolute_difference(
             scaled_labels_flattened,
             scaled_logits_flattened,
-            weights=not_ignore_mask,
+            weights=not_ignore_mask*loss_weight,
             scope=loss_scope
             )
     return not_ignore_mask, logits

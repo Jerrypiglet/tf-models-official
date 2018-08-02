@@ -43,7 +43,7 @@ tf.app.flags.DEFINE_string('apolloscape_root',
 
 tf.app.flags.DEFINE_string(
     'output_dir',
-    './apolloscape/3d_car_instance_sample/tfrecord_02_compressed',
+    './apolloscape/3d_car_instance_sample/tfrecord_02_posedict',
     'Path to save converted SSTable of TensorFlow examples.')
 
 tf.app.flags.DEFINE_string(
@@ -56,19 +56,22 @@ _NUM_SHARDS = 5
 # A map from data type to folder name that saves the data.
 _FOLDERS_MAP = {
     'image': 'pose_maps_02',
-    'label': 'pose_maps_02',
+    'seg': 'pose_maps_02',
+    'pose_dict': 'pose_maps_02'
 }
 
 # A map from data type to filename postfix.
 _POSTFIX_MAP = {
     'image': '_rescaled',
-    'label': '_posemap',
+    'seg': '_mask',
+    'pose_dict': '_posedict'
 }
 
 # A map from data type to data format.
 _DATA_FORMAT_MAP = {
     'image': 'jpg',
-    'label': 'h5',
+    'seg': 'png',
+    'pose_dict': 'npy'
 }
 
 # Image file pattern.
@@ -89,7 +92,7 @@ def _get_files(data, dataset_split):
   text_file = open('%s/%s.txt'%(FLAGS.splits_dir, dataset_split), "r")
   filenames_split = [line.replace('.jpg', '') for line in text_file.read().split('\n') if '.jpg' in line]
 
-  if data == 'label' and dataset_split == 'test':
+  if data == 'seg' and dataset_split == 'test':
     return None
   pattern = '*%s.%s' % (_POSTFIX_MAP[data], _DATA_FORMAT_MAP[data])
   search_files = os.path.join(
@@ -112,19 +115,21 @@ def _convert_dataset(dataset_split):
       image file with specified postfix could not be found.
   """
   image_files = _get_files('image', dataset_split)
-  label_files = _get_files('label', dataset_split)
+  seg_files = _get_files('seg', dataset_split)
+  pose_dict_files = _get_files('pose_dict', dataset_split)
   num_images = len(image_files)
   num_per_shard = int(math.ceil(num_images / float(_NUM_SHARDS)))
-  print 'num_images, num_labels, num_per_shard: ', num_images, len(label_files), num_per_shard
+  print 'num_images, num_segs, num_per_shard: ', num_images, len(seg_files), num_per_shard
 
   image_reader = build_data.ImageReader('jpg', channels=3)
-  # label_reader = build_data.ImageReader('png', channels=1)
+  seg_reader = build_data.ImageReader('png', channels=1)
 
   for shard_id in range(_NUM_SHARDS):
     shard_filename = '%s-%05d-of-%05d.tfrecord' % (
         dataset_split, shard_id, _NUM_SHARDS)
     output_filename = os.path.join(FLAGS.output_dir, shard_filename)
-    options = tf.python_io.TFRecordOptions(tf.python_io.TFRecordCompressionType.GZIP)
+    # options = tf.python_io.TFRecordOptions(tf.python_io.TFRecordCompressionType.GZIP)
+    options = {}
     with tf.python_io.TFRecordWriter(output_filename, options=options) as tfrecord_writer:
       start_idx = shard_id * num_per_shard
       end_idx = min((shard_id + 1) * num_per_shard, num_images)
@@ -135,24 +140,18 @@ def _convert_dataset(dataset_split):
         # Read the image.
         image_data = tf.gfile.FastGFile(image_files[i], 'rb').read()
         height, width = image_reader.read_image_dims(image_data)
+        seg_data = tf.gfile.FastGFile(seg_files[i], 'rb').read()
+        height_seg, width_seg = seg_reader.read_image_dims(seg_data)
+        assert height == height_seg and width == width_seg, 'W and H for image and seg must match!'
         # Read the semantic segmentation annotation.
-        # posemap_data = np.load(label_files[i])
-        with h5py.File(label_files[i], 'r') as hf:
-            posemap_data = hf['posemap'][:]
-        posemap_data[posemap_data==np.inf] = 255.
-        print np.sum(posemap_data), np.max(posemap_data), np.min(posemap_data)
-        # print seg_data.shape, seg_data.dtype
-        # seg_height, seg_width = label_reader.read_image_dims(seg_data)
-        posemap_height, posemap_width = posemap_data.shape[0], posemap_data.shape[1]
-        if height != posemap_height or width != posemap_width:
-          raise RuntimeError('Shape mismatched between image and label.')
+        pose_dict_data = np.load(pose_dict_files[i])
         # Convert to tf example.
         re_match = _IMAGE_FILENAME_RE.search(image_files[i])
         if re_match is None:
           raise RuntimeError('Invalid image filename: ' + image_files[i])
         filename = os.path.basename(re_match.group(1))
-        example = build_data.image_posemap_to_tfexample(
-            image_data, filename, height, width, posemap_data)
+        example = build_data.image_posedict_to_tfexample(
+            image_data, seg_data, filename, height, width, pose_dict_data)
         tfrecord_writer.write(example.SerializeToString())
     sys.stdout.write('\n')
     sys.stdout.flush()

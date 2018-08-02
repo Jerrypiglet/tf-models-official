@@ -216,20 +216,20 @@ def _build_deeplab(inputs_queue, outputs_to_num_classes, ignore_label):
       fine_tune_batch_norm=FLAGS.fine_tune_batch_norm,
       fine_tune_feature_extractor=FLAGS.fine_tune_feature_extractor)
 
-  print outputs_to_scales_to_logits, 'outputs_to_scales_to_logits @_build_deeplab @train_apolloscape_instance.py' # {'regression': {'merged_logits': <tf.Tensor 'ResizeBilinear_2:0' shape=(4, 49, 49, 6) dtype=float32>}}
+  # print outputs_to_scales_to_logits, 'outputs_to_scales_to_logits @_build_deeplab @train_apolloscape_instance.py' # {'regression': {'merged_logits': <tf.Tensor 'ResizeBilinear_2:0' shape=(4, 49, 49, 6) dtype=float32>}}
 
   # Add name to graph node so we can add to summary.
   output_type_dict = outputs_to_scales_to_logits[common.OUTPUT_TYPE]
   output_type_dict[model.MERGED_LOGITS_SCOPE] = tf.identity(
       output_type_dict[model.MERGED_LOGITS_SCOPE],
       name=common.OUTPUT_TYPE)
-  print output_type_dict, 'output_type_dict @_build_deeplab @train_apolloscape_instance.py' # {'merged_logits': <tf.Tensor 'regression:0' shape=(4, 49, 49, 6) dtype=float32>}
+  # print output_type_dict, 'output_type_dict @_build_deeplab @train_apolloscape_instance.py' # {'merged_logits': <tf.Tensor 'regression:0' shape=(4, 49, 49, 6) dtype=float32>}
 
   for output, num_classes in six.iteritems(outputs_to_num_classes):
-      print output, num_classes, samples[common.LABEL], samples[common.IMAGE], '_build_deeplab@train_apolloscape_instance.py' # regression 6 Tensor("label:0", shape=(4, 769, 769, 6), dtype=float32), Tensor("image:0", shape=(4, 769, 769, 3), dtype=float32)
+      # print output, num_classes, samples[common.LABEL], samples[common.IMAGE], '_build_deeplab@train_apolloscape_instance.py' # regression 6 Tensor("label:0", shape=(4, 769, 769, 6), dtype=float32), Tensor("image:0", shape=(4, 769, 769, 3), dtype=float32)
       # print '--- outputs_to_scales_to_logits[output]', outputs_to_scales_to_logits[output]
       not_ignore_mask, scaled_logits = train_utils.add_regression_l2_loss_for_each_scale(
-              outputs_to_scales_to_logits[output], # {'merged_logits': <tf.Tensor 'regression:0' shape=(4, 49, 49, 6) dtype=float32>}
+        outputs_to_scales_to_logits[output], # {'merged_logits': <tf.Tensor 'regression:0' shape=(4, 49, 49, 6) dtype=float32>}
         samples[common.LABEL],
         # num_classes,
         ignore_label,
@@ -308,40 +308,47 @@ def main(unused_argv):
     if FLAGS.save_summaries_images:
       summary_mask = graph.get_tensor_by_name(
           ('%s/%s:0' % (first_clone_scope, 'not_ignore_mask')).strip('/'))
-      summary_mask = tf.reshape(summary_mask, [-1, FLAGS.train_crop_size[0], FLAGS.train_crop_size[1], 6])
-      summary_mask = tf.gather(summary_mask, [0, 1, 2], axis=3)
-      summaries.add(tf.summary.image('samples/%s' % 'not_ignore_mask', tf.cast(summary_mask*255., tf.uint8)))
+      summary_mask = tf.reshape(summary_mask, [-1, FLAGS.train_crop_size[0], FLAGS.train_crop_size[1], dataset.num_classes])
+      if dataset.num_classes > 1:
+          summary_mask = tf.gather(summary_mask, [0, 1, 2], axis=3)
+      # summaries.add(tf.summary.image('samples/%s' % 'not_ignore_mask', tf.cast(summary_mask*255., tf.uint8)))
 
       summary_image = graph.get_tensor_by_name(
           ('%s/%s:0' % (first_clone_scope, common.IMAGE)).strip('/'))
-      summaries.add(tf.summary.image('samples/%s' % common.IMAGE, summary_image))
+      summaries.add(tf.summary.image('samples/%s' % common.IMAGE, tf.gather(summary_image, [0, 1, 2])))
 
-      first_clone_label = graph.get_tensor_by_name(
+      summary_label = graph.get_tensor_by_name(
           ('%s/%s:0' % (first_clone_scope, common.LABEL)).strip('/'))
       # # Scale up summary image pixel values for better visualization.
-      summary_label = tf.gather(first_clone_label, [0, 1, 2], axis=3)
+      if dataset.num_classes > 1:
+          summary_label = tf.gather(first_clone_label, [0, 1, 2], axis=3)
       pixel_scaling = tf.div(255., tf.reduce_max(tf.where(tf.not_equal(summary_label, 255.), summary_label, tf.zeros_like(summary_label))))
+      summary_label = tf.where(tf.equal(summary_mask, 1.), summary_label, tf.zeros_like(summary_label))
       summary_label_uint8 = tf.cast(summary_label * pixel_scaling, tf.uint8)
-      summaries.add(tf.summary.image('samples/%s' % common.LABEL, summary_label_uint8))
+      summaries.add(tf.summary.image('samples/%s' % common.LABEL, tf.gather(summary_label_uint8, [0, 1, 2])))
 
-      def scale_to_255(tensor):
-          pixel_scaling = tf.div(255., tf.reduce_max(tensor))
-          summary_tensor_uint8 = tf.cast(tensor * pixel_scaling, tf.uint8)
-          return summary_tensor_uint8
+      def scale_to_255(tensor, pixel_scaling=None):
+          if pixel_scaling == None:
+              new_pixel_scaling = tf.div(255., tf.reduce_max(tensor))
+          else:
+              new_pixel_scaling = pixel_scaling
+          summary_tensor_uint8 = tf.cast(tensor * new_pixel_scaling, tf.uint8)
+          return tf.gather(summary_tensor_uint8, [0, 1, 2])
 
-      first_clone_output = graph.get_tensor_by_name(
+      summary_regression = graph.get_tensor_by_name(
           ('%s/scaled_logits:0' % first_clone_scope).strip('/'))
       # predictions = tf.expand_dims(tf.argmax(first_clone_output, 3), -1)
       # summary_predictions = tf.cast(predictions * pixel_scaling, tf.uint8)
-      summary_first3posedims = tf.gather(first_clone_output, [0, 1, 2], axis=3)
-      # pixel_scaling = tf.div(255., tf.reduce_max(summary_first3posedims))
-      # summary_first3posedims_uint8 = tf.cast(summary_first3posedims * pixel_scaling, tf.uint8)
+      if dataset.num_classes > 1:
+          summary_regression = tf.gather(summary_regression, [0, 1, 2], axis=3)
+      summary_regression = tf.where(tf.equal(summary_mask, 1.), summary_regression, tf.zeros_like(summary_regression))
       summaries.add(tf.summary.image(
-          'samples/%s' % 'scaled_logits', scale_to_255(summary_first3posedims)))
+          'samples/%s' % 'scaled_logits', scale_to_255(summary_regression, pixel_scaling)))
 
-      summary_diff = tf.abs(summary_label - summary_first3posedims)
+      summary_diff = tf.abs(summary_label - summary_regression)
       summary_diff = tf.where(tf.equal(summary_mask, 1.), summary_diff, tf.zeros_like(summary_diff))
-      summaries.add(tf.summary.image('samples/%s' % 'diff', scale_to_255(summary_diff)))
+      summary_diff = tf.where(tf.equal(summary_mask, 1.), summary_diff, tf.zeros_like(summary_diff))
+      summaries.add(tf.summary.image('samples/%s' % 'diff', scale_to_255(summary_diff, pixel_scaling)))
 
     # Add summaries for losses.
     for loss in tf.get_collection(tf.GraphKeys.LOSSES, first_clone_scope):
@@ -354,7 +361,8 @@ def main(unused_argv):
           FLAGS.learning_rate_decay_step, FLAGS.learning_rate_decay_factor,
           FLAGS.training_number_of_steps, FLAGS.learning_power,
           FLAGS.slow_start_step, FLAGS.slow_start_learning_rate)
-      optimizer = tf.train.MomentumOptimizer(learning_rate, FLAGS.momentum)
+      # optimizer = tf.train.MomentumOptimizer(learning_rate, FLAGS.momentum)
+      optimizer = tf.train.AdamOptimizer(learning_rate)
       summaries.add(tf.summary.scalar('learning_rate', learning_rate))
 
     startup_delay_steps = FLAGS.task * FLAGS.startup_delay_steps
@@ -416,12 +424,14 @@ def main(unused_argv):
         #         ('%s/%s:0' % (first_clone_scope, 'original_label')).strip('/'))
         # first_clone_logit = graph.get_tensor_by_name(
         #         ('%s/%s:0' % (first_clone_scope, 'regression')).strip('/'))
-        # logits = sess.run(first_clone_logit)
-        # first_clone_mask = graph.get_tensor_by_name(
+        # not_ignore_mask = graph.get_tensor_by_name(
         #         ('%s/%s:0' % (first_clone_scope, 'not_ignore_mask')).strip('/'))
-        # label, logits, mask = sess.run([first_clone_label, first_clone_logit, first_clone_mask])
+        # label, logits, mask = sess.run([first_clone_label, first_clone_logit, not_ignore_mask])
+        # mask = np.reshape(mask, (-1, FLAGS.train_crop_size[0], FLAGS.train_crop_size[1], dataset.num_classes))
+
         # print '... shapes, types, loss', label.shape, label.dtype, logits.shape, logits.dtype, loss
-        # print 'mask', mask.shape, np.sum(mask)/mask.shape[0]
+        # print 'mask', mask.shape, np.mean(mask)
+        # print 'label', label.shape, np.mean(label)
         # # print 'training....... logits stats: ', np.max(logits), np.min(logits), np.mean(logits)
         # # label_one_piece = label[0, :, :, 0]
         # # print 'training....... label stats', np.max(label_one_piece), np.min(label_one_piece), np.sum(label_one_piece[label_one_piece!=255.])

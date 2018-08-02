@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-# ==============================================================================
 """Wrapper for providing semantic segmentation data."""
 
 import tensorflow as tf
@@ -64,6 +63,13 @@ def _get_data(dataset, data_provider, dataset_split):
     label, = data_provider.get([common.LABELS_CLASS])
   if dataset.name == 'apolloscape':
     label = tf.reshape(label, [_DATASETS_INFORMATION[dataset.name].height, _DATASETS_INFORMATION[dataset.name].width, 6])
+    ## Getting masks outof the posemap
+    # label = tf.reduce_mean(label, axis=2, keepdims=True)
+    # label = tf.where(label==255., tf.ones_like(label), tf.zeros_like(label))
+
+    ## Getting inverse depth outof the posemap
+    label = tf.gather(label, [5], axis=2)
+    label = tf.where(tf.equal(label, dataset.ignore_label), label, 1./label)
 
   return image, label, image_name, height, width
 
@@ -141,10 +147,7 @@ def get(dataset,
     else:
       raise ValueError('Input label shape must be [height, width], or '
                        '[height, width, {1,6}].')
-  if dataset.name == 'apolloscape':
-    label.set_shape([None, None, 6])
-  else:
-    label.set_shape([None, None, 1])
+  label.set_shape([None, None, dataset.num_classes])
 
   original_image, image, label = input_preprocess.preprocess_image_and_label(
       image,
@@ -159,7 +162,8 @@ def get(dataset,
       scale_factor_step_size=scale_factor_step_size,
       ignore_label=dataset.ignore_label,
       is_training=is_training,
-      model_variant=model_variant)
+      model_variant=model_variant,
+      num_classes=dataset.num_classes)
 
   original_label = tf.identity(label)
   sample = {

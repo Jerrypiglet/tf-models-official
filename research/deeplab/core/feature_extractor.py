@@ -296,7 +296,7 @@ def extract_features(images,
   else:
     raise ValueError('Unknown model variant %s.' % model_variant)
 
-  print '////////////////', is_training, fine_tune_batch_norm, '@feature_extractor.py'
+  # print '////////////////', is_training, fine_tune_batch_norm, '@feature_extractor.py'
   return features, end_points
 
 

@@ -87,7 +87,7 @@ _APOLLOSCAPE_INFORMATION = DatasetDescriptor(
         'train': 731,
         'val': 107,
     },
-    num_classes=6,
+    num_classes=1,
     ignore_label=255.,
     height=544,
     width=680,
