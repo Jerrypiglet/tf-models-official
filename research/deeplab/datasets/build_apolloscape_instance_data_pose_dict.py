@@ -63,7 +63,7 @@ _FOLDERS_MAP = {
 # A map from data type to filename postfix.
 _POSTFIX_MAP = {
     'image': '_rescaled',
-    'seg': '_mask',
+    'seg': '_seg',
     'pose_dict': '_posedict'
 }
 
@@ -146,7 +146,8 @@ def _convert_dataset(dataset_split):
         # Read the semantic segmentation annotation.
         pose_dict_data = np.load(pose_dict_files[i])
         pose_dict_data = np.vstack((np.zeros((1, 6)) + 255., pose_dict_data))
-        print pose_dict_data
+        print np.mean(pose_dict_data[1:, :]), np.shape(pose_dict_data)
+        # print np.mean(seg_data.astype(np.float)), np.shape(seg_data)
         # pose_dict_data = np.hstack((np.arange(0, pose_dict_data.shape[0]).reshape((-1, 1)), pose_dict_data))
         # Convert to tf example.
         re_match = _IMAGE_FILENAME_RE.search(image_files[i])
