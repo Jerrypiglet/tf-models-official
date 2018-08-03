@@ -40,6 +40,9 @@ dataset_folders = ['3d_car_instance_sample', 'combined', 'full']
 dataset_subfolders = ['', '/train', '']
 dataset_folder_index = 0
 dataset_folder = dataset_folders[dataset_folder_index] + dataset_subfolders[dataset_folder_index]
+
+print '===== dataset_folder: ', dataset_folder
+
 tf.app.flags.DEFINE_string('apolloscape_root',
                            './apolloscape/%s'%dataset_folder,
                            'Apolloscape dataset root folder.')
@@ -60,6 +63,7 @@ _NUM_SHARDS = 5
 _FOLDERS_MAP = {
     'image': 'pose_maps_02',
     'seg': 'pose_maps_02',
+    'vis': 'pose_maps_02',
     'pose_dict': 'pose_maps_02'
 }
 
@@ -67,12 +71,14 @@ _FOLDERS_MAP = {
 _POSTFIX_MAP = {
     'image': '_rescaled',
     'seg': '_seg',
+    'vis': '_vis',
     'pose_dict': '_posedict'
 }
 
 # A map from data type to data format.
 _DATA_FORMAT_MAP = {
-    'image': 'jpg',
+    'image': 'png',
+    'vis': 'png',
     'seg': 'png',
     'pose_dict': 'npy'
 }
@@ -118,13 +124,15 @@ def _convert_dataset(dataset_split):
       image file with specified postfix could not be found.
   """
   image_files = _get_files('image', dataset_split)
+  vis_files = _get_files('vis', dataset_split)
   seg_files = _get_files('seg', dataset_split)
   pose_dict_files = _get_files('pose_dict', dataset_split)
   num_images = len(image_files)
   num_per_shard = int(math.ceil(num_images / float(_NUM_SHARDS)))
-  assert len(image_files) == len(seg_files) == len(pose_dict_files), 'Three list lengths not equal!'
+  assert len(image_files) == len(vis_files) == len(seg_files) == len(pose_dict_files), 'Three list lengths not equal!'
   print 'num_images, num_segs, num_pose_dicts, num_per_shard: ', num_images, len(seg_files), len(pose_dict_files), num_per_shard
-  image_reader = build_data.ImageReader('jpg', channels=3)
+  image_reader = build_data.ImageReader('png', channels=3)
+  vis_reader = build_data.ImageReader('png', channels=3)
   seg_reader = build_data.ImageReader('png', channels=1)
 
   def return_id(filepath):
@@ -147,9 +155,12 @@ def _convert_dataset(dataset_split):
         sys.stdout.flush()
         # Read the image.
         print return_id(image_files[i]), return_id(seg_files[i]), return_id(pose_dict_files[i])
-        assert return_id(image_files[i]) == return_id(seg_files[i]) == return_id(pose_dict_files[i]), 'File name mismatch!'
+        assert return_id(image_files[i]) == return_id(vis_files[i]) == return_id(seg_files[i]) == return_id(pose_dict_files[i]), 'File name mismatch!'
+
         image_data = tf.gfile.FastGFile(image_files[i], 'rb').read()
         height, width = image_reader.read_image_dims(image_data)
+        vis_data = tf.gfile.FastGFile(vis_files[i], 'rb').read()
+        print vis_files[i]
         seg_data = tf.gfile.FastGFile(seg_files[i], 'rb').read()
         height_seg, width_seg = seg_reader.read_image_dims(seg_data)
         assert height == height_seg and width == width_seg, 'W and H for image and seg must match!'
@@ -165,7 +176,7 @@ def _convert_dataset(dataset_split):
           raise RuntimeError('Invalid image filename: ' + image_files[i])
         filename = os.path.basename(re_match.group(1))
         example = build_data.image_posedict_to_tfexample(
-            image_data, seg_data, filename, height, width, pose_dict_data)
+            image_data, vis_data, seg_data, filename, height, width, pose_dict_data)
         tfrecord_writer.write(example.SerializeToString())
     sys.stdout.write('\n')
     sys.stdout.flush()

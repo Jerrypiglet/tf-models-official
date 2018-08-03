@@ -161,7 +161,7 @@ def _bytes_list_feature(values):
       bytes_list=tf.train.BytesList(value=[norm2bytes(values)]))
 
 
-def image_posedict_to_tfexample(image_data, seg_data, filename, height, width, pose_dict):
+def image_posedict_to_tfexample(image_data, vis_data, seg_data, filename, height, width, pose_dict):
   """Converts one image/posemap pair to tf example.
 
   Args:
@@ -177,6 +177,7 @@ def image_posedict_to_tfexample(image_data, seg_data, filename, height, width, p
   """
   return tf.train.Example(features=tf.train.Features(feature={
       'image/encoded': _bytes_list_feature(image_data),
+      'vis/encoded': _bytes_list_feature(vis_data),
       'seg/encoded': _bytes_list_feature(seg_data),
       'image/filename': _bytes_list_feature(filename),
       'image/format': _bytes_list_feature(
@@ -184,6 +185,8 @@ def image_posedict_to_tfexample(image_data, seg_data, filename, height, width, p
       'image/height': _int64_list_feature(height),
       'image/width': _int64_list_feature(width),
       'image/channels': _int64_list_feature(3),
+      'vis/format': _bytes_list_feature(
+          _IMAGE_FORMAT_MAP['png']),
       'seg/format': _bytes_list_feature(
           _IMAGE_FORMAT_MAP['png']),
       'posedict/encoded': (
