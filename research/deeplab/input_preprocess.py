@@ -25,6 +25,37 @@ np.set_printoptions(threshold=np.nan)
 _PROB_OF_FLIP = 0.5
 
 
+def preprocess_image_and_label_flip_only(image,
+                               label,
+                               is_training=True):
+  """Preprocesses the image and label by flipping the sample IN TRAINING ONLY.
+
+  Args:
+    image: Input image.
+    label: Ground truth annotation label.
+    is_training: If the preprocessing is used for training or not.
+
+  Returns:
+    image: Preprocessed image.
+    label: Preprocessed ground truth segmentation label.
+
+  Raises:
+    ValueError: Ground truth label not provided during training.
+  """
+  if is_training and label is None:
+    raise ValueError('During training, label must be provided.')
+  if model_variant is None:
+    tf.logging.warning('Default mean-subtraction is performed. Please specify '
+                       'a model_variant. See feature_extractor.network_map for '
+                       'supported model variants.')
+
+  if is_training:
+    # Randomly left-right flip the image and label.
+    image, label, _ = preprocess_utils.flip_dim(
+        [image, label], _PROB_OF_FLIP, dim=1)
+
+  return processed_image, label
+
 def preprocess_image_and_label(image,
                                label,
                                crop_height,
