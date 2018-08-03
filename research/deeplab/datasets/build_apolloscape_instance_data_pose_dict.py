@@ -36,19 +36,22 @@ import ntpath
 import h5py
 
 FLAGS = tf.app.flags.FLAGS
-
+dataset_folders = ['3d_car_instance_sample', 'combined', 'full']
+dataset_subfolders = ['', '/train', '']
+dataset_folder_index = 0
+dataset_folder = dataset_folders[dataset_folder_index] + dataset_subfolders[dataset_folder_index]
 tf.app.flags.DEFINE_string('apolloscape_root',
-                           './apolloscape/3d_car_instance_sample',
+                           './apolloscape/%s'%dataset_folder,
                            'Apolloscape dataset root folder.')
 
 tf.app.flags.DEFINE_string(
     'output_dir',
-    './apolloscape/3d_car_instance_sample/tfrecord_02_posedict',
+    './apolloscape/%s/tfrecord_02_posedict'%dataset_folder,
     'Path to save converted SSTable of TensorFlow examples.')
 
 tf.app.flags.DEFINE_string(
     'splits_dir',
-    './apolloscape/3d_car_instance_sample/split',
+    './apolloscape/%s/split'%dataset_folder,
     'Path to splits files (.txt) for train/val.')
 
 _NUM_SHARDS = 5
@@ -63,7 +66,7 @@ _FOLDERS_MAP = {
 # A map from data type to filename postfix.
 _POSTFIX_MAP = {
     'image': '_rescaled',
-    'seg': '_mask',
+    'seg': '_seg',
     'pose_dict': '_posedict'
 }
 
@@ -119,10 +122,15 @@ def _convert_dataset(dataset_split):
   pose_dict_files = _get_files('pose_dict', dataset_split)
   num_images = len(image_files)
   num_per_shard = int(math.ceil(num_images / float(_NUM_SHARDS)))
-  print 'num_images, num_segs, num_per_shard: ', num_images, len(seg_files), num_per_shard
-
+  assert len(image_files) == len(seg_files) == len(pose_dict_files), 'Three list lengths not equal!'
+  print 'num_images, num_segs, num_pose_dicts, num_per_shard: ', num_images, len(seg_files), len(pose_dict_files), num_per_shard
   image_reader = build_data.ImageReader('jpg', channels=3)
   seg_reader = build_data.ImageReader('png', channels=1)
+
+  def return_id(filepath):
+      file_name = ntpath.basename(filepath)
+      splits = file_name.split('_')
+      return splits[0]+'_'+splits[1]
 
   for shard_id in range(_NUM_SHARDS):
     shard_filename = '%s-%05d-of-%05d.tfrecord' % (
@@ -138,6 +146,8 @@ def _convert_dataset(dataset_split):
             i + 1, num_images, shard_id))
         sys.stdout.flush()
         # Read the image.
+        print return_id(image_files[i]), return_id(seg_files[i]), return_id(pose_dict_files[i])
+        assert return_id(image_files[i]) == return_id(seg_files[i]) == return_id(pose_dict_files[i]), 'File name mismatch!'
         image_data = tf.gfile.FastGFile(image_files[i], 'rb').read()
         height, width = image_reader.read_image_dims(image_data)
         seg_data = tf.gfile.FastGFile(seg_files[i], 'rb').read()
