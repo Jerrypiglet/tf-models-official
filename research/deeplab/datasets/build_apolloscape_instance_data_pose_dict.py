@@ -69,9 +69,9 @@ _FOLDERS_MAP = {
 
 # A map from data type to filename postfix.
 _POSTFIX_MAP = {
-    'image': '_rescaled',
-    'seg': '_seg',
-    'vis': '_vis',
+    'image': '_rescaled_half',
+    'seg': '_seg_half',
+    'vis': '_vis_half',
     'pose_dict': '_posedict'
 }
 
