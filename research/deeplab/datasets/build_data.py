@@ -175,14 +175,18 @@ def image_posedict_to_tfexample(image_data, vis_data, seg_data, filename, height
   Returns:
     tf example of one image/posemap pair.
   """
+
+  def crop_half(image):
+      return image[image.shape[0]//2:, :, :]
+
   return tf.train.Example(features=tf.train.Features(feature={
-      'image/encoded': _bytes_list_feature(image_data),
-      'vis/encoded': _bytes_list_feature(vis_data),
-      'seg/encoded': _bytes_list_feature(seg_data),
+      'image/encoded': _bytes_list_feature(crop_half(image_data)),
+      'vis/encoded': _bytes_list_feature(crop_half(vis_data)),
+      'seg/encoded': _bytes_list_feature(crop_half(seg_data)),
       'image/filename': _bytes_list_feature(filename),
       'image/format': _bytes_list_feature(
           _IMAGE_FORMAT_MAP[FLAGS.image_format]),
-      'image/height': _int64_list_feature(height),
+      'image/height': _int64_list_feature(height//2),
       'image/width': _int64_list_feature(width),
       'image/channels': _int64_list_feature(3),
       'vis/format': _bytes_list_feature(
