@@ -25,9 +25,7 @@ np.set_printoptions(threshold=np.nan)
 _PROB_OF_FLIP = 0.5
 
 
-def preprocess_image_and_label_flip_only(image,
-                               label,
-                               is_training=True):
+def preprocess_image_and_label_flip_only(image, vis, label, mask, is_training=True):
   """Preprocesses the image and label by flipping the sample IN TRAINING ONLY.
 
   Args:
@@ -44,17 +42,13 @@ def preprocess_image_and_label_flip_only(image,
   """
   if is_training and label is None:
     raise ValueError('During training, label must be provided.')
-  if model_variant is None:
-    tf.logging.warning('Default mean-subtraction is performed. Please specify '
-                       'a model_variant. See feature_extractor.network_map for '
-                       'supported model variants.')
 
   if is_training:
     # Randomly left-right flip the image and label.
-    image, label, _ = preprocess_utils.flip_dim(
-        [image, label], _PROB_OF_FLIP, dim=1)
+    image, vis, label, mask, _ = preprocess_utils.flip_dim(
+        [image, vis, label, mask], _PROB_OF_FLIP, dim=1)
 
-  return processed_image, label
+  return image, vis, label, mask
 
 def preprocess_image_and_label(image,
                                label,

@@ -82,10 +82,10 @@ DatasetDescriptor = collections.namedtuple(
 
 _APOLLOSCAPE_INFORMATION = DatasetDescriptor(
     splits_to_sizes={
-        # 'train': 1,
-        # 'val': 1,
-        'train': 731,
-        'val': 107,
+        'train': 3928,
+        'val': 207,
+        # 'train': 731,
+        # 'val': 107,
     },
     num_classes=1,
     ignore_label=255.,

@@ -146,6 +146,7 @@ def add_regression_l2_loss_for_each_scale(scales_to_logits,
 
 def get_model_init_fn(train_logdir,
                       tf_initial_checkpoint,
+                      restore_logged,
                       initialize_last_layer,
                       last_layers,
                       ignore_missing_vars=False):
@@ -162,18 +163,18 @@ def get_model_init_fn(train_logdir,
     Initialization function.
   """
   if tf_initial_checkpoint is None:
-    tf.logging.info('======== Not initializing the model from the initial checkpoint (not given).')
-    # return None
-
-  if tf.train.latest_checkpoint(train_logdir):
+    tf.logging.info('==== Not initializing the model from the initial checkpoint (not given).')
+    return None
+  if tf.train.latest_checkpoint(train_logdir) and restore_logged:
     tf_initial_checkpoint = tf.train.latest_checkpoint(train_logdir)
-    tf.logging.info('======== Ignoring initialization; other checkpoint exists: %s'%tf_initial_checkpoint)
+    tf.logging.info('==== Ignoring initialization; restoring from logged checkpoint: %s'%tf_initial_checkpoint)
     # return None
 
-  tf.logging.info('======== Initializing model from path: %s', tf_initial_checkpoint)
+  tf.logging.info('==== Initializing model from path: %s', tf_initial_checkpoint)
 
   # Variables that will not be restored.
   exclude_list = ['global_step']
+  # exclude_list = []
   if not initialize_last_layer:
     exclude_list.extend(last_layers)
 

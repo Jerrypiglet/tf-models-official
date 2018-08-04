@@ -161,8 +161,9 @@ def get(dataset,
   # original_label = tf.identity(label)
   # original_image = tf.identity(image)
 
-  image, label = input_preprocess.preprocess_image_and_label_flip_only(
-          image, label, is_training=is_training, num_classes=dataset.num_classes)
+  # image, vis, label, mask = input_preprocess.preprocess_image_and_label_flip_only(
+  #         image, vis, label, mask, is_training=is_training)
+
   # original_image, image, label = input_preprocess.preprocess_image_and_label(
   #     image,
   #     label,

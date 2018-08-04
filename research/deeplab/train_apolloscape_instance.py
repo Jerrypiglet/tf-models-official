@@ -18,6 +18,7 @@ See model.py for more details and usage.
 """
 
 import six
+import os
 import tensorflow as tf
 from deeplab import common
 from deeplab import model
@@ -58,6 +59,9 @@ flags.DEFINE_string('master', '', 'BNS name of the tensorflow server')
 flags.DEFINE_integer('task', 0, 'The task ID.')
 
 # Settings for logging.
+
+flags.DEFINE_string('task_name', 'tmp',
+                    'Task name; will be appended to FLAGS.train_logdir to log files.')
 
 flags.DEFINE_string('train_logdir', None,
                     'Where the checkpoint and logs are stored.')
@@ -121,6 +125,9 @@ flags.DEFINE_boolean('upsample_logits', True,
                      'Upsample logits during training.')
 
 # Settings for fine-tuning the network.
+
+flags.DEFINE_boolean('restore_logged', False,
+                    'Whether to restore the logged checkpoint.')
 
 flags.DEFINE_string('tf_initial_checkpoint', None,
                     'The initial checkpoint in tensorflow format.')
@@ -249,6 +256,8 @@ def _build_deeplab(inputs_queue, outputs_to_num_classes, ignore_label):
 
 
 def main(unused_argv):
+  FLAGS.train_logdir = FLAGS.train_logdir + '/' + FLAGS.task_name
+
   tf.logging.set_verbosity(tf.logging.INFO)
   # Set up deployment (i.e., multi-GPUs and/or multi-replicas).
   config = model_deploy.DeploymentConfig(
@@ -268,8 +277,17 @@ def main(unused_argv):
   dataset = regression_dataset.get_dataset(
       FLAGS.dataset, FLAGS.train_split, dataset_dir=FLAGS.dataset_dir)
 
-  tf.gfile.MakeDirs(FLAGS.train_logdir)
-  tf.logging.info('Training on %s set', FLAGS.train_split)
+  print '#### The data has size:', dataset.num_samples
+
+  if not(os.path.isdir(FLAGS.train_logdir)):
+      tf.gfile.MakeDirs(FLAGS.train_logdir)
+  elif len(os.listdir(FLAGS.train_logdir) ) != 0:
+      if_delete_all = raw_input('#### The log folder %s exists and non-empty; delete all logs? [y/n] '%FLAGS.train_logdir)
+      if if_delete_all == 'y':
+          os.system('rm -rf %s/*'%FLAGS.train_logdir)
+          print '==== Log folder emptied.'
+
+  tf.logging.info('==== Logging in dir:%s; Training on %s set', FLAGS.train_logdir, FLAGS.train_split)
 
   with tf.Graph().as_default() as graph:
     with tf.device(config.inputs_device()):
@@ -337,8 +355,8 @@ def main(unused_argv):
       # # Scale up summary image pixel values for better visualization.
       if dataset.num_classes > 1:
           summary_label = tf.gather(summary_label, [0, 1, 2], axis=3)
-      pixel_scaling = tf.div(255., tf.reduce_max(tf.where(tf.not_equal(summary_label, 255.), summary_label, tf.zeros_like(summary_label))))
       summary_label = tf.where(summary_mask, summary_label, tf.zeros_like(summary_label))
+      pixel_scaling = tf.div(255., tf.reduce_max(tf.where(tf.not_equal(summary_label, 255.), summary_label, tf.zeros_like(summary_label))))
       summary_label_uint8 = tf.cast(summary_label * pixel_scaling, tf.uint8)
       summaries.add(tf.summary.image('samples/%s' % common.LABEL, tf.gather(summary_label_uint8, [0, 1, 2])))
 
@@ -358,7 +376,7 @@ def main(unused_argv):
           summary_regression = tf.gather(summary_regression, [0, 1, 2], axis=3)
       summary_regression = tf.where(summary_mask, summary_regression, tf.zeros_like(summary_regression))
       summaries.add(tf.summary.image(
-          'samples/%s' % 'regression', tf.gather(scale_to_255(summary_regression), [0, 1, 2])))
+          'samples/%s' % 'regression', tf.gather(scale_to_255(summary_regression, pixel_scaling), [0, 1, 2])))
 
       summary_diff = tf.abs(summary_label - summary_regression)
       summary_diff = tf.where(summary_mask, summary_diff, tf.zeros_like(summary_diff))
@@ -434,8 +452,13 @@ def main(unused_argv):
         print 'loss: ', loss
         should_stop = 0
 
+        # first_clone_test = graph.get_tensor_by_name(
+        #         ('%s/%s:0' % (first_clone_scope, common.IMAGE_NAME)).strip('/'))
+        # test = sess.run(first_clone_test)
+        # print test
+
         # first_clone_label = graph.get_tensor_by_name(
-        #         ('%s/%s:0' % (first_clone_scope, 'original_label')).strip('/'))
+                # ('%s/%s:0' % (first_clone_scope, 'original_label')).strip('/'))
         # first_clone_pose_dict = graph.get_tensor_by_name(
         #         ('%s/%s:0' % (first_clone_scope, 'pose_dict')).strip('/'))
         # first_clone_logit = graph.get_tensor_by_name(
@@ -478,6 +501,7 @@ def main(unused_argv):
         init_fn=train_utils.get_model_init_fn(
             FLAGS.train_logdir,
             FLAGS.tf_initial_checkpoint,
+            FLAGS.restore_logged,
             FLAGS.initialize_last_layer,
             last_layers,
             ignore_missing_vars=True),
