@@ -36,9 +36,9 @@ import ntpath
 import h5py
 
 FLAGS = tf.app.flags.FLAGS
-dataset_folders = ['3d_car_instance_sample', 'combined', 'full']
-dataset_subfolders = ['', '/train', '']
-dataset_folder_index = 0
+dataset_folders = ['3d_car_instance_sample', 'full', 'combined']
+dataset_subfolders = ['', '/train', '/train']
+dataset_folder_index = 1
 dataset_folder = dataset_folders[dataset_folder_index] + dataset_subfolders[dataset_folder_index]
 
 print '===== dataset_folder: ', dataset_folder
@@ -49,7 +49,7 @@ tf.app.flags.DEFINE_string('apolloscape_root',
 
 tf.app.flags.DEFINE_string(
     'output_dir',
-    './apolloscape/%s/tfrecord_02_posedict'%dataset_folder,
+    './apolloscape/%s/tfrecord_02_posedict_half'%dataset_folder,
     'Path to save converted SSTable of TensorFlow examples.')
 
 tf.app.flags.DEFINE_string(
@@ -72,6 +72,9 @@ _POSTFIX_MAP = {
     'image': '_rescaled_half',
     'seg': '_seg_half',
     'vis': '_vis_half',
+    # 'image': '_rescaled',
+    # 'seg': '_seg',
+    # 'vis': '_vis',
     'pose_dict': '_posedict'
 }
 
@@ -131,6 +134,14 @@ def _convert_dataset(dataset_split):
   num_per_shard = int(math.ceil(num_images / float(_NUM_SHARDS)))
   assert len(image_files) == len(vis_files) == len(seg_files) == len(pose_dict_files), 'Three list lengths not equal!'
   print 'num_images, num_segs, num_pose_dicts, num_per_shard: ', num_images, len(seg_files), len(pose_dict_files), num_per_shard
+  import random
+  indices = range(num_images)
+  random.shuffle(indices)
+  image_files = [image_files[indice] for indice in indices]
+  vis_files = [vis_files[indice] for indice in indices]
+  seg_files = [seg_files[indice] for indice in indices]
+  pose_dict_files = [pose_dict_files[indice] for indice in indices]
+
   image_reader = build_data.ImageReader('png', channels=3)
   vis_reader = build_data.ImageReader('png', channels=3)
   seg_reader = build_data.ImageReader('png', channels=1)
@@ -167,7 +178,7 @@ def _convert_dataset(dataset_split):
         # Read the semantic segmentation annotation.
         pose_dict_data = np.load(pose_dict_files[i])
         pose_dict_data = np.vstack((np.zeros((1, 6)) + 255., pose_dict_data))
-        print np.mean(pose_dict_data[1:, :]), np.shape(pose_dict_data)
+        print np.mean(pose_dict_data[1:, :]), np.shape(pose_dict_data), np.shape(image_data)
         # print np.mean(seg_data.astype(np.float)), np.shape(seg_data)
         # pose_dict_data = np.hstack((np.arange(0, pose_dict_data.shape[0]).reshape((-1, 1)), pose_dict_data))
         # Convert to tf example.
