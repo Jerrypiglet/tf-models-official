@@ -229,22 +229,12 @@ def _build_deeplab(inputs_queue, outputs_to_num_classes, ignore_label):
 
   # print outputs_to_scales_to_logits, 'outputs_to_scales_to_logits @_build_deeplab @train_apolloscape_instance.py' # {'regression': {'merged_logits': <tf.Tensor 'ResizeBilinear_2:0' shape=(4, 49, 49, 6) dtype=float32>}}
 
-  # Add name to graph node so we can add to summary.
-  # output_type_dict = outputs_to_scales_to_logits[common.OUTPUT_TYPE]
-  # output_type_dict[model.MERGED_LOGITS_SCOPE] = tf.identity(
-  #     output_type_dict[model.MERGED_LOGITS_SCOPE],
-  #     name=common.OUTPUT_TYPE)
-  # print output_type_dict, 'output_type_dict @_build_deeplab @train_apolloscape_instance.py' # {'merged_logits': <tf.Tensor 'regression:0' shape=(4, 49, 49, 6) dtype=float32>}
-
   for output, num_classes in six.iteritems(outputs_to_num_classes):
       # print output, num_classes, samples[common.LABEL], samples[common.IMAGE], '_build_deeplab@train_apolloscape_instance.py' # regression 6 Tensor("label:0", shape=(4, 769, 769, 6), dtype=float32), Tensor("image:0", shape=(4, 769, 769, 3), dtype=float32)
-      # print '--- outputs_to_scales_to_logits[output]', outputs_to_scales_to_logits[output]
       scaled_logits, masks = train_utils.add_regression_l2_loss_for_each_scale(
         outputs_to_scales_to_logits[output], # {'merged_logits': <tf.Tensor 'regression:0' shape=(4, 49, 49, 6) dtype=float32>}
         samples[common.LABEL],
         samples['mask'],
-        # num_classes,
-        # ignore_label,
         loss_weight=1.0,
         upsample_logits=FLAGS.upsample_logits,
         scope=output)
@@ -404,7 +394,7 @@ def main(unused_argv):
     with tf.device(config.variables_device()):
       total_loss, grads_and_vars = model_deploy.optimize_clones(
           clones, optimizer)
-      # total_loss = tf.check_numerics(total_loss, 'Loss is inf or nan.')
+      total_loss = tf.check_numerics(total_loss, 'Loss is inf or nan.')
       summaries.add(tf.summary.scalar('total_loss', total_loss))
 
       # Modify the gradients for biases and last layer variables.
