@@ -38,7 +38,7 @@ import h5py
 FLAGS = tf.app.flags.FLAGS
 dataset_folders = ['3d_car_instance_sample', 'full', 'combined']
 dataset_subfolders = ['', '/train', '/train']
-dataset_folder_index = 1
+dataset_folder_index = 2
 dataset_folder = dataset_folders[dataset_folder_index] + dataset_subfolders[dataset_folder_index]
 
 print '===== dataset_folder: ', dataset_folder
@@ -185,7 +185,7 @@ def _convert_dataset(dataset_split):
         re_match = _IMAGE_FILENAME_RE.search(image_files[i])
         if re_match is None:
           raise RuntimeError('Invalid image filename: ' + image_files[i])
-        filename = os.path.basename(re_match.group(1))
+        filename = '%s-%s'%(dataset_split, os.path.basename(re_match.group(1)))
         example = build_data.image_posedict_to_tfexample(
             image_data, vis_data, seg_data, filename, height, width, pose_dict_data)
         tfrecord_writer.write(example.SerializeToString())
