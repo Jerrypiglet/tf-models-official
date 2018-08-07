@@ -21,10 +21,11 @@ from deeplab.core import preprocess_utils
 
 slim = tf.contrib.slim
 
-def add_regression_l2_loss_for_each_scale(scales_to_logits,
+def add_regression_loss_for_each_scale(scales_to_logits,
                                                   labels,
+                                                  masks,
                                                   # num_classes,
-                                                  ignore_label,
+                                                  # ignore_label,
                                                   loss_weight=1.0,
                                                   upsample_logits=True,
                                                   scope=None):
@@ -43,17 +44,20 @@ def add_regression_l2_loss_for_each_scale(scales_to_logits,
   Raises:
     ValueError: Label or logits is None.
   """
+
   if labels is None:
     raise ValueError('No label for softmax cross entropy loss.')
 
   for scale, logits in six.iteritems(scales_to_logits):
+    print '+++++++++++', labels.get_shape(), logits.get_shape()
     loss_scope = None
     if scope:
       loss_scope = '%s_%s' % (scope, scale)
 
     if upsample_logits:
       # Label is not downsampled, and instead we upsample logits.
-      logits = tf.image.resize_bilinear(
+      print '+++ Upsample logits!'
+      scaled_logits = tf.image.resize_bilinear(
           logits,
           preprocess_utils.resolve_shape(labels, 4)[1:3],
           align_corners=True)
@@ -64,21 +68,70 @@ def add_regression_l2_loss_for_each_scale(scales_to_logits,
           labels,
           preprocess_utils.resolve_shape(logits, 4)[1:3],
           align_corners=True)
-    assert scaled_labels.get_shape() == logits.get_shape(), 'The potentially reshaped logits and labels should match in shapes!'
-    assert scaled_labels.dtype == logits.dtype, 'The potentially reshaped logits and labels should match in types!'
+      scaled_logits = logits
+
+    assert scaled_labels.get_shape() == scaled_logits.get_shape(), 'The potentially reshaped logits and labels should match in shapes!'
+    assert scaled_labels.dtype == scaled_logits.dtype, 'The potentially reshaped logits and labels should match in types!'
     scaled_labels_flattened = tf.reshape(scaled_labels, shape=[-1])
-    not_ignore_mask = tf.to_float(tf.not_equal(scaled_labels_flattened,
-                                               ignore_label))
-    scaled_logits_flattened = tf.reshape(logits, shape=[-1])
+    not_ignore_masks_flattened = tf.to_float(tf.reshape(masks, shape=[-1]))
+    # not_ignore_mask = tf.to_float(tf.not_equal(scaled_labels_flattened,
+    #                                            ignore_label))
+    scaled_logits_flattened = tf.reshape(scaled_logits, shape=[-1])
     # tf.losses.mean_squared_error(
-    tf.losses.absolute_difference(
+    loss = tf.losses.absolute_difference(
             scaled_labels_flattened,
             scaled_logits_flattened,
-            weights=not_ignore_mask*loss_weight,
+            weights=not_ignore_masks_flattened*loss_weight,
             scope=loss_scope
             )
-    return not_ignore_mask, logits
+    print '+++++++++++', scaled_labels.get_shape(), scaled_logits.get_shape()
+    return loss, scaled_logits
 
+
+def add_val_regression_loss_for_single_scale(logits, labels, masks, loss_weight=1.0, upsample_logits=True, scope=None):
+  """Adds softmax cross entropy loss for logits of each scale.
+
+  Args:
+    scales_to_logits: A map from logits names for different scales to logits.
+      The logits have shape [batch, logits_height, logits_width, num_classes]. # {'merged_logits': <tf.Tensor 'regression:0' shape=(4, 49, 49, 6) dtype=float32>}
+    labels: Groundtruth labels with shape [batch, image_height, image_width, 6].
+    loss_weight: Float, loss weight.
+    upsample_logits: Boolean, upsample logits or not.
+    scope: String, the scope for the loss.
+
+  Raises:
+    ValueError: Label or logits is None.
+  """
+  if labels is None:
+      raise ValueError('No label for softmax cross entropy loss.')
+  if upsample_logits:
+      # Label is not downsampled, and instead we upsample logits.
+      print '+++ [Val] Upsample logits!'
+      scaled_logits = tf.image.resize_bilinear(
+              logits,
+              preprocess_utils.resolve_shape(labels, 4)[1:3],
+              align_corners=True)
+      scaled_labels = labels
+  else:
+      # Label is downsampled to the same size as logits.
+      scaled_labels = tf.image.resize_nearest_neighbor(
+              labels,
+              preprocess_utils.resolve_shape(logits, 4)[1:3],
+              align_corners=True)
+      scaled_logits = logits
+
+  assert scaled_labels.get_shape() == scaled_logits.get_shape(), 'The potentially reshaped logits and labels should match in shapes!'
+  assert scaled_labels.dtype == scaled_logits.dtype, 'The potentially reshaped logits and labels should match in types!'
+  scaled_labels_flattened = tf.reshape(scaled_labels, shape=[-1])
+  not_ignore_masks_flattened = tf.to_float(tf.reshape(masks, shape=[-1]))
+  scaled_logits_flattened = tf.reshape(scaled_logits, shape=[-1])
+  loss = tf.losses.absolute_difference(
+            scaled_labels_flattened,
+            scaled_logits_flattened,
+            weights=not_ignore_masks_flattened*loss_weight,
+            scope=scope
+            )
+  return loss, scaled_logits
 
 # def add_softmax_cross_entropy_loss_for_each_scale(scales_to_logits,
 #                                                   labels,
@@ -136,8 +189,9 @@ def add_regression_l2_loss_for_each_scale(scales_to_logits,
 #         scope=loss_scope)
 
 
-def get_model_init_fn(train_logdir,
+def get_model_init_fn(restore_logdir,
                       tf_initial_checkpoint,
+                      restore_logged,
                       initialize_last_layer,
                       last_layers,
                       ignore_missing_vars=False):
@@ -153,19 +207,23 @@ def get_model_init_fn(train_logdir,
   Returns:
     Initialization function.
   """
+  print restore_logdir
   if tf_initial_checkpoint is None:
-    tf.logging.info('======== Not initializing the model from the initial checkpoint (not given).')
+    tf.logging.info('==== Not initializing the model from the initial checkpoint (not given).')
+  else:
+    exclude_list = ['global_step']
     # return None
 
-  if tf.train.latest_checkpoint(train_logdir):
-    tf_initial_checkpoint = tf.train.latest_checkpoint(train_logdir)
-    tf.logging.info('======== Ignoring initialization; other checkpoint exists: %s'%tf_initial_checkpoint)
+  if tf.train.latest_checkpoint(restore_logdir) and restore_logged:
+    tf_initial_checkpoint = tf.train.latest_checkpoint(restore_logdir)
+    tf.logging.info('==== Ignoring initialization; restoring from logged checkpoint: %s'%tf_initial_checkpoint)
     # return None
+  else:
+    exclude_list = []
 
-  tf.logging.info('======== Initializing model from path: %s', tf_initial_checkpoint)
+  tf.logging.info('==== Initializing model from path: %s', tf_initial_checkpoint)
 
   # Variables that will not be restored.
-  exclude_list = ['global_step']
   if not initialize_last_layer:
     exclude_list.extend(last_layers)
 

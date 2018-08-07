@@ -82,10 +82,10 @@ DatasetDescriptor = collections.namedtuple(
 
 _APOLLOSCAPE_INFORMATION = DatasetDescriptor(
     splits_to_sizes={
-        # 'train': 1,
-        # 'val': 1,
-        'train': 731,
-        'val': 107,
+        'train': 3928,
+        'val': 207,
+        # 'train': 731,
+        # 'val': 107,
     },
     num_classes=1,
     ignore_label=255.,
@@ -134,18 +134,22 @@ def get_dataset(dataset_name, split_name, dataset_dir):
   keys_to_features = {
       'image/encoded': tf.FixedLenFeature(
           (), tf.string, default_value=''),
-      'seg/encoded': tf.FixedLenFeature(
-          (), tf.string, default_value=''),
       'image/filename': tf.FixedLenFeature(
           (), tf.string, default_value=''),
       'image/format': tf.FixedLenFeature(
-          (), tf.string, default_value='jpeg'),
+          (), tf.string, default_value='png'),
       'image/height': tf.FixedLenFeature(
           (), tf.int64, default_value=0),
       'image/width': tf.FixedLenFeature(
           (), tf.int64, default_value=0),
       # 'image/posemap/class/encoded': tf.VarLenFeature(dtype=tf.float32),
       'posedict/encoded': tf.VarLenFeature(dtype=tf.float32),
+      'vis/encoded': tf.FixedLenFeature(
+          (), tf.string, default_value=''),
+      'vis/format': tf.FixedLenFeature(
+          (), tf.string, default_value='png'),
+      'seg/encoded': tf.FixedLenFeature(
+          (), tf.string, default_value=''),
       'seg/format': tf.FixedLenFeature(
           (), tf.string, default_value='png'),
   }
@@ -153,6 +157,10 @@ def get_dataset(dataset_name, split_name, dataset_dir):
       'image': tfexample_decoder.Image(
           image_key='image/encoded',
           format_key='image/format',
+          channels=3),
+      'vis': tfexample_decoder.Image(
+          image_key='vis/encoded',
+          format_key='vis/format',
           channels=3),
       'seg': tfexample_decoder.Image(
           image_key='seg/encoded',

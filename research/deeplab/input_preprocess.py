@@ -25,6 +25,31 @@ np.set_printoptions(threshold=np.nan)
 _PROB_OF_FLIP = 0.5
 
 
+def preprocess_image_and_label_flip_only(image, vis, label, mask, is_training=True):
+  """Preprocesses the image and label by flipping the sample IN TRAINING ONLY.
+
+  Args:
+    image: Input image.
+    label: Ground truth annotation label.
+    is_training: If the preprocessing is used for training or not.
+
+  Returns:
+    image: Preprocessed image.
+    label: Preprocessed ground truth segmentation label.
+
+  Raises:
+    ValueError: Ground truth label not provided during training.
+  """
+  if is_training and label is None:
+    raise ValueError('During training, label must be provided.')
+
+  if is_training:
+    # Randomly left-right flip the image and label.
+    image, vis, label, mask, _ = preprocess_utils.flip_dim(
+        [image, vis, label, mask], _PROB_OF_FLIP, dim=1)
+
+  return image, vis, label, mask
+
 def preprocess_image_and_label(image,
                                label,
                                crop_height,

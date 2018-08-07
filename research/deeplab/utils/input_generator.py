@@ -42,8 +42,10 @@ def _get_data(dataset, data_provider, dataset_split):
   if 'seg' not in data_provider.list_items():
     raise ValueError('Failed to find labels.')
 
-  image, height, width = data_provider.get(
-      [common.IMAGE, common.HEIGHT, common.WIDTH])
+  image, vis, height, width = data_provider.get(
+      [common.IMAGE, 'vis', common.HEIGHT, common.WIDTH])
+  image = tf.reshape(image, [_DATASETS_INFORMATION[dataset.name].height, _DATASETS_INFORMATION[dataset.name].width,3])
+  vis = tf.reshape(vis, [_DATASETS_INFORMATION[dataset.name].height, _DATASETS_INFORMATION[dataset.name].width,3])
 
   # Some datasets do not contain image_name.
   if common.IMAGE_NAME in data_provider.list_items():
@@ -57,23 +59,29 @@ def _get_data(dataset, data_provider, dataset_split):
     seg, pose_dict = data_provider.get(['seg', 'pose_dict'])
   if dataset.name == 'apolloscape':
     pose_dict = tf.reshape(pose_dict, [-1, 6])
-    print '+++++++++++', seg.get_shape(), pose_dict.get_shape()
+    pose_dict = tf.identity(pose_dict, name='pose_dict')
     # pose_map = tf.zeros([_DATASETS_INFORMATION[dataset.name].height, _DATASETS_INFORMATION[dataset.name].width, 6], dtype=tf.float32)
-    # seg = tf.reshape(seg, [_DATASETS_INFORMATION[dataset.name].height, _DATASETS_INFORMATION[dataset.name].width])
-    seg_one_hot = tf.one_hot(tf.squeeze(seg), depth=tf.shape(pose_dict)[0])
-    print '+++++++++++', seg_one_hot.get_shape(), tf.shape(seg_one_hot)
-    pose_map = tf.matmul(seg_one_hot, tf.tile(tf.expand_dims(pose_dict,0), [tf.shape(seg_one_hot)[0], 1, 1]))
+    seg = tf.reshape(seg, [_DATASETS_INFORMATION[dataset.name].height, _DATASETS_INFORMATION[dataset.name].width, 1])
+    seg_one_hot = tf.one_hot(tf.reshape(seg, [-1]), depth=tf.shape(pose_dict)[0])
+    # print '+++++++++++', seg.get_shape(), pose_dict.get_shape()
+    # print '+++++++++++', seg_one_hot.get_shape(), tf.shape(seg_one_hot)
+    pose_map = tf.matmul(seg_one_hot, pose_dict)
+    pose_map = tf.reshape(pose_map, [_DATASETS_INFORMATION[dataset.name].height, _DATASETS_INFORMATION[dataset.name].width, 6])
+
+    seg = tf.cast(seg, tf.float32)
+    mask = tf.not_equal(seg, 0.)
 
     # label = tf.reshape(label, [_DATASETS_INFORMATION[dataset.name].height, _DATASETS_INFORMATION[dataset.name].width, 6])
+
     # ## Getting masks outof the posemap
     # # label = tf.reduce_mean(label, axis=2, keepdims=True)
     # # label = tf.where(label==255., tf.ones_like(label), tf.zeros_like(label))
 
     ## Getting inverse depth outof the posemap
     label = tf.gather(pose_map, [5], axis=2)
-    label = tf.where(tf.equal(label, dataset.ignore_label), label, 1./label)
+    label = tf.where(mask, 1./label, tf.zeros_like(label))
 
-  return image, label, image_name, height, width
+  return image, vis, label, image_name, height, width, seg, mask
 
 
 def get(dataset,
@@ -136,9 +144,9 @@ def get(dataset,
       dataset,
       num_readers=num_readers,
       reader_kwargs=options,
-      num_epochs=None if is_training else 1,
+      num_epochs=None,
       shuffle=is_training)
-  image, label, image_name, height, width = _get_data(dataset, data_provider,
+  image, vis, label, image_name, height, width, seg, mask = _get_data(dataset, data_provider,
                                                       dataset_split)
   if label is not None:
     if label.shape.ndims == 2:
@@ -150,43 +158,49 @@ def get(dataset,
       raise ValueError('Input label shape must be [height, width], or '
                        '[height, width, {1,6}].')
   label.set_shape([None, None, dataset.num_classes])
+  # original_label = tf.identity(label)
+  # original_image = tf.identity(image)
 
-  original_image, image, label = input_preprocess.preprocess_image_and_label(
-      image,
-      label,
-      crop_height=crop_size[0],
-      crop_width=crop_size[1],
-      min_resize_value=min_resize_value,
-      max_resize_value=max_resize_value,
-      resize_factor=resize_factor,
-      min_scale_factor=min_scale_factor,
-      max_scale_factor=max_scale_factor,
-      scale_factor_step_size=scale_factor_step_size,
-      ignore_label=dataset.ignore_label,
-      is_training=is_training,
-      model_variant=model_variant,
-      num_classes=dataset.num_classes)
+  # image, vis, label, mask = input_preprocess.preprocess_image_and_label_flip_only(
+  #         image, vis, label, mask, is_training=is_training)
 
-  original_label = tf.identity(label)
+  # original_image, image, label = input_preprocess.preprocess_image_and_label(
+  #     image,
+  #     label,
+  #     crop_height=crop_size[0],
+  #     crop_width=crop_size[1],
+  #     min_resize_value=min_resize_value,
+  #     max_resize_value=max_resize_value,
+  #     resize_factor=resize_factor,
+  #     min_scale_factor=min_scale_factor,
+  #     max_scale_factor=max_scale_factor,
+  #     scale_factor_step_size=scale_factor_step_size,
+  #     ignore_label=dataset.ignore_label,
+  #     is_training=is_training,
+  #     model_variant=model_variant,
+  #     num_classes=dataset.num_classes)
   sample = {
       common.IMAGE: image,
+      'vis': vis,
       common.IMAGE_NAME: image_name,
       common.HEIGHT: height,
       common.WIDTH: width
   }
   if label is not None:
     sample[common.LABEL] = label
-    sample['original_label'] = original_label
+    # sample['original_label'] = original_label
+    sample['seg'] = seg
+    sample['mask'] = mask
 
-  if not is_training:
-    # Original image is only used during visualization.
-    sample[common.ORIGINAL_IMAGE] = original_image,
-    num_threads = 1
+  # if not is_training:
+  #   # Original image is only used during visualization.
+  #   sample[common.ORIGINAL_IMAGE] = original_image,
+  #   num_threads = 1
 
   return tf.train.batch(
       sample,
       batch_size=batch_size,
       num_threads=num_threads,
       capacity=32 * batch_size,
-      allow_smaller_final_batch=not is_training,
+      allow_smaller_final_batch=False,
       dynamic_pad=True)
