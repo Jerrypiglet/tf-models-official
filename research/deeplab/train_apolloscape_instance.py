@@ -181,7 +181,7 @@ flags.DEFINE_string('train_split', 'train',
 flags.DEFINE_string('dataset_dir', 'deeplab/datasets/apolloscape', 'Where the dataset reside.')
 
 
-def _build_deeplab(inputs_queue, outputs_to_num_classes, ignore_label):
+def _build_deeplab(inputs_queue, outputs_to_num_classes):
   """Builds a clone of DeepLab.
 
   Args:
@@ -189,7 +189,6 @@ def _build_deeplab(inputs_queue, outputs_to_num_classes, ignore_label):
     # outputs_to_num_classes: A map from output type to the number of classes.
     #   For example, for the task of semantic segmentation with 21 semantic
     #   classes, we would have outputs_to_num_classes['semantic'] = 21.
-    ignore_label: Ignore label.
 
   Returns:
     A map of maps from output_type (e.g., semantic prediction) to a
@@ -303,7 +302,7 @@ def main(unused_argv):
 
       # Define the model and create clones.
       model_fn = _build_deeplab
-      model_args = (inputs_queue, {common.OUTPUT_TYPE: dataset.num_classes}, dataset.ignore_label)
+      model_args = (inputs_queue, {common.OUTPUT_TYPE: dataset.num_classes})
       clones = model_deploy.create_clones(config, model_fn, args=model_args)
 
       # Gather update_ops from the first clone. These contain, for example,

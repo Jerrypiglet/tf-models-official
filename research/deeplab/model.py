@@ -285,7 +285,7 @@ def multi_scale_logits(images,
         scaled_images,
         updated_options,
         weight_decay=weight_decay,
-        reuse=tf.AUTO_REUSE,
+        reuse=tf.AUTO_REUSE, # support for auto-reuse if variable exists!
         is_training=is_training,
         fine_tune_batch_norm=fine_tune_batch_norm,
         fine_tune_feature_extractor=fine_tune_feature_extractor) # {'regression': <tf.Tensor 'logits/regression/BiasAdd:0' shape=(4, 49, 49, 12) dtype=float32>}

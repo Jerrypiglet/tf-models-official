@@ -144,7 +144,7 @@ def get(dataset,
       dataset,
       num_readers=num_readers,
       reader_kwargs=options,
-      num_epochs=None if is_training else 1,
+      num_epochs=None,
       shuffle=is_training)
   image, vis, label, image_name, height, width, seg, mask = _get_data(dataset, data_provider,
                                                       dataset_split)
@@ -202,5 +202,5 @@ def get(dataset,
       batch_size=batch_size,
       num_threads=num_threads,
       capacity=32 * batch_size,
-      allow_smaller_final_batch=not is_training,
+      allow_smaller_final_batch=False,
       dynamic_pad=True)
