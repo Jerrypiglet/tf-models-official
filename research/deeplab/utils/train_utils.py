@@ -27,7 +27,6 @@ def scaled_logits_labels(logits, labels, upsample_logits):
       raise ValueError('No label for softmax cross entropy loss.')
     if upsample_logits:
       # Label is not downsampled, and instead we upsample logits.
-      print '+++ Upsample logits!'
       scaled_logits = tf.image.resize_bilinear(
             logits,
             preprocess_utils.resolve_shape(labels, 4)[1:3],
@@ -104,7 +103,7 @@ def add_discrete_regression_loss(logits,
     Raises:
       ValueError: Label or logits is None.
     """
-    print logits.get_shape(), labels.get_shape(), masks.get_shape(), bin_vals.get_shape() # (5, 68, 170, 16) (5, 272, 680, 1) (5, 272, 680, 1) (1, 16)
+    # print logits.get_shape(), labels.get_shape(), masks.get_shape(), bin_vals.get_shape() # (5, 68, 170, 16) (5, 272, 680, 1) (5, 272, 680, 1) (1, 16)
     prob = tf.nn.softmax(logits, axis=3)
     bin_vals_expand = tf.expand_dims(tf.expand_dims(bin_vals, 0), 0)
     bin_vals_expand = tf.tile(bin_vals_expand, [prob.get_shape()[0], prob.get_shape()[1], prob.get_shape()[2], 1])
@@ -159,50 +158,50 @@ def add_regression_loss(logits,
     return loss, scaled_logits
 
 
-def add_val_regression_loss(logits, labels, masks, loss_weight=1.0, upsample_logits=True, scope=None):
-  """Adds softmax cross entropy loss for logits of each scale.
+# def add_val_regression_loss(logits, labels, masks, loss_weight=1.0, upsample_logits=True, scope=None):
+#   """Adds softmax cross entropy loss for logits of each scale.
 
-  Args:
-    scales_to_logits: A map from logits names for different scales to logits.
-      The logits have shape [batch, logits_height, logits_width, num_classes]. # {'merged_logits': <tf.Tensor 'regression:0' shape=(4, 49, 49, 6) dtype=float32>}
-    labels: Groundtruth labels with shape [batch, image_height, image_width, 6].
-    loss_weight: Float, loss weight.
-    upsample_logits: Boolean, upsample logits or not.
-    scope: String, the scope for the loss.
+#   Args:
+#     scales_to_logits: A map from logits names for different scales to logits.
+#       The logits have shape [batch, logits_height, logits_width, num_classes]. # {'merged_logits': <tf.Tensor 'regression:0' shape=(4, 49, 49, 6) dtype=float32>}
+#     labels: Groundtruth labels with shape [batch, image_height, image_width, 6].
+#     loss_weight: Float, loss weight.
+#     upsample_logits: Boolean, upsample logits or not.
+#     scope: String, the scope for the loss.
 
-  Raises:
-    ValueError: Label or logits is None.
-  """
-  if labels is None:
-      raise ValueError('No label for softmax cross entropy loss.')
-  if upsample_logits:
-      # Label is not downsampled, and instead we upsample logits.
-      print '+++ [Val] Upsample logits!'
-      scaled_logits = tf.image.resize_bilinear(
-              logits,
-              preprocess_utils.resolve_shape(labels, 4)[1:3],
-              align_corners=True)
-      scaled_labels = labels
-  else:
-      # Label is downsampled to the same size as logits.
-      scaled_labels = tf.image.resize_nearest_neighbor(
-              labels,
-              preprocess_utils.resolve_shape(logits, 4)[1:3],
-              align_corners=True)
-      scaled_logits = logits
+#   Raises:
+#     ValueError: Label or logits is None.
+#   """
+#   if labels is None:
+#       raise ValueError('No label for softmax cross entropy loss.')
+#   if upsample_logits:
+#       # Label is not downsampled, and instead we upsample logits.
+#       print '+++ [Val] Upsample logits!'
+#       scaled_logits = tf.image.resize_bilinear(
+#               logits,
+#               preprocess_utils.resolve_shape(labels, 4)[1:3],
+#               align_corners=True)
+#       scaled_labels = labels
+#   else:
+#       # Label is downsampled to the same size as logits.
+#       scaled_labels = tf.image.resize_nearest_neighbor(
+#               labels,
+#               preprocess_utils.resolve_shape(logits, 4)[1:3],
+#               align_corners=True)
+#       scaled_logits = logits
 
-  assert scaled_labels.get_shape() == scaled_logits.get_shape(), 'The potentially reshaped logits and labels should match in shapes!'
-  assert scaled_labels.dtype == scaled_logits.dtype, 'The potentially reshaped logits and labels should match in types!'
-  scaled_labels_flattened = tf.reshape(scaled_labels, shape=[-1])
-  not_ignore_masks_flattened = tf.to_float(tf.reshape(masks, shape=[-1]))
-  scaled_logits_flattened = tf.reshape(scaled_logits, shape=[-1])
-  loss = tf.losses.absolute_difference(
-            scaled_labels_flattened,
-            scaled_logits_flattened,
-            weights=not_ignore_masks_flattened*loss_weight,
-            scope=scope
-            )
-  return loss, scaled_logits
+#   assert scaled_labels.get_shape() == scaled_logits.get_shape(), 'The potentially reshaped logits and labels should match in shapes!'
+#   assert scaled_labels.dtype == scaled_logits.dtype, 'The potentially reshaped logits and labels should match in types!'
+#   scaled_labels_flattened = tf.reshape(scaled_labels, shape=[-1])
+#   not_ignore_masks_flattened = tf.to_float(tf.reshape(masks, shape=[-1]))
+#   scaled_logits_flattened = tf.reshape(scaled_logits, shape=[-1])
+#   loss = tf.losses.absolute_difference(
+#             scaled_labels_flattened,
+#             scaled_logits_flattened,
+#             weights=not_ignore_masks_flattened*loss_weight,
+#             scope=scope
+#             )
+#   return loss, scaled_logits
 
 # def add_softmax_cross_entropy_loss_for_each_scale(scales_to_logits,
 #                                                   labels,

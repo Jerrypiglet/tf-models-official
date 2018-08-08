@@ -249,38 +249,38 @@ def _build_deeplab(inputs_queue, outputs_to_num_classes, outputs_to_indices, bin
 
   loss_list = []
   scaled_logits_list = []
-  if is_training:
-      for output, num_classes in six.iteritems(outputs_to_num_classes):
-          label_slice = tf.gather(samples[common.LABEL], [outputs_to_indices[output]], axis=3)
-          loss, scaled_logits = train_utils.add_discrete_regression_loss(
-            outputs_to_logits[output], # Tensor("logits/regression/BiasAdd:0", shape=(7, 68, 170, 1), dtype=float32, device=/device:GPU:0)
-            label_slice,
-            samples['mask'],
-            bin_vals[outputs_to_indices[output]],
-            loss_weight=1.0,
-            upsample_logits=FLAGS.upsample_logits,
-            scope=output)
-          loss_list.append(loss)
-          scaled_logits_list.append(scaled_logits)
-          # loss, scaled_logits = train_utils.add_regression_loss(
-          #   outputs_to_logits[output], # Tensor("logits/regression/BiasAdd:0", shape=(7, 68, 170, 1), dtype=float32, device=/device:GPU:0)
-          #   samples[common.LABEL],
-          #   samples['mask'],
-          #   loss_weight=1.0,
-          #   upsample_logits=FLAGS.upsample_logits,
-          #   scope=output)
-      # return outputs_to_logits
-  else:
-      tf.logging.info('Constructing validation: single-scale test.')
-      for output in sorted(outputs_to_logits):
-          print outputs_to_logits[output]
-          loss, scaled_logits = train_utils.add_val_regression_loss(
-            outputs_to_logits[output], # Tensor("logits_1/regression/BiasAdd:0", shape=(7, 68, 170, 1), dtype=float32, device=/device:GPU:3)
-            samples[common.LABEL],
-            samples['mask'],
-            loss_weight=1.0,
-            upsample_logits=FLAGS.upsample_logits,
-            scope=is_training_prefix)
+  # if is_training:
+  for output, num_classes in six.iteritems(outputs_to_num_classes):
+      label_slice = tf.gather(samples[common.LABEL], [outputs_to_indices[output]], axis=3)
+      loss, scaled_logits = train_utils.add_discrete_regression_loss(
+        outputs_to_logits[output], # Tensor("logits/regression/BiasAdd:0", shape=(7, 68, 170, 1), dtype=float32, device=/device:GPU:0)
+        label_slice,
+        samples['mask'],
+        bin_vals[outputs_to_indices[output]],
+        loss_weight=1.0,
+        upsample_logits=FLAGS.upsample_logits,
+        scope=is_training_prefix + '_' + output)
+      loss_list.append(loss)
+      scaled_logits_list.append(scaled_logits)
+      # loss, scaled_logits = train_utils.add_regression_loss(
+      #   outputs_to_logits[output], # Tensor("logits/regression/BiasAdd:0", shape=(7, 68, 170, 1), dtype=float32, device=/device:GPU:0)
+      #   samples[common.LABEL],
+      #   samples['mask'],
+      #   loss_weight=1.0,
+      #   upsample_logits=FLAGS.upsample_logits,
+      #   scope=output)
+  # return outputs_to_logits
+  # else:
+  #     tf.logging.info('Constructing validation: single-scale test.')
+  #     for output in sorted(outputs_to_logits):
+  #         print outputs_to_logits[output]
+  #         loss, scaled_logits = train_utils.add_val_regression_loss(
+  #           outputs_to_logits[output], # Tensor("logits_1/regression/BiasAdd:0", shape=(7, 68, 170, 1), dtype=float32, device=/device:GPU:3)
+  #           samples[common.LABEL],
+  #           samples['mask'],
+  #           loss_weight=1.0,
+  #           upsample_logits=FLAGS.upsample_logits,
+  #           scope=is_training_prefix)
   scaled_logits = tf.identity(tf.gather(scaled_logits, [5], axis=3), name=is_training_prefix+'scaled_regression')
   masks = tf.identity(samples['mask'], name=is_training_prefix+'not_ignore_mask_in_loss')
   loss_all = tf.add_n(loss_list)
@@ -390,7 +390,7 @@ def main(unused_argv):
     with tf.device('/device:GPU:3'):
         if FLAGS.if_val:
           ## Construct the validation graph; takes one GPU.
-          _build_deeplab(inputs_queue_val, outputs_to_num_classes=spaces_to_num_classes,
+          _build_deeplab(inputs_queue_val, spaces_to_num_classes, spaces_to_indices, bin_vals,
                   is_training=False, reuse=True)
 
     # Gather initial summaries.
@@ -560,8 +560,8 @@ def main(unused_argv):
     # print '===== ', len(list(set(trainables) - set(alls)))
     # print '===== ', len(list(set(alls) - set(trainables)))
 
-    for op in tf.get_default_graph().get_operations():
-        print str(op.name)
+    # for op in tf.get_default_graph().get_operations():
+    #     print str(op.name)
 
     # Start the training.
     slim.learning.train(
