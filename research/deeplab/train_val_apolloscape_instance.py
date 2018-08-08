@@ -235,10 +235,9 @@ def _build_deeplab(inputs_queue, outputs_to_num_classes, is_training=True, reuse
       atrous_rates=FLAGS.atrous_rates,
       output_stride=FLAGS.output_stride)
 
-  outputs_to_scales_to_logits = model.multi_scale_logits(
+  outputs_to_logits = model.single_scale_logits(
       samples[common.IMAGE],
       model_options=model_options,
-      image_pyramid=FLAGS.image_pyramid,
       weight_decay=FLAGS.weight_decay,
       is_training=is_training,
       fine_tune_batch_norm=FLAGS.fine_tune_batch_norm and is_training,
@@ -248,22 +247,21 @@ def _build_deeplab(inputs_queue, outputs_to_num_classes, is_training=True, reuse
   if is_training:
       for output, num_classes in six.iteritems(outputs_to_num_classes):
           # print output, num_classes, samples[common.LABEL], samples[common.IMAGE], '_build_deeplab@train_apolloscape_instance.py' # regression 6 Tensor("label:0", shape=(4, 769, 769, 6), dtype=float32), Tensor("image:0", shape=(4, 769, 769, 3), dtype=float32)
-          loss, scaled_logits = train_utils.add_regression_loss_for_each_scale(
-            outputs_to_scales_to_logits[output], # {'merged_logits': <tf.Tensor 'regression:0' shape=(4, 49, 49, 6) dtype=float32>}
+          loss, scaled_logits = train_utils.add_regression_loss(
+            outputs_to_logits[output], # Tensor("logits/regression/BiasAdd:0", shape=(7, 68, 170, 1), dtype=float32, device=/device:GPU:0)
             samples[common.LABEL],
             samples['mask'],
             loss_weight=1.0,
             upsample_logits=FLAGS.upsample_logits,
             scope=output)
 
-      return outputs_to_scales_to_logits
+      return outputs_to_logits
   else:
       tf.logging.info('Constructing validation: single-scale test.')
-      for output in sorted(outputs_to_scales_to_logits):
-          scales_to_logits = outputs_to_scales_to_logits[output]
-          print scales_to_logits[model.MERGED_LOGITS_SCOPE]
-          loss, scaled_logits = train_utils.add_val_regression_loss_for_single_scale(
-            scales_to_logits[model.MERGED_LOGITS_SCOPE], # <tf.Tensor 'regression:0' shape=(4, 49, 49, 6) dtype=float32>
+      for output in sorted(outputs_to_logits):
+          print outputs_to_logits[output]
+          loss, scaled_logits = train_utils.add_val_regression_loss(
+            outputs_to_logits[output], # Tensor("logits_1/regression/BiasAdd:0", shape=(7, 68, 170, 1), dtype=float32, device=/device:GPU:3)
             samples[common.LABEL],
             samples['mask'],
             loss_weight=1.0,
@@ -311,11 +309,11 @@ def main(unused_argv):
 
   if not(os.path.isdir(FLAGS.train_logdir)):
       tf.gfile.MakeDirs(FLAGS.train_logdir)
-  elif len(os.listdir(FLAGS.train_logdir) ) != 0:
-      if_delete_all = raw_input('#### The log folder %s exists and non-empty; delete all logs? [y/n] '%FLAGS.train_logdir)
-      if if_delete_all == 'y':
-          os.system('rm -rf %s/*'%FLAGS.train_logdir)
-          print '==== Log folder emptied.'
+  # elif len(os.listdir(FLAGS.train_logdir) ) != 0:
+  #     if_delete_all = raw_input('#### The log folder %s exists and non-empty; delete all logs? [y/n] '%FLAGS.train_logdir)
+  #     if if_delete_all == 'y':
+  #         os.system('rm -rf %s/*'%FLAGS.train_logdir)
+  #         print '==== Log folder emptied.'
 
   tf.logging.info('==== Logging in dir:%s; Training on %s set', FLAGS.train_logdir, FLAGS.train_split)
 

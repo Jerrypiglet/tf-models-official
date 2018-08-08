@@ -71,12 +71,6 @@ def _get_data(dataset, data_provider, dataset_split):
     seg = tf.cast(seg, tf.float32)
     mask = tf.not_equal(seg, 0.)
 
-    # label = tf.reshape(label, [_DATASETS_INFORMATION[dataset.name].height, _DATASETS_INFORMATION[dataset.name].width, 6])
-
-    # ## Getting masks outof the posemap
-    # # label = tf.reduce_mean(label, axis=2, keepdims=True)
-    # # label = tf.where(label==255., tf.ones_like(label), tf.zeros_like(label))
-
     ## Getting inverse depth outof the posemap
     label = tf.gather(pose_map, [5], axis=2)
     label = tf.where(mask, 1./label, tf.zeros_like(label))

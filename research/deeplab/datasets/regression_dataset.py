@@ -74,7 +74,7 @@ DatasetDescriptor = collections.namedtuple(
                       # class (if exists). For example, there are 20
                       # foreground classes + 1 background class in the PASCAL
                       # VOC 2012 dataset. Thus, we set num_classes=21.
-     'ignore_label',  # Ignore label value.
+     # 'ignore_label',  # Ignore label value.
      'height',
      'width',
     ]
@@ -88,7 +88,7 @@ _APOLLOSCAPE_INFORMATION = DatasetDescriptor(
         # 'val': 107,
     },
     num_classes=1,
-    ignore_label=255.,
+    # ignore_label=255.,
     # height=544,
     height=272,
     width=680,
@@ -125,7 +125,7 @@ def get_dataset(dataset_name, split_name, dataset_dir):
 
   # Prepare the variables for different datasets.
   num_classes = _DATASETS_INFORMATION[dataset_name].num_classes
-  ignore_label = _DATASETS_INFORMATION[dataset_name].ignore_label
+  # ignore_label = _DATASETS_INFORMATION[dataset_name].ignore_label
 
   file_pattern = _FILE_PATTERN
   file_pattern = os.path.join(dataset_dir, file_pattern % split_name)
@@ -181,7 +181,7 @@ def get_dataset(dataset_name, split_name, dataset_dir):
       decoder=decoder,
       num_samples=splits_to_sizes[split_name],
       items_to_descriptions=_ITEMS_TO_DESCRIPTIONS,
-      ignore_label=ignore_label,
+      # ignore_label=ignore_label,
       num_classes=num_classes,
       name=dataset_name,
       multi_label=True)

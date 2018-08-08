@@ -21,53 +21,47 @@ from deeplab.core import preprocess_utils
 
 slim = tf.contrib.slim
 
-def add_regression_loss_for_each_scale(scales_to_logits,
-                                                  labels,
-                                                  masks,
-                                                  # num_classes,
-                                                  # ignore_label,
-                                                  loss_weight=1.0,
-                                                  upsample_logits=True,
-                                                  scope=None):
-  """Adds softmax cross entropy loss for logits of each scale.
 
-  Args:
-    scales_to_logits: A map from logits names for different scales to logits.
-      The logits have shape [batch, logits_height, logits_width, num_classes]. # {'merged_logits': <tf.Tensor 'regression:0' shape=(4, 49, 49, 6) dtype=float32>}
-    labels: Groundtruth labels with shape [batch, image_height, image_width, 6].
-    num_classes: Integer, ground truth regression lebels dimension.
-    ignore_label: Integer, label to ignore.
-    loss_weight: Float, loss weight.
-    upsample_logits: Boolean, upsample logits or not.
-    scope: String, the scope for the loss.
+def add_regression_loss(logits,
+        labels,
+        masks,
+        # num_classes,
+        # ignore_label,
+        loss_weight=1.0,
+        upsample_logits=True,
+        scope=None):
+    """Adds softmax cross entropy loss for logits of each scale.
 
-  Raises:
-    ValueError: Label or logits is None.
-  """
+    Args:
+      scales_to_logits: A map from logits names for different scales to logits.
+        The logits have shape [batch, logits_height, logits_width, num_classes]. # {'merged_logits': <tf.Tensor 'regression:0' shape=(4, 49, 49, 6) dtype=float32>}
+      labels: Groundtruth labels with shape [batch, image_height, image_width, 6].
+      num_classes: Integer, ground truth regression lebels dimension.
+      ignore_label: Integer, label to ignore.
+      loss_weight: Float, loss weight.
+      upsample_logits: Boolean, upsample logits or not.
+      scope: String, the scope for the loss.
 
-  if labels is None:
-    raise ValueError('No label for softmax cross entropy loss.')
+    Raises:
+      ValueError: Label or logits is None.
+    """
 
-  for scale, logits in six.iteritems(scales_to_logits):
-    print '+++++++++++', labels.get_shape(), logits.get_shape()
-    loss_scope = None
-    if scope:
-      loss_scope = '%s_%s' % (scope, scale)
-
+    if labels is None:
+      raise ValueError('No label for softmax cross entropy loss.')
     if upsample_logits:
       # Label is not downsampled, and instead we upsample logits.
       print '+++ Upsample logits!'
       scaled_logits = tf.image.resize_bilinear(
-          logits,
-          preprocess_utils.resolve_shape(labels, 4)[1:3],
-          align_corners=True)
+            logits,
+            preprocess_utils.resolve_shape(labels, 4)[1:3],
+            align_corners=True)
       scaled_labels = labels
     else:
       # Label is downsampled to the same size as logits.
       scaled_labels = tf.image.resize_nearest_neighbor(
-          labels,
-          preprocess_utils.resolve_shape(logits, 4)[1:3],
-          align_corners=True)
+            labels,
+            preprocess_utils.resolve_shape(logits, 4)[1:3],
+            align_corners=True)
       scaled_logits = logits
 
     assert scaled_labels.get_shape() == scaled_logits.get_shape(), 'The potentially reshaped logits and labels should match in shapes!'
@@ -82,13 +76,13 @@ def add_regression_loss_for_each_scale(scales_to_logits,
             scaled_labels_flattened,
             scaled_logits_flattened,
             weights=not_ignore_masks_flattened*loss_weight,
-            scope=loss_scope
+            scope=scope
             )
     print '+++++++++++', scaled_labels.get_shape(), scaled_logits.get_shape()
     return loss, scaled_logits
 
 
-def add_val_regression_loss_for_single_scale(logits, labels, masks, loss_weight=1.0, upsample_logits=True, scope=None):
+def add_val_regression_loss(logits, labels, masks, loss_weight=1.0, upsample_logits=True, scope=None):
   """Adds softmax cross entropy loss for logits of each scale.
 
   Args:

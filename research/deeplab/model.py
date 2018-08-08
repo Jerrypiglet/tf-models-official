@@ -202,9 +202,8 @@ def scale_dimension(dim, scale):
     return int((float(dim) - 1.0) * scale + 1.0)
 
 
-def multi_scale_logits(images,
+def single_scale_logits(images,
                        model_options,
-                       image_pyramid,
                        weight_decay=0.0001,
                        is_training=False,
                        fine_tune_batch_norm=False,
@@ -236,29 +235,17 @@ def multi_scale_logits(images,
       add_image_level_feature = True, since add_image_level_feature requires
       crop_size information.
   """
-  # Setup default values.
-  if not image_pyramid:
-    image_pyramid = [1.0]
-  if model_options.crop_size is None and model_options.add_image_level_feature:
-    raise ValueError(
-        'Crop size must be specified for using image-level feature.')
-  crop_height = (
-      model_options.crop_size[0]
-      if model_options.crop_size else tf.shape(images)[1])
-  crop_width = (
-      model_options.crop_size[1]
-      if model_options.crop_size else tf.shape(images)[2])
 
   # Compute the height, width for the output logits.
   logits_output_stride = (
       model_options.decoder_output_stride or model_options.output_stride)
 
   logits_height = scale_dimension(
-      crop_height,
-      max(1.0, max(image_pyramid)) / logits_output_stride)
+      tf.shape(images)[1],
+      1.0 / logits_output_stride)
   logits_width = scale_dimension(
-      crop_width,
-      max(1.0, max(image_pyramid)) / logits_output_stride)
+      tf.shape(images)[2],
+      1.0 / logits_output_stride)
 
   # Compute the logits for each scale in the image pyramid.
   outputs_to_scales_to_logits = {
@@ -266,24 +253,9 @@ def multi_scale_logits(images,
       for k in model_options.outputs_to_num_classes
   } # {'regression': {}}
 
-  for image_scale in image_pyramid:
-    # print image_scale
-    if image_scale != 1.0:
-      scaled_height = scale_dimension(crop_height, image_scale)
-      scaled_width = scale_dimension(crop_width, image_scale)
-      scaled_crop_size = [scaled_height, scaled_width]
-      scaled_images = tf.image.resize_bilinear(
-          images, scaled_crop_size, align_corners=True)
-      if model_options.crop_size:
-        scaled_images.set_shape([None, scaled_height, scaled_width, 3])
-    else:
-      scaled_crop_size = model_options.crop_size
-      scaled_images = images
-
-    updated_options = model_options._replace(crop_size=scaled_crop_size)
-    outputs_to_logits = _get_logits( # Here we get the regression 'logits' from features!
-        scaled_images,
-        updated_options,
+  outputs_to_logits = _get_logits( # Here we get the regression 'logits' from features!
+        images,
+        model_options,
         weight_decay=weight_decay,
         reuse=tf.AUTO_REUSE, # support for auto-reuse if variable exists!
         is_training=is_training,
@@ -291,39 +263,7 @@ def multi_scale_logits(images,
         fine_tune_feature_extractor=fine_tune_feature_extractor) # {'regression': <tf.Tensor 'logits/regression/BiasAdd:0' shape=(4, 49, 49, 12) dtype=float32>}
     # outputs_to_logits['regression'] = tf.identity(outputs_to_logits['regression'], name='regression')
 
-    # Resize the logits to have the same dimension before merging.
-    for output in sorted(outputs_to_logits):
-      outputs_to_logits[output] = tf.image.resize_bilinear(
-          outputs_to_logits[output], [logits_height, logits_width],
-          align_corners=True)
-
-    # Return when only one input scale.
-    if len(image_pyramid) == 1:
-      for output in sorted(model_options.outputs_to_num_classes):
-        outputs_to_scales_to_logits[output][
-            MERGED_LOGITS_SCOPE] = outputs_to_logits[output]
-      return outputs_to_scales_to_logits
-
-    # Save logits to the output map.
-    for output in sorted(model_options.outputs_to_num_classes):
-      outputs_to_scales_to_logits[output][
-          'logits_%.2f' % image_scale] = outputs_to_logits[output]
-
-  # Merge the logits from all the multi-scale inputs.
-  for output in sorted(model_options.outputs_to_num_classes):
-    # Concatenate the multi-scale logits for each output type.
-    all_logits = [
-        tf.expand_dims(logits, axis=4)
-        for logits in outputs_to_scales_to_logits[output].values()
-    ]
-    all_logits = tf.concat(all_logits, 4)
-    merge_fn = (
-        tf.reduce_max
-        if model_options.merge_method == 'max' else tf.reduce_mean)
-    outputs_to_scales_to_logits[output][MERGED_LOGITS_SCOPE] = merge_fn(
-        all_logits, axis=4)
-
-  return outputs_to_scales_to_logits
+  return outputs_to_logits
 
 
 def extract_features(images,

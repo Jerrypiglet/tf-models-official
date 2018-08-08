@@ -18,7 +18,7 @@ import tensorflow as tf
 
 
 def flip_dim(tensor_list, prob=0.5, dim=1):
-  """Randomly flips a dimension of the given tensor.
+  """Randomly flips a dimension of treturn outputs_to_scales_to_logitshe given tensor.
 
   The decision to randomly flip the `Tensors` is made together. In other words,
   all or none of the images pass in are flipped.
