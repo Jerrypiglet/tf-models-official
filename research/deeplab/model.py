@@ -391,7 +391,6 @@ def _get_logits(images,
   Returns:
     outputs_to_logits: A map from output_type to logits.
   """
-  # images = tf.identity(images, name='tmp')
   features, end_points = extract_features(
       images,
       model_options,
@@ -400,9 +399,6 @@ def _get_logits(images,
       is_training=is_training,
       fine_tune_batch_norm=fine_tune_batch_norm,
       fine_tune_feature_extractor=fine_tune_feature_extractor)
-  # print features.get_shape(), 'features.get_shape() @_get_logits() @model.py'
-  # features = tf.identity(features, name='tmp')
-  # print model_options, weight_decay, reuse, is_training, fine_tune_batch_norm
 
   if model_options.decoder_output_stride is not None:
     decoder_height = scale_dimension(model_options.crop_size[0],
@@ -421,10 +417,8 @@ def _get_logits(images,
         is_training=is_training,
         fine_tune_batch_norm=fine_tune_batch_norm)
 
-  # features = tf.identity(features, name='tmp')
   outputs_to_logits = {}
   for output in sorted(model_options.outputs_to_num_classes):
-    # print '+++++', output, model_options.outputs_to_num_classes
     outputs_to_logits[output] = get_branch_logits(
         features,
         model_options.outputs_to_num_classes[output],

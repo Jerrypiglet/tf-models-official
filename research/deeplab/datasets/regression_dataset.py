@@ -77,6 +77,9 @@ DatasetDescriptor = collections.namedtuple(
      # 'ignore_label',  # Ignore label value.
      'height',
      'width',
+     'pose_range',
+     'bin_nums',
+     'space_names',
     ]
 )
 
@@ -87,11 +90,24 @@ _APOLLOSCAPE_INFORMATION = DatasetDescriptor(
         # 'train': 731,
         # 'val': 107,
     },
-    num_classes=1,
+    num_classes=6,
     # ignore_label=255.,
     # height=544,
     height=272,
     width=680,
+    # pose_range = [[-5.0, 10.0],
+    #     [-5.0, 10.0],
+    #     [-10.0, 10.0]],
+    # bin_nums = [16, 16, 64],
+    # space_names = ['x', 'y', 'z'],
+    pose_range = [[-np.pi/4, np.pi/4],
+        [-np.pi/4, np.pi/4],
+        [-np.pi, np.pi],
+        [-5.0, 10.0],
+        [-5.0, 10.0],
+        [-10.0, 10.0]],
+    bin_nums = [8, 8, 64, 16, 16, 64],
+    space_names = ['row', 'pitch', 'yaw', 'x', 'y', 'z'],
 )
 
 _DATASETS_INFORMATION = {
@@ -125,6 +141,9 @@ def get_dataset(dataset_name, split_name, dataset_dir):
 
   # Prepare the variables for different datasets.
   num_classes = _DATASETS_INFORMATION[dataset_name].num_classes
+  pose_range = _DATASETS_INFORMATION[dataset_name].pose_range
+  bin_nums = _DATASETS_INFORMATION[dataset_name].bin_nums
+  space_names = _DATASETS_INFORMATION[dataset_name].space_names
   # ignore_label = _DATASETS_INFORMATION[dataset_name].ignore_label
 
   file_pattern = _FILE_PATTERN
@@ -182,6 +201,9 @@ def get_dataset(dataset_name, split_name, dataset_dir):
       num_samples=splits_to_sizes[split_name],
       items_to_descriptions=_ITEMS_TO_DESCRIPTIONS,
       # ignore_label=ignore_label,
+      pose_range=pose_range,
+      bin_nums=bin_nums,
+      space_names=space_names,
       num_classes=num_classes,
       name=dataset_name,
       multi_label=True)

@@ -71,9 +71,10 @@ def _get_data(dataset, data_provider, dataset_split):
     seg = tf.cast(seg, tf.float32)
     mask = tf.not_equal(seg, 0.)
 
-    ## Getting inverse depth outof the posemap
-    label = tf.gather(pose_map, [5], axis=2)
-    label = tf.where(mask, 1./label, tf.zeros_like(label))
+    # ## Getting inverse depth outof the posemap
+    # label = tf.gather(pose_map, [5], axis=2)
+    # label = tf.where(mask, 1./label, tf.zeros_like(label))
+    label = tf.where(tf.tile(mask, [1, 1, 6]), pose_map, tf.zeros_like(pose_map))
 
   return image, vis, label, image_name, height, width, seg, mask
 
@@ -146,7 +147,7 @@ def get(dataset,
     if label.shape.ndims == 2:
       label = tf.expand_dims(label, 2)
     # elif label.shape.ndims == 3 and label.shape.dims[2] == 1:
-    elif label.shape.ndims == 3 and label.shape.dims[2] in [1, 6]: # 1 for segmentation label maps, and 6 for posemaps
+    elif label.shape.ndims == 3 and label.shape.dims[2] in [1, 6, 3]: # 1 for segmentation label maps, and 6 for posemaps
       pass
     else:
       raise ValueError('Input label shape must be [height, width], or '

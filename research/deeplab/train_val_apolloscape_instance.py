@@ -78,6 +78,9 @@ flags.DEFINE_string('restore_logdir', None,
 flags.DEFINE_integer('log_steps', 10,
                      'Display logging information at every log_steps.')
 
+flags.DEFINE_boolean('if_val', False,
+                     'If we VALIDATE the model.')
+
 flags.DEFINE_integer('val_interval_steps', 20,
                      'How often, in steps, we VALIDATE the model.')
 
@@ -195,7 +198,7 @@ flags.DEFINE_string('val_split', 'val',
 flags.DEFINE_string('dataset_dir', 'deeplab/datasets/apolloscape', 'Where the dataset reside.')
 
 
-def _build_deeplab(inputs_queue, outputs_to_num_classes, is_training=True, reuse=False):
+def _build_deeplab(inputs_queue, outputs_to_num_classes, outputs_to_indices, bin_vals, is_training=True, reuse=False):
   """Builds a clone of DeepLab.
 
   Args:
@@ -242,20 +245,31 @@ def _build_deeplab(inputs_queue, outputs_to_num_classes, is_training=True, reuse
       is_training=is_training,
       fine_tune_batch_norm=FLAGS.fine_tune_batch_norm and is_training,
       fine_tune_feature_extractor=FLAGS.fine_tune_feature_extractor and is_training)
-      # print outputs_to_scales_to_logits, 'outputs_to_scales_to_logits @_build_deeplab @train_apolloscape_instance.py' # {'regression': {'merged_logits': <tf.Tensor 'ResizeBilinear_2:0' shape=(4, 49, 49, 6) dtype=float32>}}
+  # print outputs_to_logits, 'outputs_to_scales_to_logits @_build_deeplab @train_apolloscape_instance.py' # {'y': <tf.Tensor 'logits_1/y/BiasAdd:0' shape=(5, 68, 170, 16) dtype=float32>, 'x': <tf.Tensor 'logits/x/BiasAdd:0' shape=(5, 68, 170, 16) dtype=float32>, 'z': <tf.Tensor 'logits_2/z/BiasAdd:0' shape=(5, 68, 170, 64) dtype=float32>}
 
+  loss_list = []
+  scaled_logits_list = []
   if is_training:
       for output, num_classes in six.iteritems(outputs_to_num_classes):
-          # print output, num_classes, samples[common.LABEL], samples[common.IMAGE], '_build_deeplab@train_apolloscape_instance.py' # regression 6 Tensor("label:0", shape=(4, 769, 769, 6), dtype=float32), Tensor("image:0", shape=(4, 769, 769, 3), dtype=float32)
-          loss, scaled_logits = train_utils.add_regression_loss(
+          label_slice = tf.gather(samples[common.LABEL], [outputs_to_indices[output]], axis=3)
+          loss, scaled_logits = train_utils.add_discrete_regression_loss(
             outputs_to_logits[output], # Tensor("logits/regression/BiasAdd:0", shape=(7, 68, 170, 1), dtype=float32, device=/device:GPU:0)
-            samples[common.LABEL],
+            label_slice,
             samples['mask'],
+            bin_vals[outputs_to_indices[output]],
             loss_weight=1.0,
             upsample_logits=FLAGS.upsample_logits,
             scope=output)
-
-      return outputs_to_logits
+          loss_list.append(loss)
+          scaled_logits_list.append(scaled_logits)
+          # loss, scaled_logits = train_utils.add_regression_loss(
+          #   outputs_to_logits[output], # Tensor("logits/regression/BiasAdd:0", shape=(7, 68, 170, 1), dtype=float32, device=/device:GPU:0)
+          #   samples[common.LABEL],
+          #   samples['mask'],
+          #   loss_weight=1.0,
+          #   upsample_logits=FLAGS.upsample_logits,
+          #   scope=output)
+      # return outputs_to_logits
   else:
       tf.logging.info('Constructing validation: single-scale test.')
       for output in sorted(outputs_to_logits):
@@ -267,13 +281,13 @@ def _build_deeplab(inputs_queue, outputs_to_num_classes, is_training=True, reuse
             loss_weight=1.0,
             upsample_logits=FLAGS.upsample_logits,
             scope=is_training_prefix)
-
-  scaled_logits = tf.identity(scaled_logits, name=is_training_prefix+'scaled_regression')
+  scaled_logits = tf.identity(tf.gather(scaled_logits, [5], axis=3), name=is_training_prefix+'scaled_regression')
   masks = tf.identity(samples['mask'], name=is_training_prefix+'not_ignore_mask_in_loss')
-  loss = tf.identity(loss, name=is_training_prefix+'loss')
+  loss_all = tf.add_n(loss_list)
+  loss_all = tf.identity(loss_all, name=is_training_prefix+'loss_all')
 
-  if is_training:
-      return outputs_to_scales_to_logits
+  # if is_training:
+  #     return outputs_to_scales_to_logits
 
 
 def main(unused_argv):
@@ -295,30 +309,38 @@ def main(unused_argv):
   # Split the batch across GPUs.
   assert FLAGS.train_batch_size % config.num_clones == 0, (
       'Training batch size not divisble by number of clones (GPUs).')
-
   clone_batch_size = FLAGS.train_batch_size // config.num_clones
 
   # Get dataset-dependent information.
   dataset = regression_dataset.get_dataset(
       FLAGS.dataset, FLAGS.train_split, dataset_dir=FLAGS.dataset_dir)
-
   dataset_val = regression_dataset.get_dataset(
       FLAGS.dataset, FLAGS.val_split, dataset_dir=FLAGS.dataset_dir)
-
   print '#### The data has size:', dataset.num_samples
 
+  # Get logging dir ready.
   if not(os.path.isdir(FLAGS.train_logdir)):
       tf.gfile.MakeDirs(FLAGS.train_logdir)
-  # elif len(os.listdir(FLAGS.train_logdir) ) != 0:
-  #     if_delete_all = raw_input('#### The log folder %s exists and non-empty; delete all logs? [y/n] '%FLAGS.train_logdir)
-  #     if if_delete_all == 'y':
-  #         os.system('rm -rf %s/*'%FLAGS.train_logdir)
-  #         print '==== Log folder emptied.'
-
+  elif len(os.listdir(FLAGS.train_logdir) ) != 0:
+      # if_delete_all = raw_input('#### The log folder %s exists and non-empty; delete all logs? [y/n] '%FLAGS.train_logdir)
+      # if if_delete_all == 'y':
+      os.system('rm -rf %s/*'%FLAGS.train_logdir)
+      print '==== Log folder emptied.'
   tf.logging.info('==== Logging in dir:%s; Training on %s set', FLAGS.train_logdir, FLAGS.train_split)
 
   with tf.Graph().as_default() as graph:
     with tf.device(config.inputs_device()):
+      bin_range = [np.linspace(r[0], r[1], num=b).tolist() for r, b in zip(dataset.pose_range, dataset.bin_nums)]
+      spaces_to_num_classes = {}
+      spaces_to_indices = {}
+      for space, bin_num, idx in zip(dataset.space_names, dataset.bin_nums,range(len(dataset.space_names))):
+          spaces_to_num_classes[space] = bin_num
+          spaces_to_indices[space] = idx
+      bin_vals = [tf.constant(value=[bin_range[i]], dtype=tf.float32, shape=[1, dataset.bin_nums[i]], name=name) \
+                  for i, name in enumerate(dataset.space_names)]
+      print spaces_to_num_classes
+      print spaces_to_indices
+
       samples = input_generator.get(
           dataset,
           FLAGS.train_crop_size,
@@ -357,7 +379,7 @@ def main(unused_argv):
 
       # Define the model and create clones.
       model_fn = _build_deeplab
-      model_args = (inputs_queue, {common.OUTPUT_TYPE: dataset.num_classes}, True, False)
+      model_args = (inputs_queue, spaces_to_num_classes, spaces_to_indices, bin_vals, True, False)
       clones = model_deploy.create_clones(config, model_fn, args=model_args)
 
       # Gather update_ops from the first clone. These contain, for example,
@@ -366,19 +388,25 @@ def main(unused_argv):
       update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS, first_clone_scope)
 
     with tf.device('/device:GPU:3'):
-      ## Construct the validation graph
-      _build_deeplab(inputs_queue_val, outputs_to_num_classes={common.OUTPUT_TYPE: dataset.num_classes},
-              is_training=False, reuse=True)
+        if FLAGS.if_val:
+          ## Construct the validation graph; takes one GPU.
+          _build_deeplab(inputs_queue_val, outputs_to_num_classes=spaces_to_num_classes,
+                  is_training=False, reuse=True)
 
     # Gather initial summaries.
     summaries = set(tf.get_collection(tf.GraphKeys.SUMMARIES))
 
     # Add summaries for images, labels, semantic predictions
     if FLAGS.save_summaries_images:
-      # pattern = first_clone_scope + '/%s:0'
-      pattern = 'val-%s:0'
+      if not(FLAGS.if_val):
+          if FLAGS.num_clones > 1:
+              pattern = first_clone_scope + '/%s:0'
+          else:
+              pattern = '%s:0'
+      else:
+          pattern = 'val-%s:0'
       summary_mask = graph.get_tensor_by_name(pattern%'not_ignore_mask_in_loss')
-      summary_mask = tf.reshape(summary_mask, [-1, FLAGS.train_crop_size[0], FLAGS.train_crop_size[1], dataset.num_classes])
+      summary_mask = tf.reshape(summary_mask, [-1, FLAGS.train_crop_size[0], FLAGS.train_crop_size[1], 1])
       summary_mask_float = tf.to_float(summary_mask)
       if dataset.num_classes > 1:
           summary_mask_float = tf.gather(summary_mask_float, [0, 1, 2], axis=3)
@@ -396,7 +424,7 @@ def main(unused_argv):
       summary_label = graph.get_tensor_by_name(pattern%common.LABEL)
       # # Scale up summary image pixel values for better visualization.
       if dataset.num_classes > 1:
-          summary_label = tf.gather(summary_label, [0, 1, 2], axis=3)
+          summary_label = tf.gather(summary_label, [5], axis=3)
       summary_label = tf.where(summary_mask, summary_label, tf.zeros_like(summary_label))
       pixel_scaling = tf.div(255., tf.reduce_max(tf.where(tf.not_equal(summary_label, 255.), summary_label, tf.zeros_like(summary_label))))
       summary_label_uint8 = tf.cast(summary_label * pixel_scaling, tf.uint8)
@@ -416,7 +444,7 @@ def main(unused_argv):
       # predictions = tf.expand_dims(tf.argmax(first_clone_output, 3), -1)
       # summary_predictions = tf.cast(predictions * pixel_scaling, tf.uint8)
       if dataset.num_classes > 1:
-          summary_regression = tf.gather(summary_regression, [0, 1, 2], axis=3)
+          summary_regression = tf.gather(summary_regression, [5], axis=3)
       summary_regression = tf.where(summary_mask, summary_regression, tf.zeros_like(summary_regression))
       summaries.add(tf.summary.image(
           'samples/%s' % 'regression', tf.gather(scale_to_255(summary_regression, pixel_scaling), [0, 1, 2])))
@@ -425,7 +453,7 @@ def main(unused_argv):
       summary_diff = tf.where(summary_mask, summary_diff, tf.zeros_like(summary_diff))
       summaries.add(tf.summary.image('samples/%s' % 'diff', tf.gather(scale_to_255(summary_diff, pixel_scaling), [0, 1, 2])))
 
-      summary_loss = graph.get_tensor_by_name('val-loss:0')
+      summary_loss = graph.get_tensor_by_name(pattern%'loss_all')
       summaries.add(tf.summary.scalar('total_loss/val', summary_loss))
 
     # Add summaries for losses.
@@ -448,7 +476,7 @@ def main(unused_argv):
     with tf.device(config.variables_device()):
       total_loss, grads_and_vars = model_deploy.optimize_clones(
           clones, optimizer)
-      total_loss = tf.check_numerics(total_loss, 'Loss is inf or nan.')
+      # total_loss = tf.check_numerics(total_loss, 'Loss is inf or nan.')
       summaries.add(tf.summary.scalar('total_loss/train', total_loss))
 
       # Modify the gradients for biases and last layer variables.
@@ -464,8 +492,6 @@ def main(unused_argv):
       if grad_mult:
         grads_and_vars = slim.learning.multiply_gradients(
             grads_and_vars, grad_mult)
-        # print '////grad_mult', grad_mult
-        # print '////grads_and_vars', len(grads_and_vars), grads_and_vars
 
       # Create gradient update op.
       grad_updates = optimizer.apply_gradients(
@@ -493,11 +519,14 @@ def main(unused_argv):
 
         # calc training losses
         loss, should_stop = slim.learning.train_step(sess, train_op, global_step, train_step_kwargs)
+        # first_clone_test = graph.get_tensor_by_name('loss_all:0')
+        #         # ('%s/%s:0' % (first_clone_scope, 'loss_all')).strip('/'))
+        # loss = sess.run(first_clone_test)
         print 'loss: ', loss
         should_stop = 0
 
-        if train_step_fn.step % FLAGS.val_interval_steps == 0:
-            first_clone_test = graph.get_tensor_by_name('val-loss:0')
+        if FLAGS.if_val and train_step_fn.step % FLAGS.val_interval_steps == 0:
+            first_clone_test = graph.get_tensor_by_name('val-loss')
             test = sess.run(first_clone_test)
             print '-- Validating... Loss: %.4f'%test
 
@@ -531,8 +560,8 @@ def main(unused_argv):
     # print '===== ', len(list(set(trainables) - set(alls)))
     # print '===== ', len(list(set(alls) - set(trainables)))
 
-    # for op in tf.get_default_graph().get_operations():
-    #     print str(op.name)
+    for op in tf.get_default_graph().get_operations():
+        print str(op.name)
 
     # Start the training.
     slim.learning.train(
