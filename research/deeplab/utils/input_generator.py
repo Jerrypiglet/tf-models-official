@@ -55,16 +55,12 @@ def _get_data(dataset, data_provider, dataset_split):
 
   label = None
   if dataset_split != common.TEST_SET:
-    # label, = data_provider.get([common.LABELS_CLASS])
     seg, pose_dict = data_provider.get(['seg', 'pose_dict'])
   if dataset.name == 'apolloscape':
     pose_dict = tf.reshape(pose_dict, [-1, 6])
     pose_dict = tf.identity(pose_dict, name='pose_dict')
-    # pose_map = tf.zeros([_DATASETS_INFORMATION[dataset.name].height, _DATASETS_INFORMATION[dataset.name].width, 6], dtype=tf.float32)
     seg = tf.reshape(seg, [_DATASETS_INFORMATION[dataset.name].height, _DATASETS_INFORMATION[dataset.name].width, 1])
     seg_one_hot = tf.one_hot(tf.reshape(seg, [-1]), depth=tf.shape(pose_dict)[0])
-    # print '+++++++++++', seg.get_shape(), pose_dict.get_shape()
-    # print '+++++++++++', seg_one_hot.get_shape(), tf.shape(seg_one_hot)
     pose_map = tf.matmul(seg_one_hot, pose_dict)
     pose_map = tf.reshape(pose_map, [_DATASETS_INFORMATION[dataset.name].height, _DATASETS_INFORMATION[dataset.name].width, 6])
 

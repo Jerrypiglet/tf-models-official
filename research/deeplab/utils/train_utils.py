@@ -55,7 +55,8 @@ def my_pose_loss(pose, label, mask, balance=1000, name='pose_loss', loss_type='r
     def smooth_l1_loss(predictions, labels, masks):
         masks_expanded = tf.tile(masks, [1, 1, 1, labels.get_shape()[3]])
         loss_sum = tf.losses.huber_loss(labels, predictions, delta=1.0, weights=tf.to_float(masks_expanded))
-        return loss_sum / tf.to_float(tf.shape(labels)[0])
+        # return loss_sum / tf.to_float(tf.shape(labels)[0])
+        return loss_sum
 
     rot, trans = slice_pose(pose)
     rot_gt, trans_gt = slice_pose(label)

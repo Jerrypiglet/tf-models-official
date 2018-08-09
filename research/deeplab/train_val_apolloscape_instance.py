@@ -100,7 +100,7 @@ flags.DEFINE_enum('learning_policy', 'poly', ['poly', 'step'],
 
 # Use 0.007 when training on PASCAL augmented training set, train_aug. When
 # fine-tuning on PASCAL trainval set, use learning rate=0.0001.
-flags.DEFINE_float('base_learning_rate', .0001,
+flags.DEFINE_float('base_learning_rate', .00001,
                    'The base learning rate for model training.')
 
 flags.DEFINE_float('learning_rate_decay_factor', 0.1,
@@ -262,25 +262,6 @@ def _build_deeplab(inputs_queue, outputs_to_num_classes, outputs_to_indices, bin
         scope=is_training_prefix + '_' + output)
       loss_list.append(loss)
       scaled_logits_list.append(scaled_logits)
-      # loss, scaled_logits = train_utils.add_regression_loss(
-      #   outputs_to_logits[output], # Tensor("logits/regression/BiasAdd:0", shape=(7, 68, 170, 1), dtype=float32, device=/device:GPU:0)
-      #   samples[common.LABEL],
-      #   samples['mask'],
-      #   loss_weight=1.0,
-      #   upsample_logits=FLAGS.upsample_logits,
-      #   scope=output)
-  # return outputs_to_logits
-  # else:
-  #     tf.logging.info('Constructing validation: single-scale test.')
-  #     for output in sorted(outputs_to_logits):
-  #         print outputs_to_logits[output]
-  #         loss, scaled_logits = train_utils.add_val_regression_loss(
-  #           outputs_to_logits[output], # Tensor("logits_1/regression/BiasAdd:0", shape=(7, 68, 170, 1), dtype=float32, device=/device:GPU:3)
-  #           samples[common.LABEL],
-  #           samples['mask'],
-  #           loss_weight=1.0,
-  #           upsample_logits=FLAGS.upsample_logits,
-  #           scope=is_training_prefix)
   scaled_logits = tf.identity(tf.gather(scaled_logits, [5], axis=3), name=is_training_prefix+'scaled_regression')
   masks = tf.identity(samples['mask'], name=is_training_prefix+'not_ignore_mask_in_loss')
   loss_all = tf.add_n(loss_list)
@@ -339,7 +320,7 @@ def main(unused_argv):
       bin_vals = [tf.constant(value=[bin_range[i]], dtype=tf.float32, shape=[1, dataset.bin_nums[i]], name=name) \
                   for i, name in enumerate(dataset.space_names)]
       print spaces_to_num_classes
-      print spaces_to_indices
+      # print spaces_to_indices
 
       samples = input_generator.get(
           dataset,
@@ -408,8 +389,6 @@ def main(unused_argv):
       summary_mask = graph.get_tensor_by_name(pattern%'not_ignore_mask_in_loss')
       summary_mask = tf.reshape(summary_mask, [-1, FLAGS.train_crop_size[0], FLAGS.train_crop_size[1], 1])
       summary_mask_float = tf.to_float(summary_mask)
-      if dataset.num_classes > 1:
-          summary_mask_float = tf.gather(summary_mask_float, [0, 1, 2], axis=3)
       summaries.add(tf.summary.image('samples/%s' % 'not_ignore_mask', tf.gather(tf.cast(summary_mask_float*255., tf.uint8), [0, 1, 2])))
 
       summary_image = graph.get_tensor_by_name(pattern%common.IMAGE)
@@ -468,7 +447,7 @@ def main(unused_argv):
           FLAGS.training_number_of_steps, FLAGS.learning_power,
           FLAGS.slow_start_step, FLAGS.slow_start_learning_rate)
       # optimizer = tf.train.MomentumOptimizer(learning_rate, FLAGS.momentum)
-      optimizer = tf.train.AdamOptimizer(learning_rate)
+      optimizer = tf.train.AdamOptimizer(FLAGS.base_learning_rate)
       summaries.add(tf.summary.scalar('learning_rate', learning_rate))
 
     startup_delay_steps = FLAGS.task * FLAGS.startup_delay_steps
@@ -519,14 +498,14 @@ def main(unused_argv):
 
         # calc training losses
         loss, should_stop = slim.learning.train_step(sess, train_op, global_step, train_step_kwargs)
-        # first_clone_test = graph.get_tensor_by_name('loss_all:0')
-        #         # ('%s/%s:0' % (first_clone_scope, 'loss_all')).strip('/'))
+        # first_clone_test = graph.get_tensor_by_name(
+        #         ('%s/%s:0' % (first_clone_scope, 'loss_all')).strip('/'))
         # loss = sess.run(first_clone_test)
         print 'loss: ', loss
         should_stop = 0
 
         if FLAGS.if_val and train_step_fn.step % FLAGS.val_interval_steps == 0:
-            first_clone_test = graph.get_tensor_by_name('val-loss')
+            first_clone_test = graph.get_tensor_by_name('val-loss_all:0')
             test = sess.run(first_clone_test)
             print '-- Validating... Loss: %.4f'%test
 
