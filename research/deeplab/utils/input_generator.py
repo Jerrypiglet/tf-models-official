@@ -149,27 +149,6 @@ def get(dataset,
       raise ValueError('Input label shape must be [height, width], or '
                        '[height, width, {1,6}].')
   label.set_shape([None, None, dataset.num_classes])
-  # original_label = tf.identity(label)
-  # original_image = tf.identity(image)
-
-  # image, vis, label, mask = input_preprocess.preprocess_image_and_label_flip_only(
-  #         image, vis, label, mask, is_training=is_training)
-
-  # original_image, image, label = input_preprocess.preprocess_image_and_label(
-  #     image,
-  #     label,
-  #     crop_height=crop_size[0],
-  #     crop_width=crop_size[1],
-  #     min_resize_value=min_resize_value,
-  #     max_resize_value=max_resize_value,
-  #     resize_factor=resize_factor,
-  #     min_scale_factor=min_scale_factor,
-  #     max_scale_factor=max_scale_factor,
-  #     scale_factor_step_size=scale_factor_step_size,
-  #     ignore_label=dataset.ignore_label,
-  #     is_training=is_training,
-  #     model_variant=model_variant,
-  #     num_classes=dataset.num_classes)
   sample = {
       common.IMAGE: image,
       'vis': vis,
@@ -179,7 +158,6 @@ def get(dataset,
   }
   if label is not None:
     sample[common.LABEL] = label
-    # sample['original_label'] = original_label
     sample['seg'] = seg
     sample['mask'] = mask
 
@@ -194,4 +172,4 @@ def get(dataset,
       num_threads=num_threads,
       capacity=32 * batch_size,
       allow_smaller_final_batch=False,
-      dynamic_pad=True)
+      dynamic_pad=False)

@@ -252,23 +252,31 @@ def _build_deeplab(inputs_queue, outputs_to_num_classes, outputs_to_indices, bin
   # if is_training:
   for output, num_classes in six.iteritems(outputs_to_num_classes):
       label_slice = tf.gather(samples[common.LABEL], [outputs_to_indices[output]], axis=3)
-      loss, scaled_logits = train_utils.add_discrete_regression_loss(
-        outputs_to_logits[output], # Tensor("logits/regression/BiasAdd:0", shape=(7, 68, 170, 1), dtype=float32, device=/device:GPU:0)
-        label_slice,
-        samples['mask'],
-        bin_vals[outputs_to_indices[output]],
-        loss_weight=1.0,
-        upsample_logits=FLAGS.upsample_logits,
-        scope=is_training_prefix + '_' + output)
+      # loss, scaled_logits = train_utils.add_discrete_regression_loss(
+      #   outputs_to_logits[output], # Tensor("logits/regression/BiasAdd:0", shape=(7, 68, 170, 1), dtype=float32, device=/device:GPU:0)
+      #   label_slice,
+      #   samples['mask'],
+      #   bin_vals[outputs_to_indices[output]],
+      #   loss_weight=1.0,
+      #   upsample_logits=FLAGS.upsample_logits,
+      #   name=is_training_prefix + '_loss_' + output)
+      loss, scaled_logits = train_utils.add_regression_loss(
+              outputs_to_logits[output], # Tensor("logits/regression/BiasAdd:0", shape=(7, 68, 170, 1), dtype=float32, device=/device:GPU:0)
+              label_slice,
+              samples['mask'],
+              loss_weight=1.0,
+              upsample_logits=FLAGS.upsample_logits,
+              scope=output
+              )
       loss_list.append(loss)
       scaled_logits_list.append(scaled_logits)
-  scaled_logits = tf.identity(tf.gather(scaled_logits, [5], axis=3), name=is_training_prefix+'scaled_regression')
+  # scaled_logits = tf.identity(tf.gather(scaled_logits, [5], axis=3), name=is_training_prefix+'scaled_regression')
+  # scaled_logits = tf.identity(scaled_logits, name=is_training_prefix+'scaled_regression')
   masks = tf.identity(samples['mask'], name=is_training_prefix+'not_ignore_mask_in_loss')
   loss_all = tf.add_n(loss_list)
   loss_all = tf.identity(loss_all, name=is_training_prefix+'loss_all')
+  # loss = tf.identity(loss, name=is_training_prefix+'loss_all')
 
-  # if is_training:
-  #     return outputs_to_scales_to_logits
 
 
 def main(unused_argv):
@@ -433,7 +441,11 @@ def main(unused_argv):
       summaries.add(tf.summary.image('samples/%s' % 'diff', tf.gather(scale_to_255(summary_diff, pixel_scaling), [0, 1, 2])))
 
       summary_loss = graph.get_tensor_by_name(pattern%'loss_all')
-      summaries.add(tf.summary.scalar('total_loss/val', summary_loss))
+      summaries.add(tf.summary.scalar(('total_loss/'+pattern%'loss_all').replace(':0', ''), summary_loss))
+
+      for name in dataset.space_names:
+          summary_loss = graph.get_tensor_by_name((pattern%'_loss_').replace(':0', '')+name+':0')
+          summaries.add(tf.summary.scalar('total_loss/'+(pattern%'_loss_').replace(':0', '')+name, summary_loss))
 
     # Add summaries for losses.
     for loss in tf.get_collection(tf.GraphKeys.LOSSES, first_clone_scope):
@@ -498,9 +510,10 @@ def main(unused_argv):
 
         # calc training losses
         loss, should_stop = slim.learning.train_step(sess, train_op, global_step, train_step_kwargs)
-        # first_clone_test = graph.get_tensor_by_name(
-        #         ('%s/%s:0' % (first_clone_scope, 'loss_all')).strip('/'))
-        # loss = sess.run(first_clone_test)
+        print loss
+        first_clone_test = graph.get_tensor_by_name(
+                ('%s/%s:0' % (first_clone_scope, 'loss_all')).strip('/'))
+        loss = sess.run(first_clone_test)
         print 'loss: ', loss
         should_stop = 0
 

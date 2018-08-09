@@ -101,7 +101,8 @@ _APOLLOSCAPE_INFORMATION = DatasetDescriptor(
         [-5.0, 10.0],
         [-5.0, 10.0],
         [-10.0, 10.0]],
-    bin_nums = [8, 8, 64, 16, 16, 64],
+    # bin_nums = [8, 8, 64, 16, 16, 64],
+    bin_nums = [1, 1, 1, 1, 1, 1],
     space_names = ['row', 'pitch', 'yaw', 'x', 'y', 'z'],
 )
 

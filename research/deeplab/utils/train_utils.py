@@ -44,7 +44,7 @@ def scaled_logits_labels(logits, labels, upsample_logits):
     return scaled_logits, scaled_labels
 
 
-def my_pose_loss(pose, label, mask, balance=1000, name='pose_loss', loss_type='rel_trans'):
+def my_pose_loss(pose, label, mask, balance=1000, loss_type='rel_trans'):
     """ Loss for discrete pose from Peng Wang (http://icode.baidu.com/repos/baidu/personal-code/video_seg_transfer/blob/with_db:Networks/mx_losses.py)"""
 
     def slice_pose(pose_in):
@@ -67,13 +67,8 @@ def my_pose_loss(pose, label, mask, balance=1000, name='pose_loss', loss_type='r
         inv_depth_gt = tf.where(tf.not_equal(depth_gt, 0.), 1./depth_gt, tf.zeros_like(depth_gt))
         trans_diff = (trans - trans_gt) * inv_depth_gt
 
-    # elif loss_type == 'sig':
-    #     trans_diff = (mx.sym.sigmoid(trans / 30) - mx.sym.sigmoid(trans_gt / 30)) * 2
-
-    # else:
-    #     trans_diff = trans - trans_gt
-
-    trans_loss = smooth_l1_loss(trans * inv_depth_gt, trans_gt * inv_depth_gt, mask)
+    # trans_loss = smooth_l1_loss(trans * inv_depth_gt, trans_gt * inv_depth_gt, mask)
+    trans_loss = smooth_l1_loss(trans, trans_gt, mask)
     rot_loss = smooth_l1_loss(rot, rot_gt, mask)
 
     total_loss = rot_loss * balance + trans_loss
@@ -88,7 +83,7 @@ def add_discrete_regression_loss(logits,
         # ignore_label,
         loss_weight=1.0,
         upsample_logits=True,
-        scope=None):
+        name=None):
     """Adds softmax cross entropy loss for logits of each scale.
 
     Args:
@@ -114,6 +109,8 @@ def add_discrete_regression_loss(logits,
     scaled_logits, scaled_labels = scaled_logits_labels(prob_logits, labels, upsample_logits)
 
     loss_reg = my_pose_loss(scaled_logits, scaled_labels, masks)
+
+    loss_reg = tf.identity(loss_reg, name=name)
 
     return loss_reg, scaled_logits
 
@@ -141,7 +138,7 @@ def add_regression_loss(logits,
       ValueError: Label or logits is None.
     """
     print logits.get_shape(), labels.get_shape()
-    scaled_logits, scaled_labels = scaled_logits_labels(logits, labels)
+    scaled_logits, scaled_labels = scaled_logits_labels(logits, labels, upsample_logits)
 
     scaled_labels_flattened = tf.reshape(scaled_labels, shape=[-1])
     not_ignore_masks_flattened = tf.to_float(tf.reshape(masks, shape=[-1]))
