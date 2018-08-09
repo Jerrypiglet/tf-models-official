@@ -44,22 +44,31 @@ def scaled_logits_labels(logits, labels, upsample_logits):
     return scaled_logits, scaled_labels
 
 
-def my_pose_loss(pose, label, mask, balance=1000, loss_type='rel_trans'):
+def smooth_l1_loss(predictions, labels, masks):
+    # masks_expanded = tf.tile(masks, [1, 1, 1, tf.shape(labels)[3]])
+    loss_sum = tf.losses.huber_loss(labels, predictions, delta=1.0)
+    # loss_sum = tf.losses.absolute_difference(
+    #         labels,
+    #         predictions)
+    # return loss_sum / (tf.reduce_sum(tf.to_float(masks))+1.)
+    return loss_sum
+
+def add_my_pose_loss(prob_logits, labels, masks, upsample_logits, name=None, balance=1000., loss_type='rel_trans'):
     """ Loss for discrete pose from Peng Wang (http://icode.baidu.com/repos/baidu/personal-code/video_seg_transfer/blob/with_db:Networks/mx_losses.py)"""
+
+    scaled_logits, scaled_labels = scaled_logits_labels(prob_logits, labels, upsample_logits)
+    masks_expanded = tf.tile(masks, [1, 1, 1, tf.shape(labels)[3]])
+    scaled_logits_masked = tf.where(masks_expanded, scaled_logits, tf.zeros_like(scaled_logits))
+    scaled_labels_masked = tf.where(masks_expanded, scaled_labels, tf.zeros_like(scaled_labels))
 
     def slice_pose(pose_in):
         rot = tf.gather(pose_in, [0, 1, 2], axis=3)
         trans = tf.gather(pose_in, [3, 4, 5], axis=3)
+        # trans = tf.gather(pose_in, [5], axis=3)
         return rot, trans
 
-    def smooth_l1_loss(predictions, labels, masks):
-        masks_expanded = tf.tile(masks, [1, 1, 1, labels.get_shape()[3]])
-        loss_sum = tf.losses.huber_loss(labels, predictions, delta=1.0, weights=tf.to_float(masks_expanded))
-        # return loss_sum / tf.to_float(tf.shape(labels)[0])
-        return loss_sum
-
-    rot, trans = slice_pose(pose)
-    rot_gt, trans_gt = slice_pose(label)
+    rot, trans = slice_pose(scaled_logits_masked)
+    rot_gt, trans_gt = slice_pose(scaled_labels_masked)
 
     if loss_type == 'rel_trans':
         depth_gt = tf.gather(trans_gt, [2], axis=3)
@@ -67,18 +76,80 @@ def my_pose_loss(pose, label, mask, balance=1000, loss_type='rel_trans'):
         inv_depth_gt = tf.where(tf.not_equal(depth_gt, 0.), 1./depth_gt, tf.zeros_like(depth_gt))
         trans_diff = (trans - trans_gt) * inv_depth_gt
 
-    # trans_loss = smooth_l1_loss(trans * inv_depth_gt, trans_gt * inv_depth_gt, mask)
-    trans_loss = smooth_l1_loss(trans, trans_gt, mask)
-    rot_loss = smooth_l1_loss(rot, rot_gt, mask)
+    trans_loss = smooth_l1_loss(trans * inv_depth_gt, trans_gt * inv_depth_gt, masks)
+    # trans_loss = smooth_l1_loss(trans, trans_gt, masks)
+    rot_loss = smooth_l1_loss(rot, rot_gt, masks)
 
     total_loss = rot_loss * balance + trans_loss
-    return total_loss
+    # total_loss = trans_loss
+    total_loss = tf.identity(total_loss, name=name)
+    return total_loss, scaled_logits
 
-
-def add_discrete_regression_loss(logits,
+def logits_cls_to_logits_prob(logits,
         labels,
-        masks, # boolean
-        bin_vals,
+        bin_vals):
+    prob = tf.contrib.layers.softmax(logits)
+    bin_vals_expand = tf.expand_dims(tf.expand_dims(bin_vals, 0), 0)
+    bin_vals_expand = tf.tile(bin_vals_expand, [tf.shape(prob)[0], tf.shape(prob)[1], tf.shape(prob)[2], 1])
+    prob = tf.multiply(prob, bin_vals_expand)
+    prob_logits = tf.reduce_sum(prob, axis=3, keepdims=True)
+    return prob_logits
+
+# def add_discrete_regression_loss(logits,
+#         labels,
+#         masks, # boolean
+#         bin_vals,
+#         # num_classes,
+#         # ignore_label,
+#         loss_weight=1.0,
+#         upsample_logits=True,
+#         name=None):
+#     """Adds jsoftmax cross entropy loss for logits of each scale.
+
+#     Args:
+#       scales_to_logits: A map from logits names for different scales to logits.
+#         The logits have shape [batch, logits_height, logits_width, num_classes]. # {'merged_logits': <tf.Tensor 'regression:0' shape=(4, 49, 49, 6) dtype=float32>}
+#       labels: Groundtruth labels with shape [batch, image_height, image_width, 6].
+#       num_classes: Integer, ground truth regression lebels dimension.
+#       ignore_label: Integer, label to ignore.
+#       loss_weight: Float, loss weight.
+#       upsample_logits: Boolean, upsample logits or not.
+#       scope: String, the scope for the loss.
+
+#     Raises:
+#       ValueError: Label or logits is None.
+#     """
+#     # print '--1', logits.get_shape(), labels.get_shape(), masks.get_shape(), bin_vals.get_shape() # (5, 68, 170, 16) (5, 272, 680, 1) (5, 272, 680, 1) (1, 16)
+#     # prob = tf.nn.softmax(logits, axis=3)
+
+#     scaled_logits, scaled_labels = scaled_logits_labels(prob_logits, labels, upsample_logits)
+#     masks_expanded = tf.tile(masks, [1, 1, 1, tf.shape(labels)[3]])
+#     scaled_logits = tf.where(masks_expanded, scaled_logits, tf.zeros_like(scaled_logits))
+#     scaled_labels = tf.where(masks_expanded, scaled_labels, tf.zeros_like(scaled_labels))
+#     print scaled_labels.get_shape()
+
+#     scaled_labels_flattened = tf.reshape(scaled_labels, shape=[-1, 1])
+#     not_ignore_masks_flattened = tf.to_float(tf.reshape(masks, shape=[-1, 1]))
+#     scaled_logits_flattened = tf.reshape(scaled_logits, shape=[-1, 1])
+#     loss_reg = my_pose_loss(scaled_logits_flattened, scaled_labels_flattened, not_ignore_masks_flattened)
+#     loss_reg = tf.identity(loss_reg, name=name)
+
+#     # scaled_labels_flattened = tf.reshape(scaled_labels, shape=[-1])
+#     # not_ignore_masks_flattened = tf.to_float(tf.reshape(masks, shape=[-1]))
+#     # scaled_logits_flattened = tf.reshape(scaled_logits, shape=[-1])
+#     # # loss_reg = tf.losses.absolute_difference(
+#     #         scaled_labels_flattened,
+#     #         scaled_logits_flattened,
+#     #         weights=not_ignore_masks_flattened*loss_weight,
+#     #         )  / tf.to_float(tf.shape(labels)[0])
+#     # print '+++++++++++', scaled_labels.get_shape(), scaled_logits.get_shape()
+#     # loss_reg = tf.identity(loss_reg, name=name)
+
+#     return loss_reg, scaled_logits
+
+def add_regression_loss(logits,
+        labels,
+        masks,
         # num_classes,
         # ignore_label,
         loss_weight=1.0,
@@ -99,60 +170,20 @@ def add_discrete_regression_loss(logits,
     Raises:
       ValueError: Label or logits is None.
     """
-    # print logits.get_shape(), labels.get_shape(), masks.get_shape(), bin_vals.get_shape() # (5, 68, 170, 16) (5, 272, 680, 1) (5, 272, 680, 1) (1, 16)
-    prob = tf.nn.softmax(logits, axis=3)
-    bin_vals_expand = tf.expand_dims(tf.expand_dims(bin_vals, 0), 0)
-    bin_vals_expand = tf.tile(bin_vals_expand, [prob.get_shape()[0], prob.get_shape()[1], prob.get_shape()[2], 1])
-    prob = tf.multiply(prob, bin_vals_expand)
-    prob_logits = tf.reduce_sum(prob, axis=3, keepdims=True)
-
-    scaled_logits, scaled_labels = scaled_logits_labels(prob_logits, labels, upsample_logits)
-
-    loss_reg = my_pose_loss(scaled_logits, scaled_labels, masks)
-
-    loss_reg = tf.identity(loss_reg, name=name)
-
-    return loss_reg, scaled_logits
-
-def add_regression_loss(logits,
-        labels,
-        masks,
-        # num_classes,
-        # ignore_label,
-        loss_weight=1.0,
-        upsample_logits=True,
-        scope=None):
-    """Adds softmax cross entropy loss for logits of each scale.
-
-    Args:
-      scales_to_logits: A map from logits names for different scales to logits.
-        The logits have shape [batch, logits_height, logits_width, num_classes]. # {'merged_logits': <tf.Tensor 'regression:0' shape=(4, 49, 49, 6) dtype=float32>}
-      labels: Groundtruth labels with shape [batch, image_height, image_width, 6].
-      num_classes: Integer, ground truth regression lebels dimension.
-      ignore_label: Integer, label to ignore.
-      loss_weight: Float, loss weight.
-      upsample_logits: Boolean, upsample logits or not.
-      scope: String, the scope for the loss.
-
-    Raises:
-      ValueError: Label or logits is None.
-    """
-    print logits.get_shape(), labels.get_shape()
     scaled_logits, scaled_labels = scaled_logits_labels(logits, labels, upsample_logits)
+    masks_expanded = tf.tile(masks, [1, 1, 1, tf.shape(labels)[3]])
+    print scaled_logits.get_shape(), scaled_labels.get_shape(), masks_expanded.get_shape()
 
     scaled_labels_flattened = tf.reshape(scaled_labels, shape=[-1])
-    not_ignore_masks_flattened = tf.to_float(tf.reshape(masks, shape=[-1]))
-    # not_ignore_mask = tf.to_float(tf.not_equal(scaled_labels_flattened,
-    #                                            ignore_label))
+    not_ignore_masks_flattened = tf.to_float(tf.reshape(masks_expanded, shape=[-1]))
     scaled_logits_flattened = tf.reshape(scaled_logits, shape=[-1])
     # tf.losses.mean_squared_error(
     loss = tf.losses.absolute_difference(
             scaled_labels_flattened,
             scaled_logits_flattened,
             weights=not_ignore_masks_flattened*loss_weight,
-            scope=scope
             )  / tf.to_float(tf.shape(labels)[0])
-    print '+++++++++++', scaled_labels.get_shape(), scaled_logits.get_shape()
+    loss = tf.identity(loss, name=name)
     return loss, scaled_logits
 
 

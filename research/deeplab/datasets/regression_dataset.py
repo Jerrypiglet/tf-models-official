@@ -79,7 +79,7 @@ DatasetDescriptor = collections.namedtuple(
      'width',
      'pose_range',
      'bin_nums',
-     'space_names',
+     'output_names',
     ]
 )
 
@@ -95,15 +95,21 @@ _APOLLOSCAPE_INFORMATION = DatasetDescriptor(
     # height=544,
     height=272,
     width=680,
-    pose_range = [[-np.pi/4, np.pi/4],
-        [-np.pi/4, np.pi/4],
+    # pose_range = [[-np.pi/4, np.pi/4],
+    #     [-np.pi/4, np.pi/4],
+    #     [-np.pi, np.pi],
+    #     [-5.0, 10.0],
+    #     [-5.0, 10.0],
+    #     [0., 0.5]],
+    pose_range = [[-np.pi, np.pi],
+        [-np.pi/2, np.pi/2],
         [-np.pi, np.pi],
-        [-5.0, 10.0],
-        [-5.0, 10.0],
-        [-10.0, 10.0]],
-    # bin_nums = [8, 8, 64, 16, 16, 64],
-    bin_nums = [1, 1, 1, 1, 1, 1],
-    space_names = ['row', 'pitch', 'yaw', 'x', 'y', 'z'],
+        [-100., 100.],
+        [0., 100],
+        [0., 0.66]],
+    bin_nums = [8, 8, 64, 64, 64, 64],
+    # bin_nums = [1, 1, 1, 1, 1, 1],
+    output_names = ['row', 'pitch', 'yaw', 'x', 'y', 'z'],
 )
 
 _DATASETS_INFORMATION = {
@@ -139,7 +145,7 @@ def get_dataset(dataset_name, split_name, dataset_dir):
   num_classes = _DATASETS_INFORMATION[dataset_name].num_classes
   pose_range = _DATASETS_INFORMATION[dataset_name].pose_range
   bin_nums = _DATASETS_INFORMATION[dataset_name].bin_nums
-  space_names = _DATASETS_INFORMATION[dataset_name].space_names
+  output_names = _DATASETS_INFORMATION[dataset_name].output_names
   # ignore_label = _DATASETS_INFORMATION[dataset_name].ignore_label
 
   file_pattern = _FILE_PATTERN
@@ -199,7 +205,7 @@ def get_dataset(dataset_name, split_name, dataset_dir):
       # ignore_label=ignore_label,
       pose_range=pose_range,
       bin_nums=bin_nums,
-      space_names=space_names,
+      output_names=output_names,
       num_classes=num_classes,
       name=dataset_name,
       multi_label=True)

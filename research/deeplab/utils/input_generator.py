@@ -68,9 +68,11 @@ def _get_data(dataset, data_provider, dataset_split):
     mask = tf.not_equal(seg, 0.)
 
     # ## Getting inverse depth outof the posemap
-    # label = tf.gather(pose_map, [5], axis=2)
-    # label = tf.where(mask, 1./label, tf.zeros_like(label))
-    label = tf.where(tf.tile(mask, [1, 1, 6]), pose_map, tf.zeros_like(pose_map))
+    label_depth = tf.gather(pose_map, [5], axis=2)
+    label_invd = tf.where(mask, 1./label_depth, tf.zeros_like(label_depth))
+    # label = tf.tile(label_invd, [1, 1, 6])
+    label = tf.concat([tf.gather(pose_map, [0, 1, 2, 3, 4], axis=2), label_invd], axis=2)
+    label = tf.where(tf.tile(mask, [1, 1, 6]), label, tf.zeros_like(label))
 
   return image, vis, label, image_name, height, width, seg, mask
 
