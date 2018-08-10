@@ -309,7 +309,8 @@ def _build_deeplab(inputs_queue, outputs_to_num_classes, outputs_to_indices, bin
       # Per-output loss for logging
       label_slice = tf.gather(samples[common.LABEL], [idx_output], axis=3)
       scaled_logits_slice = tf.gather(scaled_logits, [idx_output], axis=3)
-      loss_slice = tf.losses.huber_loss(label_slice, scaled_logits_slice, delta=1.0, loss_collection=None)
+      scaled_logits_slice_masked = tf.where(masks, scaled_logits_slice, tf.zeros_like(scaled_logits_slice))
+      loss_slice = tf.losses.huber_loss(label_slice, scaled_logits_slice_masked, delta=1.0, loss_collection=None)
       loss_slice = tf.identity(loss_slice, name=is_training_prefix+'loss_'+output)
 
       # # Cross-entropy loss for each output http://icode.baidu.com/repos/baidu/personal-code/video_seg_transfer/blob/with_db:Networks/mx_losses.py (L89)
