@@ -21,7 +21,7 @@ from deeplab.core import preprocess_utils
 
 slim = tf.contrib.slim
 
-def scaled_logits_labels(logits, labels, upsample_logits):
+def scale_logits_to_labels(logits, labels, upsample_logits):
     """ Scaled logits and labels to the same scale."""
     if labels is None:
       raise ValueError('No label for softmax cross entropy loss.')
@@ -56,7 +56,7 @@ def smooth_l1_loss(predictions, labels, masks):
 def add_my_pose_loss(prob_logits, labels, masks, upsample_logits, name=None, balance=1000., loss_type='rel_trans'):
     """ Loss for discrete pose from Peng Wang (http://icode.baidu.com/repos/baidu/personal-code/video_seg_transfer/blob/with_db:Networks/mx_losses.py)"""
 
-    scaled_logits, scaled_labels = scaled_logits_labels(prob_logits, labels, upsample_logits)
+    scaled_logits, scaled_labels = scale_logits_to_labels(prob_logits, labels, upsample_logits)
     masks_expanded = tf.tile(masks, [1, 1, 1, tf.shape(labels)[3]])
     scaled_logits_masked = tf.where(masks_expanded, scaled_logits, tf.zeros_like(scaled_logits))
     scaled_labels_masked = tf.where(masks_expanded, scaled_labels, tf.zeros_like(scaled_labels))
