@@ -204,7 +204,7 @@ flags.DEFINE_string('val_split', 'val',
 flags.DEFINE_string('dataset_dir', 'deeplab/datasets/apolloscape', 'Where the dataset reside.')
 
 
-def _build_deeplab(inputs_queue, outputs_to_num_classes, outputs_to_indices, bin_vals, output_names, is_training=True, reuse=False):
+def _build_deeplab(inputs_queue, outputs_to_num_classes, outputs_to_indices, bin_vals, bin_nums, pose_range, output_names, is_training=True, reuse=False):
   """Builds a clone of DeepLab.
 
   Args:
@@ -237,6 +237,8 @@ def _build_deeplab(inputs_queue, outputs_to_num_classes, outputs_to_indices, bin
   samples[common.LABEL] = tf.identity(
       samples[common.LABEL], name=is_training_prefix+common.LABEL)
   samples['seg'] = tf.identity(samples['seg'], name=is_training_prefix+'seg')
+  # samples['label_id'] = tf.squeeze(samples['label_id'])
+  # samples['label_id'] = tf.identity(samples['label_id'], name=is_training_prefix+'label_id')
 
   model_options = common.ModelOptions(
       outputs_to_num_classes=outputs_to_num_classes,
@@ -262,7 +264,6 @@ def _build_deeplab(inputs_queue, outputs_to_num_classes, outputs_to_indices, bin
       if FLAGS.if_discrete_loss:
           prob_logits = train_utils.logits_cls_to_logits_prob(
                   outputs_to_logits[output],
-                  label_slice,
                   bin_vals[outputs_to_indices[output]])
           # print output, prob_logits.get_shape()
           reg_logits = prob_logits
@@ -289,43 +290,39 @@ def _build_deeplab(inputs_queue, outputs_to_num_classes, outputs_to_indices, bin
           )
   scaled_logits = tf.identity(scaled_logits, name=is_training_prefix+'scaled_logits')
   masks = tf.identity(samples['mask'], name=is_training_prefix+'not_ignore_mask_in_loss')
-  for output in output_names:
-      label_slice = tf.gather(samples[common.LABEL], [outputs_to_indices[output]], axis=3)
-      scaled_logits_slice = tf.gather(scaled_logits, [outputs_to_indices[output]], axis=3)
-      loss_slice = tf.losses.huber_loss(label_slice, scaled_logits_slice, delta=1.0)
+
+  # label_id = tf.zeros(tf.shape(label_slice), dtype=tf.uint8)
+  # bin_range = [np.linspace(r[0], r[1], num=b).tolist() for r, b in zip(pose_range, bin_nums)]
+  # label_id_list = []
+  # for idx_output, output in enumerate(output_names):
+  #   bin_vals_output = bin_range[idx_output]
+  #   print bin_vals_output
+  #   label_id_slice = tf.zeros(tf.shape(label_slice), dtype=tf.uint8)
+  #   label_id_slice = tf.round((label_slice - bin_vals_output[0]) / (bin_vals_output[1] - bin_vals_output[0]))
+  #   label_id_slice = tf.where(label_slice<bin_vals_output[0], tf.zeros_like(label_id_slice)+bin_vals_output[0], label_id_slice)
+  #   label_id_slice = tf.where(label_slice>bin_vals_output[-1], tf.zeros_like(label_id_slice)+bin_vals_output[-1], label_id_slice)
+  #   label_id_slice = tf.cast(label_id_slice, tf.uint8)
+  #   label_id_list.append(label_id_slice)
+  # label_id = tf.concat(label_id_list, axis=3)
+  # label_id_masked = tf.where(tf.tile(masks, [1, 1, 1, 6]), label_id, tf.zeros_like(label_id))
+  for idx_output, output in enumerate(output_names):
+      # Per-output loss for logging
+      label_slice = tf.gather(samples[common.LABEL], [idx_output], axis=3)
+      scaled_logits_slice = tf.gather(scaled_logits, [idx_output], axis=3)
+      loss_slice = tf.losses.huber_loss(label_slice, scaled_logits_slice, delta=1.0, loss_collection=None)
       loss_slice = tf.identity(loss_slice, name=is_training_prefix+'loss_'+output)
 
-          # loss, scaled_logits = train_utils.add_discrete_regression_loss(
-          #   outputs_to_logits[output], # Tensor("logits/regression/BiasAdd:0", shape=(7, 68, 170, 1), dtype=float32, device=/device:GPU:0)
-          #   label_slice,
-          #   samples['mask'],
-          #   bin_vals[outputs_to_indices[output]],
-          #   loss_weight=1.0,
-          #   upsample_logits=FLAGS.upsample_logits,
-          #   name=is_training_prefix + 'loss_' + output)
-  # else:
-  #     for output, num_classes in six.iteritems(outputs_to_num_classes):
-  #         label_slice = tf.gather(samples[common.LABEL], [outputs_to_indices[output]], axis=3)
-  #         print 'ooooo', outputs_to_logits[output].get_shape(), label_slice.get_shape()
-  #         loss, scaled_logits = train_utils.add_regression_loss(
-  #                 outputs_to_logits[output], # Tensor("logits/regression/BiasAdd:0", shape=(7, 68, 170, 1), dtype=float32, device=/device:GPU:0)
-  #                 label_slice,
-  #                 samples['mask'],
-  #                 loss_weight=1.0,
-  #                 upsample_logits=FLAGS.upsample_logits,
-  #                 scope=is_training_prefix + 'loss_' + output
-  #                 )
-  #     loss_list.append(loss)
-  #     scaled_logits_list.append(scaled_logits)
-  #     scaled_logits_depth = scaled_logits_list[5]
-  # scaled_logits_depth = tf.identity(scaled_logits_depth, name=is_training_prefix+'scaled_regression')
-  # masks = tf.identity(samples['mask'], name=is_training_prefix+'not_ignore_mask_in_loss')
-  # loss_all = tf.add_n(loss_list)
-  # loss_all = tf.identity(loss_all, name=is_training_prefix+'loss_all')
-
-  # loss = tf.identity(loss, name=is_training_prefix+'loss_all')
-
-
+      # # Cross-entropy loss for each output http://icode.baidu.com/repos/baidu/personal-code/video_seg_transfer/blob/with_db:Networks/mx_losses.py (L89)
+      # label_id_slice = tf.gather(label_id_masked, [idx_output], axis=3)
+      # scaled_logits_disc, _ = train_utils.scaled_logits_labels(outputs_to_logits[output], label_slice, True)
+      # neg_log = -1. * tf.nn.log_softmax(scaled_logits_disc)
+      # gt_idx = tf.one_hot(tf.squeeze(label_id_slice), depth=bin_nums[idx_output], axis=-1)
+      # print label_id_slice.get_shape(), gt_idx.get_shape(), neg_log.get_shape(), masks.get_shape()
+      # cur_loss = tf.multiply(gt_idx, neg_log)
+      # cur_loss = tf.where(tf.tile(masks, [1, 1, 1, tf.shape(cur_loss)[3]]), cur_loss, tf.zeros_like(cur_loss))
+      # cur_loss= tf.reduce_sum(tf.reduce_mean(cur_loss, axis=0))
+      # loss_slice_crossentropy = tf.identity(cur_loss, name=is_training_prefix+'loss_ce_'+output)
+      # tf.losses.add_loss(loss_slice_crossentropy, loss_collection=tf.GraphKeys.LOSSES)
 
 def main(unused_argv):
   FLAGS.train_logdir = FLAGS.base_logdir + '/' + FLAGS.task_name
@@ -359,10 +356,10 @@ def main(unused_argv):
   if not(os.path.isdir(FLAGS.train_logdir)):
       tf.gfile.MakeDirs(FLAGS.train_logdir)
   elif len(os.listdir(FLAGS.train_logdir) ) != 0:
-      if_delete_all = raw_input('#### The log folder %s exists and non-empty; delete all logs? [y/n] '%FLAGS.train_logdir)
-      if if_delete_all == 'y':
-          os.system('rm -rf %s/*'%FLAGS.train_logdir)
-          print '==== Log folder emptied.'
+      # if_delete_all = raw_input('#### The log folder %s exists and non-empty; delete all logs? [y/n] '%FLAGS.train_logdir)
+      # if if_delete_all == 'y':
+      os.system('rm -rf %s/*'%FLAGS.train_logdir)
+      print '==== Log folder emptied.'
   tf.logging.info('==== Logging in dir:%s; Training on %s set', FLAGS.train_logdir, FLAGS.train_split)
 
   with tf.Graph().as_default() as graph:
@@ -419,7 +416,7 @@ def main(unused_argv):
 
       # Define the model and create clones.
       model_fn = _build_deeplab
-      model_args = (inputs_queue, outputs_to_num_classes, outputs_to_indices, bin_vals, dataset.output_names, True, False)
+      model_args = (inputs_queue, outputs_to_num_classes, outputs_to_indices, bin_vals, dataset.bin_nums, dataset.pose_range, dataset.output_names, True, False)
       clones = model_deploy.create_clones(config, model_fn, args=model_args)
 
       # Gather update_ops from the first clone. These contain, for example,
@@ -430,8 +427,7 @@ def main(unused_argv):
     with tf.device('/device:GPU:3'):
         if FLAGS.if_val:
           ## Construct the validation graph; takes one GPU.
-          _build_deeplab(inputs_queue_val, outputs_to_num_classes, outputs_to_indices, bin_vals, dataset.output_names,
-                  is_training=False, reuse=True)
+          _build_deeplab(inputs_queue_val, outputs_to_num_classes, outputs_to_indices, bin_vals, dataset.bin_nums, dataset.pose_range, dataset.output_names, is_training=False, reuse=True)
 
     # Gather initial summaries.
     summaries = set(tf.get_collection(tf.GraphKeys.SUMMARIES))
@@ -502,6 +498,9 @@ def main(unused_argv):
           summary_loss = graph.get_tensor_by_name((pattern%'loss_').replace(':0', '')+output+':0')
           summaries.add(tf.summary.scalar('slice_loss/'+(pattern%'_loss_').replace(':0', '')+output, summary_loss))
 
+          # summary_loss = graph.get_tensor_by_name((pattern%'loss_ce_').replace(':0', '')+output+':0')
+          # summaries.add(tf.summary.scalar('slice_loss/'+(pattern%'_loss_ce_').replace(':0', '')+output, summary_loss))
+
       summary_loss = graph.get_tensor_by_name(pattern%'loss_all')
       summaries.add(tf.summary.scalar(('total_loss/'+pattern%'loss_all').replace(':0', ''), summary_loss))
 
@@ -522,6 +521,7 @@ def main(unused_argv):
     with tf.device(config.variables_device()):
       total_loss, grads_and_vars = model_deploy.optimize_clones(
           clones, optimizer)
+      print '------ total_loss', total_loss, tf.get_collection(tf.GraphKeys.LOSSES, first_clone_scope)
       total_loss = tf.check_numerics(total_loss, 'Loss is inf or nan.')
       summaries.add(tf.summary.scalar('total_loss/train', total_loss))
 

@@ -39,14 +39,14 @@ def scaled_logits_labels(logits, labels, upsample_logits):
             preprocess_utils.resolve_shape(logits, 4)[1:3],
             align_corners=True)
       scaled_logits = logits
-    assert scaled_labels.get_shape() == scaled_logits.get_shape(), 'The potentially reshaped logits and labels should match in shapes!'
+    assert scaled_labels.get_shape()[:3] == scaled_logits.get_shape()[:3], 'The potentially reshaped logits and labels should match in shapes!'
     assert scaled_labels.dtype == scaled_logits.dtype, 'The potentially reshaped logits and labels should match in types!'
     return scaled_logits, scaled_labels
 
 
 def smooth_l1_loss(predictions, labels, masks):
     # masks_expanded = tf.tile(masks, [1, 1, 1, tf.shape(labels)[3]])
-    loss_sum = tf.losses.huber_loss(labels, predictions, delta=1.0)
+    loss_sum = tf.losses.huber_loss(labels, predictions, delta=1.0, scope='collection_loss_reg')
     # loss_sum = tf.losses.absolute_difference(
     #         labels,
     #         predictions)
@@ -85,9 +85,7 @@ def add_my_pose_loss(prob_logits, labels, masks, upsample_logits, name=None, bal
     total_loss = tf.identity(total_loss, name=name)
     return total_loss, scaled_logits
 
-def logits_cls_to_logits_prob(logits,
-        labels,
-        bin_vals):
+def logits_cls_to_logits_prob(logits, bin_vals):
     prob = tf.contrib.layers.softmax(logits)
     bin_vals_expand = tf.expand_dims(tf.expand_dims(bin_vals, 0), 0)
     bin_vals_expand = tf.tile(bin_vals_expand, [tf.shape(prob)[0], tf.shape(prob)[1], tf.shape(prob)[2], 1])

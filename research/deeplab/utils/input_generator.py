@@ -18,6 +18,7 @@ from deeplab import common
 from deeplab import input_preprocess
 from deeplab.datasets.regression_dataset import DatasetDescriptor, _DATASETS_INFORMATION, _APOLLOSCAPE_INFORMATION
 slim = tf.contrib.slim
+import numpy as np
 
 dataset_data_provider = slim.dataset_data_provider
 
@@ -72,9 +73,24 @@ def _get_data(dataset, data_provider, dataset_split):
     label_invd = tf.where(mask, 1./label_depth, tf.zeros_like(label_depth))
     # label = tf.tile(label_invd, [1, 1, 6])
     label = tf.concat([tf.gather(pose_map, [0, 1, 2, 3, 4], axis=2), label_invd], axis=2)
-    label = tf.where(tf.tile(mask, [1, 1, 6]), label, tf.zeros_like(label))
+    label_masked = tf.where(tf.tile(mask, [1, 1, 6]), label, tf.zeros_like(label))
 
-  return image, vis, label, image_name, height, width, seg, mask
+    # label_id = tf.zeros(tf.shape(label), dtype=tf.uint8)
+    # bin_range = [np.linspace(r[0], r[1], num=b).tolist() for r, b in zip(dataset.pose_range, dataset.bin_nums)]
+    # label_id_list = []
+    # for idx_output, output in enumerate(dataset.output_names):
+    #   bin_vals_output = bin_range[idx_output]
+    #   label_slice = tf.gather(label, [idx_output], axis=2)
+    #   label_id_slice = tf.zeros(tf.shape(label_slice), dtype=tf.uint8)
+    #   label_id_slice = tf.round((label_slice - bin_vals_output[0]) / (bin_vals_output[1] - bin_vals_output[0]))
+    #   label_id_slice = tf.where(label_slice<bin_vals_output[0], tf.zeros_like(label_id_slice)+bin_vals_output[0], label_id_slice)
+    #   label_id_slice = tf.where(label_slice>bin_vals_output[-1], tf.zeros_like(label_id_slice)+bin_vals_output[-1], label_id_slice)
+    #   label_id_slice = tf.cast(label_id_slice, tf.uint8)
+    #   label_id_list.append(label_id_slice)
+    # label_id = tf.concat(label_id_list, axis=2)
+    # label_id_masked = tf.where(tf.tile(mask, [1, 1, 6]), label_id, tf.zeros_like(label_id))
+
+  return image, vis, label_masked, image_name, height, width, seg, mask
 
 
 def get(dataset,
@@ -160,6 +176,7 @@ def get(dataset,
   }
   if label is not None:
     sample[common.LABEL] = label
+    # sample['label_id'] = label_id,
     sample['seg'] = seg
     sample['mask'] = mask
 
