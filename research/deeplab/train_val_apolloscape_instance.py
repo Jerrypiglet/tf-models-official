@@ -28,6 +28,7 @@ from deeplab.utils import train_utils
 from deployment import model_deploy
 import numpy as np
 np.set_printoptions(threshold=np.nan)
+np.set_printoptions(precision=4)
 
 from deeplab.core import preprocess_utils
 
@@ -262,6 +263,7 @@ def _build_deeplab(inputs_queue, outputs_to_num_classes, outputs_to_indices, bin
   for output in output_names:
       label_slice = tf.gather(samples[common.LABEL], [outputs_to_indices[output]], axis=3)
       if FLAGS.if_discrete_loss:
+          print outputs_to_logits[output]
           prob_logits = train_utils.logits_cls_to_logits_prob(
                   outputs_to_logits[output],
                   bin_vals[outputs_to_indices[output]])
@@ -291,38 +293,41 @@ def _build_deeplab(inputs_queue, outputs_to_num_classes, outputs_to_indices, bin
   scaled_logits = tf.identity(scaled_logits, name=is_training_prefix+'scaled_logits')
   masks = tf.identity(samples['mask'], name=is_training_prefix+'not_ignore_mask_in_loss')
 
-  # label_id = tf.zeros(tf.shape(label_slice), dtype=tf.uint8)
-  # bin_range = [np.linspace(r[0], r[1], num=b).tolist() for r, b in zip(pose_range, bin_nums)]
-  # label_id_list = []
-  # for idx_output, output in enumerate(output_names):
-  #   bin_vals_output = bin_range[idx_output]
-  #   print bin_vals_output
-  #   label_id_slice = tf.zeros(tf.shape(label_slice), dtype=tf.uint8)
-  #   label_id_slice = tf.round((label_slice - bin_vals_output[0]) / (bin_vals_output[1] - bin_vals_output[0]))
-  #   label_id_slice = tf.where(label_slice<bin_vals_output[0], tf.zeros_like(label_id_slice)+bin_vals_output[0], label_id_slice)
-  #   label_id_slice = tf.where(label_slice>bin_vals_output[-1], tf.zeros_like(label_id_slice)+bin_vals_output[-1], label_id_slice)
-  #   label_id_slice = tf.cast(label_id_slice, tf.uint8)
-  #   label_id_list.append(label_id_slice)
-  # label_id = tf.concat(label_id_list, axis=3)
-  # label_id_masked = tf.where(tf.tile(masks, [1, 1, 1, 6]), label_id, tf.zeros_like(label_id))
+  bin_range = [np.linspace(r[0], r[1], num=b).tolist() for r, b in zip(pose_range, bin_nums)]
+  label_id_list = []
   for idx_output, output in enumerate(output_names):
-      # Per-output loss for logging
-      label_slice = tf.gather(samples[common.LABEL], [idx_output], axis=3)
-      scaled_logits_slice = tf.gather(scaled_logits, [idx_output], axis=3)
-      loss_slice = tf.losses.huber_loss(label_slice, scaled_logits_slice, delta=1.0, loss_collection=None)
-      loss_slice = tf.identity(loss_slice, name=is_training_prefix+'loss_'+output)
+    ## Get label_id slice
+    label_slice = tf.gather(samples[common.LABEL], [idx_output], axis=3)
+    bin_vals_output = bin_range[idx_output]
+    # np.set_printoptions(precision=4)
+    # print len(bin_vals_output), bin_vals_output
+    label_id_slice = tf.round((label_slice - bin_vals_output[0]) / (bin_vals_output[1] - bin_vals_output[0]))
+    label_id_slice = tf.clip_by_value(label_id_slice, 0, bin_nums[idx_output]-1)
+    label_id_slice = tf.cast(label_id_slice, tf.uint8)
+    label_id_list.append(label_id_slice)
 
-      # # Cross-entropy loss for each output http://icode.baidu.com/repos/baidu/personal-code/video_seg_transfer/blob/with_db:Networks/mx_losses.py (L89)
-      # label_id_slice = tf.gather(label_id_masked, [idx_output], axis=3)
-      # scaled_logits_disc, _ = train_utils.scaled_logits_labels(outputs_to_logits[output], label_slice, True)
-      # neg_log = -1. * tf.nn.log_softmax(scaled_logits_disc)
-      # gt_idx = tf.one_hot(tf.squeeze(label_id_slice), depth=bin_nums[idx_output], axis=-1)
-      # print label_id_slice.get_shape(), gt_idx.get_shape(), neg_log.get_shape(), masks.get_shape()
-      # cur_loss = tf.multiply(gt_idx, neg_log)
-      # cur_loss = tf.where(tf.tile(masks, [1, 1, 1, tf.shape(cur_loss)[3]]), cur_loss, tf.zeros_like(cur_loss))
-      # cur_loss= tf.reduce_sum(tf.reduce_mean(cur_loss, axis=0))
-      # loss_slice_crossentropy = tf.identity(cur_loss, name=is_training_prefix+'loss_ce_'+output)
-      # tf.losses.add_loss(loss_slice_crossentropy, loss_collection=tf.GraphKeys.LOSSES)
+    # Add losses for each output names for logging
+    scaled_logits_slice = tf.gather(scaled_logits, [idx_output], axis=3)
+    loss_slice = tf.losses.huber_loss(label_slice, scaled_logits_slice, delta=1.0, loss_collection=None)
+    loss_slice = tf.identity(loss_slice, name=is_training_prefix+'loss_reg_'+output)
+
+    # Cross-entropy loss for each output http://icode.baidu.com/repos/baidu/personal-code/video_seg_transfer/blob/with_db:Networks/mx_losses.py (L89)
+    scaled_logits_disc_slice, _ = train_utils.scale_logits_to_labels(outputs_to_logits[output], label_slice, True)
+    # print '000', outputs_to_logits[output].get_shape(), scaled_logits_disc_slice.get_shape()
+    neg_log = -1. * tf.nn.log_softmax(scaled_logits_disc_slice)
+    # print 'yyyy', tf.gather_nd(neg_log, tf.cast(label_id_slice, tf.int32)).get_shape()
+    gt_idx = tf.one_hot(tf.squeeze(label_id_slice), depth=bin_nums[idx_output], axis=-1)
+    print label_id_slice.get_shape(), gt_idx.get_shape(), neg_log.get_shape(), masks.get_shape()
+    cur_loss = tf.multiply(gt_idx, neg_log)
+    cur_loss = neg_log
+    cur_loss = tf.where(tf.tile(masks, [1, 1, 1, tf.shape(cur_loss)[3]]), cur_loss, tf.zeros_like(cur_loss))
+    cur_loss= tf.reduce_sum(tf.reduce_mean(cur_loss, axis=0))
+    loss_slice_crossentropy = tf.identity(cur_loss, name=is_training_prefix+'loss_cls_'+output)
+    tf.losses.add_loss(loss_slice_crossentropy/1000., loss_collection=tf.GraphKeys.LOSSES)
+
+  label_id = tf.concat(label_id_list, axis=3)
+  label_id_masked = tf.where(tf.tile(masks, [1, 1, 1, 6]), label_id, tf.zeros_like(label_id))
+  label_id_masked = tf.identity(label_id_masked, name=is_training_prefix+'label_id')
 
 def main(unused_argv):
   FLAGS.train_logdir = FLAGS.base_logdir + '/' + FLAGS.task_name
@@ -463,12 +468,12 @@ def main(unused_argv):
               offset_to_zero, scale_to_255 = pixel_scaling
           summary_tensor_float = tensor - offset_to_zero
           summary_tensor_float = summary_tensor_float * scale_to_255
-          summary_tensor_float= tf.where(summary_tensor_float>255., tf.zeros_like(summary_tensor_float)+255., summary_tensor_float)
-          summary_tensor_float= tf.where(summary_tensor_float<0., tf.zeros_like(summary_tensor_float), summary_tensor_float)
+          summary_tensor_float = tf.clip_by_value(summary_tensor_float, 0., 255.)
           summary_tensor_uint8 = tf.cast(summary_tensor_float, tf.uint8)
           return summary_tensor_uint8, (offset_to_zero, scale_to_255)
 
       label_outputs = graph.get_tensor_by_name(pattern%common.LABEL)
+      label_id_outputs = graph.get_tensor_by_name(pattern%'label_id')
       logit_outputs = graph.get_tensor_by_name(pattern%'scaled_logits')
 
       for output_idx, output in enumerate(dataset.output_names):
@@ -480,23 +485,25 @@ def main(unused_argv):
           summary_label_output_uint8, pixel_scaling = scale_to_255(summary_label_output)
           summaries.add(tf.summary.image('output/%s_label' % output, tf.gather(summary_label_output_uint8, [0, 1, 2])))
 
-
-          # predictions = tf.expand_dims(tf.argmax(first_clone_output, 3), -1)
-          # summary_predictions = tf.cast(predictions * pixel_scaling, tf.uint8)
-          # if dataset.num_classes > 1:
-          #     summary_regression = tf.gather(summary_regression, [5], axis=3)
           summary_logit_output = tf.gather(logit_outputs, [output_idx], axis=3)
           summary_logit_output = tf.where(summary_mask, summary_logit_output, tf.zeros_like(summary_logit_output))
           summary_logit_output_uint8, _ = scale_to_255(summary_logit_output, pixel_scaling)
           summaries.add(tf.summary.image(
               'output/%s_logit' % output, tf.gather(summary_logit_output_uint8, [0, 1, 2])))
 
+          summary_label_id_output = tf.to_float(tf.gather(label_id_outputs, [output_idx], axis=3))
+          summary_label_id_output = tf.where(summary_mask, summary_label_id_output+1, tf.zeros_like(summary_label_id_output))
+          summary_label_id_output_uint8, _ = scale_to_255(summary_label_id_output)
+          summary_label_id_output_uint8 = tf.identity(summary_label_id_output_uint8, 'tttt'+output)
+          summaries.add(tf.summary.image(
+              'test/%s_label_id' % output, tf.gather(summary_label_id_output_uint8, [0, 1, 2])))
+
           summary_diff = tf.abs(tf.to_float(summary_label_output_uint8) - tf.to_float(summary_logit_output_uint8))
           summary_diff = tf.where(summary_mask, summary_diff, tf.zeros_like(summary_diff))
           summaries.add(tf.summary.image('output/%s_ldiff' % output, tf.gather(tf.cast(summary_diff, tf.uint8), [0, 1, 2])))
 
-          summary_loss = graph.get_tensor_by_name((pattern%'loss_').replace(':0', '')+output+':0')
-          summaries.add(tf.summary.scalar('slice_loss/'+(pattern%'_loss_').replace(':0', '')+output, summary_loss))
+          summary_loss = graph.get_tensor_by_name((pattern%'loss_reg_').replace(':0', '')+output+':0')
+          summaries.add(tf.summary.scalar('slice_loss/'+(pattern%'_loss_reg_').replace(':0', '')+output, summary_loss))
 
           # summary_loss = graph.get_tensor_by_name((pattern%'loss_ce_').replace(':0', '')+output+':0')
           # summaries.add(tf.summary.scalar('slice_loss/'+(pattern%'_loss_ce_').replace(':0', '')+output, summary_loss))
@@ -567,8 +574,16 @@ def main(unused_argv):
         loss, should_stop = slim.learning.train_step(sess, train_op, global_step, train_step_kwargs)
         # print loss
         # first_clone_test = graph.get_tensor_by_name(
-        #         ('%s/%s:0' % (first_clone_scope, 'loss_all')).strip('/'))
-        # loss = sess.run(first_clone_test)
+        #         ('%s/%s:0' % (first_clone_scope, 'label_id')).strip('/'))
+        # first_clone_test2 = graph.get_tensor_by_name(
+        #         ('%s/%s:0' % (first_clone_scope, common.LABEL)).strip('/'))
+        #         # 'ttttrow:0')
+        # test, test2 = sess.run([first_clone_test, first_clone_test2])
+        # test_out = test[:, :, :, 3]
+        # test_out2 = test2[:, :, :, 3]
+        # # print test_out
+        # print test_out.shape, np.max(test_out), np.min(test_out), np.mean(test_out), np.median(test_out), test_out.dtype
+        # print test_out2.shape, np.max(test_out2), np.min(test_out2), np.mean(test_out2), np.median(test_out2), test_out2.dtype
         print 'loss: ', loss
         should_stop = 0
 
