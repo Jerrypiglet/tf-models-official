@@ -296,7 +296,7 @@ def _build_deeplab(inputs_queue, outputs_to_num_classes, outputs_to_indices, bin
   bin_range = [np.linspace(r[0], r[1], num=b).tolist() for r, b in zip(pose_range, bin_nums)]
   label_id_list = []
   for idx_output, output in enumerate(output_names):
-    ## Get label_id slice
+    # Get label_id slice
     label_slice = tf.gather(samples[common.LABEL], [idx_output], axis=3)
     bin_vals_output = bin_range[idx_output]
     # np.set_printoptions(precision=4)
@@ -320,12 +320,10 @@ def _build_deeplab(inputs_queue, outputs_to_num_classes, outputs_to_indices, bin
     gt_idx = tf.one_hot(tf.squeeze(label_id_slice), depth=bin_nums[idx_output], axis=-1)
     print label_id_slice.get_shape(), gt_idx.get_shape(), neg_log.get_shape(), masks.get_shape()
     cur_loss = tf.multiply(gt_idx, neg_log)
-    cur_loss = neg_log
     cur_loss = tf.where(tf.tile(masks, [1, 1, 1, tf.shape(cur_loss)[3]]), cur_loss, tf.zeros_like(cur_loss))
     cur_loss= tf.reduce_sum(tf.reduce_mean(cur_loss, axis=0))
     loss_slice_crossentropy = tf.identity(cur_loss, name=is_training_prefix+'loss_cls_'+output)
-    tf.losses.add_loss(loss_slice_crossentropy/1000., loss_collection=tf.GraphKeys.LOSSES)
-
+    tf.losses.add_loss(loss_slice_crossentropy*1e-5, loss_collection=tf.GraphKeys.LOSSES)
   label_id = tf.concat(label_id_list, axis=3)
   label_id_masked = tf.where(tf.tile(masks, [1, 1, 1, 6]), label_id, tf.zeros_like(label_id))
   label_id_masked = tf.identity(label_id_masked, name=is_training_prefix+'label_id')
@@ -506,8 +504,8 @@ def main(unused_argv):
           summary_loss = graph.get_tensor_by_name((pattern%'loss_reg_').replace(':0', '')+output+':0')
           summaries.add(tf.summary.scalar('slice_loss/'+(pattern%'_loss_reg_').replace(':0', '')+output, summary_loss))
 
-          # summary_loss = graph.get_tensor_by_name((pattern%'loss_ce_').replace(':0', '')+output+':0')
-          # summaries.add(tf.summary.scalar('slice_loss/'+(pattern%'_loss_ce_').replace(':0', '')+output, summary_loss))
+          summary_loss = graph.get_tensor_by_name((pattern%'loss_cls_').replace(':0', '')+output+':0')
+          summaries.add(tf.summary.scalar('slice_loss/'+(pattern%'_loss_cls_').replace(':0', '')+output, summary_loss))
 
       summary_loss = graph.get_tensor_by_name(pattern%'loss_all')
       summaries.add(tf.summary.scalar(('total_loss/'+pattern%'loss_all').replace(':0', ''), summary_loss))
