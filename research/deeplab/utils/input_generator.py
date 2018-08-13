@@ -22,6 +22,29 @@ import numpy as np
 
 dataset_data_provider = slim.dataset_data_provider
 
+def euler_angles_to_quaternions(angle):
+    """Convert euler angels to quaternions.
+    Input:
+    angle: [roll, pitch, yaw]
+    """
+    roll = tf.gather(angle, [0], axis=-1)
+    pitch = tf.gather(angle,[1], axis=-1)
+    yaw = tf.gather(angle, [2], axis=-1)
+
+    cy = tf.cos(yaw * 0.5)
+    sy = tf.sin(yaw * 0.5)
+    cr = tf.cos(roll * 0.5)
+    sr = tf.sin(roll * 0.5)
+    cp = tf.cos(pitch * 0.5)
+    sp = tf.sin(pitch * 0.5)
+
+    q0 = cy * cr * cp + sy * sr * sp
+    q1 = cy * sr * cp - sy * cr * sp
+    q2 = cy * cr * sp + sy * sr * cp
+    q3 = sy * cr * cp - cy * sr * sp
+    q = tf.concat([q0, q1, q2, q3], axis=-1)
+    return q
+
 def _get_data(dataset, data_provider, dataset_split):
   """Gets data from data provider.
 
@@ -72,23 +95,12 @@ def _get_data(dataset, data_provider, dataset_split):
     label_depth = tf.gather(pose_map, [5], axis=2)
     label_invd = tf.where(mask, 1./label_depth, tf.zeros_like(label_depth))
     # label = tf.tile(label_invd, [1, 1, 6])
-    label = tf.concat([tf.gather(pose_map, [0, 1, 2, 3, 4], axis=2), label_invd], axis=2)
-    label_masked = tf.where(tf.tile(mask, [1, 1, 6]), label, tf.zeros_like(label))
+    # label = tf.concat([tf.gather(pose_map, [0, 1, 2, 3, 4], axis=2), label_invd], axis=2)
+    label_angles = tf.gather(pose_map, [0, 1, 2], axis=2)
+    label_quat = euler_angles_to_quaternions(label_angles)
+    label = tf.concat([label_quat, tf.gather(pose_map, [3, 4], axis=2), label_invd], axis=2)
+    label_masked = tf.where(tf.tile(mask, [1, 1, dataset.num_classes]), label, tf.zeros_like(label))
 
-    # label_id = tf.zeros(tf.shape(label), dtype=tf.uint8)
-    # bin_range = [np.linspace(r[0], r[1], num=b).tolist() for r, b in zip(dataset.pose_range, dataset.bin_nums)]
-    # label_id_list = []
-    # for idx_output, output in enumerate(dataset.output_names):
-    #   bin_vals_output = bin_range[idx_output]
-    #   label_slice = tf.gather(label, [idx_output], axis=2)
-    #   label_id_slice = tf.zeros(tf.shape(label_slice), dtype=tf.uint8)
-    #   label_id_slice = tf.round((label_slice - bin_vals_output[0]) / (bin_vals_output[1] - bin_vals_output[0]))
-    #   label_id_slice = tf.where(label_slice<bin_vals_output[0], tf.zeros_like(label_id_slice)+bin_vals_output[0], label_id_slice)
-    #   label_id_slice = tf.where(label_slice>bin_vals_output[-1], tf.zeros_like(label_id_slice)+bin_vals_output[-1], label_id_slice)
-    #   label_id_slice = tf.cast(label_id_slice, tf.uint8)
-    #   label_id_list.append(label_id_slice)
-    # label_id = tf.concat(label_id_list, axis=2)
-    # label_id_masked = tf.where(tf.tile(mask, [1, 1, 6]), label_id, tf.zeros_like(label_id))
 
   return image, vis, label_masked, image_name, height, width, seg, mask
 
@@ -161,7 +173,7 @@ def get(dataset,
     if label.shape.ndims == 2:
       label = tf.expand_dims(label, 2)
     # elif label.shape.ndims == 3 and label.shape.dims[2] == 1:
-    elif label.shape.ndims == 3 and label.shape.dims[2] in [1, 6, 3]: # 1 for segmentation label maps, and 6 for posemaps
+    elif label.shape.ndims == 3 and label.shape.dims[2] in [1, 6, 3, 7]: # 1 for segmentation label maps, and 6 for posemaps
       pass
     else:
       raise ValueError('Input label shape must be [height, width], or '

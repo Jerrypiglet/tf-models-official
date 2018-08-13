@@ -17,6 +17,7 @@
 import six
 
 import tensorflow as tf
+import numpy as np
 from deeplab.core import preprocess_utils
 
 slim = tf.contrib.slim
@@ -48,65 +49,97 @@ def euler_angles_to_quaternions(angle):
     Input:
     angle: [roll, pitch, yaw]
     """
-    in_dim = np.ndim(angle)
-    if in_dim == 1:
-        angle = angle[None, :]
+    angle = tf.reshape(angle, [-1, 3])
+    roll = tf.gather(angle, [0], axis=1)
+    pitch = tf.gather(angle,[1], axis=1)
+    yaw = tf.gather(angle, [2], axis=1)
+    q = tf.zeros([tf.shape(angle)[0], 4])
 
-    n = angle.shape[0]
-    roll, pitch, yaw = angle[:, 0], angle[:, 1], angle[:, 2]
-    q = np.zeros((n, 4))
+    cy = tf.cos(yaw * 0.5)
+    sy = tf.sin(yaw * 0.5)
+    cr = tf.cos(roll * 0.5)
+    sr = tf.sin(roll * 0.5)
+    cp = tf.cos(pitch * 0.5)
+    sp = tf.sin(pitch * 0.5)
 
-    cy = np.cos(yaw * 0.5)
-    sy = np.sin(yaw * 0.5)
-    cr = np.cos(roll * 0.5)
-    sr = np.sin(roll * 0.5)
-    cp = np.cos(pitch * 0.5)
-    sp = np.sin(pitch * 0.5)
+    q0 = cy * cr * cp + sy * sr * sp
+    q1 = cy * sr * cp - sy * cr * sp
+    q2 = cy * cr * sp + sy * sr * cp
+    q3 = sy * cr * cp - cy * sr * sp
+    q = tf.concat([q0, q1, q2, q3], axis=1)
+    return q
 
-    q[:, 0] = cy * cr * cp + sy * sr * sp
-    q[:, 1] = cy * sr * cp - sy * cr * sp
-    q[:, 2] = cy * cr * sp + sy * sr * cp
-    q[:, 3] = sy * cr * cp - cy * sr * sp
-
-    return q[0] if in_dim == 1 else q
-
-def smooth_l1_loss(predictions, labels, masks):
-    loss_sum = tf.losses.huber_loss(labels, predictions, delta=1.0, scope='collection_loss_reg')
+def smooth_l1_loss(predictions, labels, name='', loss_collection=tf.GraphKeys.LOSSES):
+    loss_sum = tf.losses.huber_loss(labels, predictions, delta=1.0, scope='collection_loss_reg_'+name, loss_collection=loss_collection)
     # loss_sum = tf.losses.absolute_difference(
     #         labels,
     #         predictions)
     # return loss_sum / (tf.reduce_sum(tf.to_float(masks))+1.)
     return loss_sum
 
-def add_my_pose_loss(prob_logits, labels, masks, upsample_logits, name=None, balance=1000., loss_type='rel_trans'):
+def add_my_pose_loss(prob_logits, labels, masks, upsample_logits, name=None, loss_type='rel_trans'):
     """ Loss for discrete pose from Peng Wang (http://icode.baidu.com/repos/baidu/personal-code/video_seg_transfer/blob/with_db:Networks/mx_losses.py)"""
 
     scaled_logits, scaled_labels = scale_logits_to_labels(prob_logits, labels, upsample_logits)
     masks_expanded = tf.tile(masks, [1, 1, 1, tf.shape(labels)[3]])
     scaled_logits_masked = tf.where(masks_expanded, scaled_logits, tf.zeros_like(scaled_logits))
     scaled_labels_masked = tf.where(masks_expanded, scaled_labels, tf.zeros_like(scaled_labels))
+    count_valid = tf.reduce_sum(tf.to_float(masks))+1e-6
 
     def slice_pose(pose_in):
-        rot = tf.gather(pose_in, [0, 1, 2], axis=3)
-        trans = tf.gather(pose_in, [3, 4, 5], axis=3)
-        # trans = tf.gather(pose_in, [5], axis=3)
+        rot = tf.gather(pose_in, [0, 1, 2, 3], axis=3)
+        trans = tf.gather(pose_in, [4, 5, 6], axis=3)
         return rot, trans
 
     rot, trans = slice_pose(scaled_logits_masked)
     rot_gt, trans_gt = slice_pose(scaled_labels_masked)
 
-    if loss_type == 'rel_trans':
-        depth_gt = tf.gather(trans_gt, [2], axis=3)
-        depth_gt = tf.tile(depth_gt, [1, 1, 1, 3])
-        inv_depth_gt = tf.where(tf.not_equal(depth_gt, 0.), 1./depth_gt, tf.zeros_like(depth_gt))
-        trans_diff = (trans - trans_gt) * inv_depth_gt
+    trans_loss = smooth_l1_loss(trans, trans_gt, '', loss_collection=None) / count_valid * 1e5
+    trans_loss = tf.identity(trans_loss, name=name+'_trans')
+    tf.losses.add_loss(trans_loss, loss_collection=tf.GraphKeys.LOSSES)
 
-    trans_loss = smooth_l1_loss(trans * inv_depth_gt, trans_gt * inv_depth_gt, masks)
-    # trans_loss = smooth_l1_loss(trans, trans_gt, masks)
-    rot_loss = smooth_l1_loss(rot, rot_gt, masks)
+    trans_metric = tf.concat([tf.gather(trans, [0, 1], axis=3), 1./tf.gather(trans, [2], axis=3)], axis=3)
+    trans_metric = tf.where(tf.tile(masks, [1, 1, 1, tf.shape(trans_metric)[3]]), trans_metric, tf.zeros_like(trans_metric))
+    trans_gt_metric = tf.concat([tf.gather(trans_gt, [0, 1], axis=3), 1./tf.gather(trans_gt, [2], axis=3)], axis=3)
+    trans_gt_metric = tf.where(tf.tile(masks, [1, 1, 1, tf.shape(trans_gt_metric)[3]]), trans_gt_metric, tf.zeros_like(trans_gt_metric))
+    trans_loss_metric = tf.nn.l2_loss(trans_metric - trans_gt_metric) / count_valid
+    trans_loss_metric = tf.identity(trans_loss_metric, name=name+'_trans_metric')
 
-    # total_loss = rot_loss * balance + trans_loss
-    total_loss = trans_loss
+    # rot_flatten = tf.reshape(rot, [-1, 3])
+    # rot_gt_flatten = tf.reshape(rot_gt, [-1, 3])
+    # rot_q_flatten = tf.nn.l2_normalize(euler_angles_to_quaternions(rot_flatten), axis=1)
+    # rot_gt_q_flatten = tf.nn.l2_normalize(euler_angles_to_quaternions(rot_gt_flatten), axis=1)
+    # rot_loss_quat = tf.nn.l2_loss(rot_gt_q_flatten - rot_q_flatten) / tf.to_float(tf.shape(rot_gt_flatten)[0])
+    # rot_loss_quat = tf.identity(rot_loss_quat, name=name+'_rot_quat')
+
+    # [1/2] Train with l1 loss, show with quat
+    # rot_loss = smooth_l1_loss(rot, rot_gt)
+    # total_loss = rot_loss*balance + trans_loss
+
+    # [2/2] Train with quat loss
+    # tf.losses.add_loss(rot_loss_quat, loss_collection=tf.GraphKeys.LOSSES)
+    # rot_loss = smooth_l1_loss(rot, rot_gt, loss_collection=None)
+    # total_loss = rot_loss_quat + trans_loss
+
+    # [3/3] Train with reg to quar loss
+    balance = 10.
+    rot_q_diff = tf.reduce_sum(tf.reduce_sum(tf.square(rot - rot_gt), axis=3) / 2.0)
+    rot_q_diff = rot_q_diff / count_valid * balance
+    tf.losses.add_loss(tf.identity(rot_q_diff, name=name+'_rot_quat'), loss_collection=tf.GraphKeys.LOSSES)
+    total_loss = rot_q_diff * balance + trans_loss
+
+    # [???] rotation matric following https://github.com/ApolloScapeAuto/dataset-api/blob/master/self_localization/eval_pose.py#L122a
+    # rot_q_diff = tf.abs(1. - tf.reduce_sum(tf.square(rot_q_flatten - rot_gt_q_flatten), axis=1) / 2.0)
+    # rot_q_diff_metric = tf.abs(1. - tf.reduce_sum(tf.square(tf.nn.l2_normalize(rot, axis=1) - tf.nn.l2_normalize(rot_gt, axis=1)), axis=1) / 2.0)
+
+    # [posenet] https://github.com/kentsommer/tensorflow-posenet/blob/master/test.py#L154 OR https://chrischoy.github.io/research/measuring-rotation/ OR https://math.stackexchange.com/questions/90081/quaternion-distance
+    rot_q_unit = tf.nn.l2_normalize(rot, axis=3)
+    rot_q_gt_unit = tf.nn.l2_normalize(rot_gt, axis=3)
+    rot_q_diff_metric = tf.acos(tf.abs(tf.reduce_sum(rot_q_unit * rot_q_gt_unit, axis=3, keep_dims=True)))
+    rot_q_diff_metric = tf.where(masks, rot_q_diff_metric, tf.zeros_like(rot_q_diff_metric))
+    dis_rot_metric = tf.reduce_sum(2 * rot_q_diff_metric * 180 / np.pi) / count_valid # per-pixel angle error
+    dis_rot_metric = tf.identity(dis_rot_metric, name=name+'_rot_quat_metric')
+
     total_loss = tf.identity(total_loss, name=name)
     return total_loss, scaled_logits
 
