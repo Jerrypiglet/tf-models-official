@@ -1,3 +1,7 @@
+# Train with ApolloScape
+```python
+python deeplab/train_val_apolloscape_instance.py     --logtostderr     --training_number_of_steps=90000     --train_split="train"     --model_variant="mobilenet_v2"     --output_stride=4     --train_crop_size=272     --train_crop_size=680     --train_batch_size=35 --dataset="apolloscape"     --tf_initial_checkpoint='deeplab/models/deeplabv3_mnv2_cityscapes_train/model.ckpt'     --base_logdir='deeplab/log' --dataset_dir='deeplab/datasets/apolloscape/combined/train/tfrecord_02_posedict_half'     --fine_tune_batch_norm=False --save_summaries_secs=20 --num_clones=7 --save_summaries_images=True --restore_logged=False --save_interval_secs=300 --task_name='all6_my_pose_cls_transOnly_val_reg_toQuat_trainInQuatLoss_reWeight' --if_val=True --if_discrete_loss=True --if_print_tensors=False
+```
 # DeepLab: Deep Labelling for Semantic Image Segmentation
 
 DeepLab is a state-of-art deep learning model for semantic image segmentation,
