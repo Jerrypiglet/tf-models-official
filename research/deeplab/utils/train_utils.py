@@ -102,8 +102,9 @@ def add_my_pose_loss(prob_logits, labels, masks, upsample_logits, name=None, los
     trans_metric = tf.where(tf.tile(masks, [1, 1, 1, tf.shape(trans_metric)[3]]), trans_metric, tf.zeros_like(trans_metric))
     trans_gt_metric = tf.concat([tf.gather(trans_gt, [0, 1], axis=3), 1./tf.gather(trans_gt, [2], axis=3)], axis=3)
     trans_gt_metric = tf.where(tf.tile(masks, [1, 1, 1, tf.shape(trans_gt_metric)[3]]), trans_gt_metric, tf.zeros_like(trans_gt_metric))
-    trans_loss_metric = tf.nn.l2_loss(trans_metric - trans_gt_metric) / count_valid
-    trans_loss_metric = tf.identity(trans_loss_metric, name=name+'_trans_metric')
+    trans_diff_metric = trans_metric - trans_gt_metric
+    trans_loss_metric_loss = tf.nn.l2_loss(trans_diff_metric) / count_valid
+    trans_loss_metric_loss = tf.identity(trans_loss_metric_loss, name=name+'_trans_metric')
 
     # rot_flatten = tf.reshape(rot, [-1, 3])
     # rot_gt_flatten = tf.reshape(rot_gt, [-1, 3])
@@ -137,11 +138,11 @@ def add_my_pose_loss(prob_logits, labels, masks, upsample_logits, name=None, los
     rot_q_gt_unit = tf.nn.l2_normalize(rot_gt, axis=3)
     rot_q_diff_metric = tf.acos(tf.abs(tf.reduce_sum(rot_q_unit * rot_q_gt_unit, axis=3, keep_dims=True)))
     rot_q_diff_metric = tf.where(masks, rot_q_diff_metric, tf.zeros_like(rot_q_diff_metric))
-    dis_rot_metric = tf.reduce_sum(2 * rot_q_diff_metric * 180 / np.pi) / count_valid # per-pixel angle error
-    dis_rot_metric = tf.identity(dis_rot_metric, name=name+'_rot_quat_metric')
+    dis_rot_metric_loss = tf.reduce_sum(2 * rot_q_diff_metric * 180 / np.pi) / count_valid # per-pixel angle error
+    dis_rot_metric_loss = tf.identity(dis_rot_metric_loss, name=name+'_rot_quat_metric')
 
     total_loss = tf.identity(total_loss, name=name)
-    return total_loss, scaled_logits
+    return total_loss, scaled_logits, rot_q_diff_metric, tf.reduce_sum(tf.square(trans_diff_metric), axis=3, keep_dims=True)
 
 def logits_cls_to_logits_prob(logits, bin_vals):
     prob = tf.contrib.layers.softmax(logits)

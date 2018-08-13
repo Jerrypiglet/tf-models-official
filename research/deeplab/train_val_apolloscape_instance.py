@@ -283,7 +283,7 @@ def _build_deeplab(inputs_queue, outputs_to_num_classes, outputs_to_indices, bin
   #         upsample_logits=FLAGS.upsample_logits,
   #         name=is_training_prefix + 'loss_all'
   #         )
-  loss, scaled_logits = train_utils.add_my_pose_loss(
+  loss, scaled_logits, rot_q_diff_metric, trans_diff_metric = train_utils.add_my_pose_loss(
           reg_logits_concat,
           samples[common.LABEL],
           samples['mask'],
@@ -291,6 +291,8 @@ def _build_deeplab(inputs_queue, outputs_to_num_classes, outputs_to_indices, bin
           name=is_training_prefix + 'loss_all'
           )
   scaled_logits = tf.identity(scaled_logits, name=is_training_prefix+'scaled_logits')
+  rot_q_diff_metric = tf.identity(rot_q_diff_metric, name=is_training_prefix+'rot_diffs')
+  trans_diff_metric = tf.identity(trans_diff_metric, name=is_training_prefix+'trans_diffs')
   masks = tf.identity(samples['mask'], name=is_training_prefix+'not_ignore_mask_in_loss')
   count_valid = tf.reduce_sum(tf.to_float(masks))+1e-6
 
@@ -475,6 +477,12 @@ def main(unused_argv):
       label_id_outputs = graph.get_tensor_by_name(pattern%'label_id')
       logit_outputs = graph.get_tensor_by_name(pattern%'scaled_logits')
 
+      summary_rot_diffs = graph.get_tensor_by_name(pattern%'rot_diffs')
+      summaries.add(tf.summary.image('diff_map/%s' % 'rot_diffs', tf.gather(summary_rot_diffs, [0, 1, 2])))
+
+      summary_trans_diffs = graph.get_tensor_by_name(pattern%'trans_diffs')
+      summaries.add(tf.summary.image('diff_map/%s' % 'trans_diffs', tf.gather(summary_trans_diffs, [0, 1, 2])))
+
       for output_idx, output in enumerate(dataset.output_names):
           # # Scale up summary image pixel values for better visualization.
           summary_label_output = tf.gather(label_outputs, [output_idx], axis=3)
@@ -516,6 +524,9 @@ def main(unused_argv):
 
           summary_loss_rot = graph.get_tensor_by_name(pattern%'loss_all_rot_quat')
           summaries.add(tf.summary.scalar(('total_loss/'+pattern%'loss_all_rot_quat').replace(':0', ''), summary_loss_rot))
+
+          summary_loss_rot = graph.get_tensor_by_name(pattern%'loss_all_trans_metric')
+          summaries.add(tf.summary.scalar(('total_loss/'+pattern%'loss_all_trans_metric').replace(':0', ''), summary_loss_rot))
 
           summary_loss_trans = graph.get_tensor_by_name(pattern%'loss_all_trans')
           summaries.add(tf.summary.scalar(('total_loss/'+pattern%'loss_all_trans').replace(':0', ''), summary_loss_trans))
@@ -607,18 +618,18 @@ def main(unused_argv):
             first_clone_test = graph.get_tensor_by_name('val-loss_all:0')
             test = sess.run(first_clone_test)
             print '-- Validating... Loss: %.4f'%test
-            first_clone_test = graph.get_tensor_by_name(
-                    ('%s/%s:0' % (first_clone_scope, 'scaled_logits')).strip('/'))
-            first_clone_test2 = graph.get_tensor_by_name(
-                    ('%s/%s:0' % (first_clone_scope, common.LABEL)).strip('/'))
-                    # 'ttttrow:0')
-            test, test2 = sess.run([first_clone_test, first_clone_test2])
-            test_out = test[:, :, :, 3]
-            test_out = test_out[test_out!=0]
-            test_out2 = test2[:, :, :, 3]
-            test_out2 = test_out2[test_out2!=0]
-            print test_out.shape, np.max(test_out), np.min(test_out), np.mean(test_out), np.median(test_out), test_out.dtype
-            print test_out2.shape, np.max(test_out2), np.min(test_out2), np.mean(test_out2), np.median(test_out2), test_out2.dtype
+            # first_clone_test = graph.get_tensor_by_name(
+            #         ('%s/%s:0' % (first_clone_scope, 'scaled_logits')).strip('/'))
+            # first_clone_test2 = graph.get_tensor_by_name(
+            #         ('%s/%s:0' % (first_clone_scope, common.LABEL)).strip('/'))
+            #         # 'ttttrow:0')
+            # test, test2 = sess.run([first_clone_test, first_clone_test2])
+            # test_out = test[:, :, :, 3]
+            # test_out = test_out[test_out!=0]
+            # test_out2 = test2[:, :, :, 3]
+            # test_out2 = test_out2[test_out2!=0]
+            # print test_out.shape, np.max(test_out), np.min(test_out), np.mean(test_out), np.median(test_out), test_out.dtype
+            # print test_out2.shape, np.max(test_out2), np.min(test_out2), np.mean(test_out2), np.median(test_out2), test_out2.dtype
 
         # first_clone_label = graph.get_tensor_by_name(
         #         ('%s/%s:0' % (first_clone_scope, common.LABEL)).strip('/')) # clone_0/val-loss:0
