@@ -45,7 +45,7 @@ def euler_angles_to_quaternions(angle):
     q = tf.concat([q0, q1, q2, q3], axis=-1)
     return q
 
-def _get_data(dataset, data_provider, dataset_split):
+def _get_data(dataset, data_provider, dataset_split, codes_cons):
   """Gets data from data provider.
 
   Args:
@@ -79,17 +79,36 @@ def _get_data(dataset, data_provider, dataset_split):
 
   label = None
   if dataset_split != common.TEST_SET:
-    seg, pose_dict = data_provider.get(['seg', 'pose_dict'])
+    seg, shape_id_map_gt, pose_dict, shape_id_dict = data_provider.get(['seg', 'shape_id_map', 'pose_dict', 'shape_id_dict'])
+    shape_id_map_gt = shape_id_map_gt - 1 # Gt is written as one plus
   if dataset.name == 'apolloscape':
     pose_dict = tf.reshape(pose_dict, [-1, 6])
     pose_dict = tf.identity(pose_dict, name='pose_dict')
     seg = tf.reshape(seg, [_DATASETS_INFORMATION[dataset.name].height, _DATASETS_INFORMATION[dataset.name].width, 1])
-    seg_one_hot = tf.one_hot(tf.reshape(seg, [-1]), depth=tf.shape(pose_dict)[0])
-    pose_map = tf.matmul(seg_one_hot, pose_dict)
+    mask = tf.not_equal(seg, 0)
+
+    seg_one_hot_posemap = tf.one_hot(tf.reshape(seg, [-1]), depth=tf.shape(pose_dict)[0])
+    pose_map = tf.matmul(seg_one_hot_posemap, pose_dict)
     pose_map = tf.reshape(pose_map, [_DATASETS_INFORMATION[dataset.name].height, _DATASETS_INFORMATION[dataset.name].width, 6])
 
+    shape_id_dict = tf.reshape(shape_id_dict, [-1])
+    shape_id_dict = tf.identity(shape_id_dict, name='shape_id_dict')
+    # print codes_cons.get_shape(), shape_id_dict.get_shape()
+    shape_dict = tf.gather(codes_cons, tf.clip_by_value(tf.cast(shape_id_dict, tf.int32), 0, 78))
+    shape_dict = tf.gather(shape_dict, [0], axis=1) # Only regress the first dimension
+    # assert tf.shape(shape_dict)[0] == tf.shape(pose_dict)[0]
+    seg_one_hot_shapemap = tf.one_hot(tf.reshape(seg, [-1]), depth=tf.shape(shape_dict)[0])
+    shape_map = tf.matmul(seg_one_hot_shapemap, shape_dict)
+    shape_map = tf.reshape(shape_map, [_DATASETS_INFORMATION[dataset.name].height, _DATASETS_INFORMATION[dataset.name].width, _DATASETS_INFORMATION[dataset.name].shape_dims])
+    shape_map_masked = tf.where(tf.tile(mask, [1, 1, dataset.shape_dims]), shape_map, tf.zeros_like(shape_map))
+
+    shape_id_map = tf.matmul(seg_one_hot_shapemap, tf.reshape(shape_id_dict, [-1, 1]))
+    shape_id_map = tf.reshape(tf.cast(shape_id_map, tf.int64), [_DATASETS_INFORMATION[dataset.name].height, _DATASETS_INFORMATION[dataset.name].width, _DATASETS_INFORMATION[dataset.name].shape_dims])
+    shape_id_map_masked = tf.where(tf.tile(mask, [1, 1, tf.shape(shape_id_map)[2]]), shape_id_map, tf.zeros_like(shape_id_map))
+    shape_id_map_gt = tf.reshape(tf.cast(shape_id_map_gt, tf.int64), [_DATASETS_INFORMATION[dataset.name].height, _DATASETS_INFORMATION[dataset.name].width, 1])
+    shape_id_map_gt_masked = tf.where(tf.tile(mask, [1, 1, tf.shape(shape_id_map_gt)[2]]), shape_id_map_gt, tf.zeros_like(shape_id_map_gt))
+
     seg = tf.cast(seg, tf.float32)
-    mask = tf.not_equal(seg, 0.)
 
     # ## Getting inverse depth outof the posemap
     label_depth = tf.gather(pose_map, [5], axis=2)
@@ -99,26 +118,19 @@ def _get_data(dataset, data_provider, dataset_split):
     label_angles = tf.gather(pose_map, [0, 1, 2], axis=2)
     label_quat = euler_angles_to_quaternions(label_angles)
     label = tf.concat([label_quat, tf.gather(pose_map, [3, 4], axis=2), label_invd], axis=2)
-    label_masked = tf.where(tf.tile(mask, [1, 1, dataset.num_classes]), label, tf.zeros_like(label))
+    label_masked = tf.where(tf.tile(mask, [1, 1, tf.shape(label)[2]]), label, tf.zeros_like(label))
 
-
-  return image, vis, label_masked, image_name, height, width, seg, mask
+  return image, vis, label_masked, shape_map_masked, shape_id_map_gt_masked, shape_id_map_masked, image_name, height, width, seg, mask
 
 
 def get(dataset,
-        crop_size,
         batch_size,
-        min_resize_value=None,
-        max_resize_value=None,
-        resize_factor=None,
-        min_scale_factor=1.,
-        max_scale_factor=1.,
-        scale_factor_step_size=0,
         num_readers=1,
         num_threads=1,
         dataset_split=None,
         is_training=True,
-        model_variant=None):
+        model_variant=None,
+        num_epochs=None):
   """Gets the dataset split for semantic segmentation.
 
   This functions gets the dataset split for semantic segmentation. In
@@ -159,16 +171,18 @@ def get(dataset,
     tf.logging.warning('Please specify a model_variant. See '
                        'feature_extractor.network_map for supported model '
                        'variants.')
+  codes = np.load('/home/share/zhurui/Documents/tf-models-official/research/deeplab/datasets/apolloscape/codes.npy')
   # options = {'options': tf.python_io.TFRecordOptions(tf.python_io.TFRecordCompressionType.GZIP)}
   options = {}
   data_provider = dataset_data_provider.DatasetDataProvider(
       dataset,
       num_readers=num_readers,
       reader_kwargs=options,
-      num_epochs=None,
+      num_epochs=num_epochs,
       shuffle=is_training)
-  image, vis, label, image_name, height, width, seg, mask = _get_data(dataset, data_provider,
-                                                      dataset_split)
+  codes_cons = tf.constant(np.transpose(codes), dtype=tf.float32)
+  image, vis, label, shape_map, shape_id_map_gt, shape_id_map, image_name, height, width, seg, mask = \
+          _get_data(dataset, data_provider, dataset_split, codes_cons)
   if label is not None:
     if label.shape.ndims == 2:
       label = tf.expand_dims(label, 2)
@@ -178,7 +192,7 @@ def get(dataset,
     else:
       raise ValueError('Input label shape must be [height, width], or '
                        '[height, width, {1,6}].')
-  label.set_shape([None, None, dataset.num_classes])
+  label.set_shape([None, None, 7])
   sample = {
       common.IMAGE: image,
       'vis': vis,
@@ -188,6 +202,9 @@ def get(dataset,
   }
   if label is not None:
     sample[common.LABEL] = label
+    sample['shape_map'] = shape_map
+    sample['shape_id_map'] = shape_id_map
+    sample['shape_id_map_gt'] = shape_id_map_gt
     # sample['label_id'] = label_id,
     sample['seg'] = seg
     sample['mask'] = mask
@@ -201,6 +218,6 @@ def get(dataset,
       sample,
       batch_size=batch_size,
       num_threads=num_threads,
-      capacity=32 * batch_size,
+      capacity=32 * batch_size if num_epochs==None else batch_size,
       allow_smaller_final_batch=False,
       dynamic_pad=False)

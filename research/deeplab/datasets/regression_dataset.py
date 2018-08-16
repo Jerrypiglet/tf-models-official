@@ -75,6 +75,7 @@ DatasetDescriptor = collections.namedtuple(
                       # foreground classes + 1 background class in the PASCAL
                       # VOC 2012 dataset. Thus, we set num_classes=21.
      # 'ignore_label',  # Ignore label value.
+     'shape_dims',
      'height',
      'width',
      'pose_range',
@@ -83,14 +84,17 @@ DatasetDescriptor = collections.namedtuple(
     ]
 )
 
+SHAPE_DIMS = 1
+
 _APOLLOSCAPE_INFORMATION = DatasetDescriptor(
     splits_to_sizes={
-        'train': 3928,
-        'val': 207,
+        'train': 4611,
+        'val': 480,
         # 'train': 731,
         # 'val': 107,
     },
-    num_classes=7,
+    num_classes=7+2,
+    shape_dims = SHAPE_DIMS,
     # ignore_label=255.,
     # height=544,
     height=272,
@@ -102,8 +106,8 @@ _APOLLOSCAPE_INFORMATION = DatasetDescriptor(
         [-100., 100.],
         [0., 100],
         [0., 0.66]],
-    bin_nums = [32, 32, 32, 32, 64, 64, 64],
-    output_names = ['q1', 'q2', 'q3', 'q4', 'x', 'y', 'z'],
+    bin_nums = [32, 32, 32, 32, 64, 64, 64, SHAPE_DIMS, 79],
+    output_names = ['q1', 'q2', 'q3', 'q4', 'x', 'y', 'z', 'shape', 'shape_id_map'],
     # pose_range = [[-np.pi, np.pi],
     #     [-np.pi/2, np.pi/2],
     #     [-np.pi, np.pi],
@@ -145,10 +149,13 @@ def get_dataset(dataset_name, split_name, dataset_dir):
 
   # Prepare the variables for different datasets.
   num_classes = _DATASETS_INFORMATION[dataset_name].num_classes
+  shape_dims = _DATASETS_INFORMATION[dataset_name].shape_dims
   pose_range = _DATASETS_INFORMATION[dataset_name].pose_range
   bin_nums = _DATASETS_INFORMATION[dataset_name].bin_nums
   output_names = _DATASETS_INFORMATION[dataset_name].output_names
   # ignore_label = _DATASETS_INFORMATION[dataset_name].ignore_label
+  height = _DATASETS_INFORMATION[dataset_name].height
+  width = _DATASETS_INFORMATION[dataset_name].width
 
   file_pattern = _FILE_PATTERN
   file_pattern = os.path.join(dataset_dir, file_pattern % split_name)
@@ -167,6 +174,7 @@ def get_dataset(dataset_name, split_name, dataset_dir):
           (), tf.int64, default_value=0),
       # 'image/posemap/class/encoded': tf.VarLenFeature(dtype=tf.float32),
       'posedict/encoded': tf.VarLenFeature(dtype=tf.float32),
+      'shapeiddict/encoded': tf.VarLenFeature(dtype=tf.float32),
       'vis/encoded': tf.FixedLenFeature(
           (), tf.string, default_value=''),
       'vis/format': tf.FixedLenFeature(
@@ -174,6 +182,10 @@ def get_dataset(dataset_name, split_name, dataset_dir):
       'seg/encoded': tf.FixedLenFeature(
           (), tf.string, default_value=''),
       'seg/format': tf.FixedLenFeature(
+          (), tf.string, default_value='png'),
+      'shape_id_map/encoded': tf.FixedLenFeature(
+          (), tf.string, default_value=''),
+      'shape_id_map/format': tf.FixedLenFeature(
           (), tf.string, default_value='png'),
   }
   items_to_handlers = {
@@ -193,7 +205,12 @@ def get_dataset(dataset_name, split_name, dataset_dir):
       'height': tfexample_decoder.Tensor('image/height'),
       'width': tfexample_decoder.Tensor('image/width'),
       # 'labels_class': tfexample_decoder.Tensor('image/posemap/class/encoded')
-      'pose_dict': tfexample_decoder.Tensor('posedict/encoded')
+      'pose_dict': tfexample_decoder.Tensor('posedict/encoded'),
+      'shape_id_dict': tfexample_decoder.Tensor('shapeiddict/encoded'),
+      'shape_id_map': tfexample_decoder.Image(
+          image_key='shape_id_map/encoded',
+          format_key='shape_id_map/format',
+          channels=1),
   }
 
   decoder = tfexample_decoder.TFExampleDecoder(
@@ -209,5 +226,8 @@ def get_dataset(dataset_name, split_name, dataset_dir):
       bin_nums=bin_nums,
       output_names=output_names,
       num_classes=num_classes,
+      shape_dims=shape_dims,
       name=dataset_name,
+      height=height,
+      width=width,
       multi_label=True)
