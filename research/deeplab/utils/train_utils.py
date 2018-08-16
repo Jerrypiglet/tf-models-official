@@ -82,14 +82,14 @@ def euler_angles_to_quaternions(angle):
     return q
 
 def smooth_l1_loss(predictions, labels, weights, name='', loss_collection=tf.GraphKeys.LOSSES):
-    loss_sum = tf.losses.huber_loss(labels, predictions, weights=weights, delta=1.0, scope='collection_loss_reg_'+name, loss_collection=loss_collection)
+    loss_sum = tf.losses.huber_loss(labels, predictions, weights=weights, delta=1.0, scope='loss_l1_reg_'+name, loss_collection=loss_collection)
     # loss_sum = tf.losses.absolute_difference(
     #         labels,
     #         predictions)
     # return loss_sum / (tf.reduce_sum(tf.to_float(masks))+1.)
     return loss_sum
 
-def add_my_pose_loss(prob_logits, labels, masks, balance_rot=1., balance_trans=1., upsample_logits=True, name=None, loss_collection=tf.GraphKeys.LOSSES, loss_type='rel_trans'):
+def add_my_pose_loss(prob_logits, labels, masks, balance_rot=1., balance_trans=1., upsample_logits=True, name=None, loss_collection=None):
     """ Loss for discrete pose from Peng Wang (http://icode.baidu.com/repos/baidu/personal-code/video_seg_transfer/blob/with_db:Networks/mx_losses.py)"""
 
     scaled_logits, scaled_labels = scale_logits_to_labels(prob_logits, labels, upsample_logits)
@@ -116,6 +116,7 @@ def add_my_pose_loss(prob_logits, labels, masks, balance_rot=1., balance_trans=1
     trans_gt_metric = tf.concat([tf.gather(trans_gt, [0, 1], axis=3), 1./tf.gather(trans_gt, [2], axis=3)], axis=3)
     trans_gt_metric = tf.where(tf.tile(masks, [1, 1, 1, tf.shape(trans_gt_metric)[3]]), trans_gt_metric, tf.zeros_like(trans_gt_metric))
     trans_diff_metric = trans_metric - trans_gt_metric
+    trans_error_map = tf.sqrt(tf.reduce_sum(tf.square(trans_diff_metric), axis=3, keepdims=True))
     trans_loss_metric_loss = tf.nn.l2_loss(trans_diff_metric) / count_valid
     trans_loss_metric_loss = tf.identity(trans_loss_metric_loss, name=name+'_trans_metric')
 
@@ -144,18 +145,18 @@ def add_my_pose_loss(prob_logits, labels, masks, balance_rot=1., balance_trans=1
     rot_q_unit = tf.nn.l2_normalize(rot, axis=3)
     rot_q_gt_unit = tf.nn.l2_normalize(rot_gt, axis=3)
     # [1/2 Peng] rotation matric following https://github.com/ApolloScapeAuto/dataset-api/blob/master/self_localization/eval_pose.py#L122a
-    rot_q_diff_metric = tf.acos(tf.abs(1. - tf.reduce_sum(tf.square(rot_q_unit - rot_q_gt_unit) / 2., axis=3, keepdims=True)))
+    rot_q_error_map = tf.acos(tf.abs(1. - tf.reduce_sum(tf.square(rot_q_unit - rot_q_gt_unit) / 2., axis=3, keepdims=True))) * 2 * 180 / np.pi
     # [2/2 posenet] https://github.com/kentsommer/tensorflow-posenet/blob/master/test.py#L154 OR https://chrischoy.github.io/research/measuring-rotation/ OR https://math.stackexchange.com/questions/90081/quaternion-distance
     # rot_q_diff_metric = tf.acos(tf.abs(tf.reduce_sum(rot_q_unit * rot_q_gt_unit, axis=3, keep_dims=True)))
 
-    rot_q_diff_metric = tf.where(masks, rot_q_diff_metric, tf.zeros_like(rot_q_diff_metric))
-    dis_rot_metric_loss = tf.reduce_sum(2 * rot_q_diff_metric * 180 / np.pi) / count_valid # per-pixel angle error
+    rot_q_error_map = tf.where(masks, rot_q_error_map, tf.zeros_like(rot_q_error_map))
+    dis_rot_metric_loss = tf.reduce_sum(rot_q_error_map) / count_valid # per-pixel angle error
     dis_rot_metric_loss = tf.identity(dis_rot_metric_loss, name=name+'_rot_quat_metric')
 
     total_loss = tf.identity(total_loss, name=name)
-    return total_loss, scaled_logits, rot_q_diff_metric, tf.sqrt(tf.reduce_sum(tf.square(trans_diff_metric), axis=3, keepdims=True))
+    return total_loss, scaled_logits, rot_q_error_map, trans_error_map
 
-def logits_cls_to_logits_prob(logits, bin_vals):
+def logits_cls_to_logits_probReg(logits, bin_vals):
     prob = tf.contrib.layers.softmax(logits)
     bin_vals_expand = tf.expand_dims(tf.expand_dims(bin_vals, 0), 0)
     bin_vals_expand = tf.tile(bin_vals_expand, [tf.shape(prob)[0], tf.shape(prob)[1], tf.shape(prob)[2], 1])
@@ -163,13 +164,13 @@ def logits_cls_to_logits_prob(logits, bin_vals):
     prob_logits = tf.reduce_sum(prob, axis=3, keepdims=True)
     return prob_logits
 
-def add_regression_loss(logits,
+def add_l1_regression_loss(logits,
         labels,
         masks,
         balance=1.,
         upsample_logits=True,
-        loss_collection=None,
-        name=None):
+        name='',
+        loss_collection=None):
     """Adds softmax cross entropy loss for logits of each scale.
 
     Args:
@@ -191,13 +192,16 @@ def add_regression_loss(logits,
     scaled_labels_masked = tf.where(masks_expanded, scaled_labels, tf.zeros_like(scaled_labels))
     # print scaled_logits.get_shape(), scaled_labels.get_shape(), masks_expanded.get_shape()
 
-    # loss = smooth_l1_loss(scaled_logits_masked, scaled_labels_masked,
-    #         tf.to_float(masks_expanded), '', loss_collection=loss_collection) * balance
-    loss = tf.losses.mean_squared_error(
-            scaled_labels_masked,
-            scaled_logits_masked,
-            weights=masks_expanded,
-            loss_collection=loss_collection) * balance
+    loss = smooth_l1_loss(scaled_logits_masked, scaled_labels_masked,
+            tf.to_float(masks_expanded),'', loss_collection=None) * balance
+    # loss = tf.losses.mean_squared_error(
+    #         scaled_labels_masked,
+    #         scaled_logits_masked,
+    #         weights=masks_expanded,
+    #         loss_collection=loss_collection) * balance
+    loss = tf.identity(loss, name=name)
+    if loss_collection!=None:
+        tf.losses.add_loss(loss, loss_collection=tf.GraphKeys.LOSSES)
     return loss, scaled_logits_masked
 
 

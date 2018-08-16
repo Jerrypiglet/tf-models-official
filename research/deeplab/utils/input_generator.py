@@ -95,7 +95,7 @@ def _get_data(dataset, data_provider, dataset_split, codes_cons):
     shape_id_dict = tf.identity(shape_id_dict, name='shape_id_dict')
     # print codes_cons.get_shape(), shape_id_dict.get_shape()
     shape_dict = tf.gather(codes_cons, tf.clip_by_value(tf.cast(shape_id_dict, tf.int32), 0, 78))
-    shape_dict = tf.gather(shape_dict, [0], axis=1) # Only regress the first dimension
+    # shape_dict = tf.gather(shape_dict, [0], axis=1) # Only regress the first dimension
     # assert tf.shape(shape_dict)[0] == tf.shape(pose_dict)[0]
     seg_one_hot_shapemap = tf.one_hot(tf.reshape(seg, [-1]), depth=tf.shape(shape_dict)[0])
     shape_map = tf.matmul(seg_one_hot_shapemap, shape_dict)
@@ -103,7 +103,7 @@ def _get_data(dataset, data_provider, dataset_split, codes_cons):
     shape_map_masked = tf.where(tf.tile(mask, [1, 1, dataset.shape_dims]), shape_map, tf.zeros_like(shape_map))
 
     shape_id_map = tf.matmul(seg_one_hot_shapemap, tf.reshape(shape_id_dict, [-1, 1]))
-    shape_id_map = tf.reshape(tf.cast(shape_id_map, tf.int64), [_DATASETS_INFORMATION[dataset.name].height, _DATASETS_INFORMATION[dataset.name].width, _DATASETS_INFORMATION[dataset.name].shape_dims])
+    shape_id_map = tf.reshape(tf.cast(shape_id_map, tf.int64), [_DATASETS_INFORMATION[dataset.name].height, _DATASETS_INFORMATION[dataset.name].width, 1])
     shape_id_map_masked = tf.where(tf.tile(mask, [1, 1, tf.shape(shape_id_map)[2]]), shape_id_map, tf.zeros_like(shape_id_map))
     shape_id_map_gt = tf.reshape(tf.cast(shape_id_map_gt, tf.int64), [_DATASETS_INFORMATION[dataset.name].height, _DATASETS_INFORMATION[dataset.name].width, 1])
     shape_id_map_gt_masked = tf.where(tf.tile(mask, [1, 1, tf.shape(shape_id_map_gt)[2]]), shape_id_map_gt, tf.zeros_like(shape_id_map_gt))
@@ -120,7 +120,9 @@ def _get_data(dataset, data_provider, dataset_split, codes_cons):
     label = tf.concat([label_quat, tf.gather(pose_map, [3, 4], axis=2), label_invd], axis=2)
     label_masked = tf.where(tf.tile(mask, [1, 1, tf.shape(label)[2]]), label, tf.zeros_like(label))
 
-  return image, vis, label_masked, shape_map_masked, shape_id_map_gt_masked, shape_id_map_masked, image_name, height, width, seg, mask
+    pose_shape_map_masked = tf.concat([label_masked, shape_map_masked], axis=2)
+
+  return image, vis, label_masked, shape_map_masked, pose_shape_map_masked, shape_id_map_gt_masked, shape_id_map_masked, image_name, height, width, seg, mask
 
 
 def get(dataset,
@@ -181,7 +183,7 @@ def get(dataset,
       num_epochs=num_epochs,
       shuffle=is_training)
   codes_cons = tf.constant(np.transpose(codes), dtype=tf.float32)
-  image, vis, label, shape_map, shape_id_map_gt, shape_id_map, image_name, height, width, seg, mask = \
+  image, vis, label, shape_map, pose_shape_map, shape_id_map_gt, shape_id_map, image_name, height, width, seg, mask = \
           _get_data(dataset, data_provider, dataset_split, codes_cons)
   if label is not None:
     if label.shape.ndims == 2:
@@ -201,8 +203,9 @@ def get(dataset,
       common.WIDTH: width
   }
   if label is not None:
-    sample[common.LABEL] = label
+    sample['pose_map'] = label
     sample['shape_map'] = shape_map
+    sample['pose_shape_map'] = pose_shape_map
     sample['shape_id_map'] = shape_id_map
     sample['shape_id_map_gt'] = shape_id_map_gt
     # sample['label_id'] = label_id,

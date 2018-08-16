@@ -84,7 +84,7 @@ DatasetDescriptor = collections.namedtuple(
     ]
 )
 
-SHAPE_DIMS = 1
+SHAPE_DIMS = 10
 
 _APOLLOSCAPE_INFORMATION = DatasetDescriptor(
     splits_to_sizes={
@@ -99,23 +99,34 @@ _APOLLOSCAPE_INFORMATION = DatasetDescriptor(
     # height=544,
     height=272,
     width=680,
+    # pose_range = [[-1., 1.],
+    #     [-1., 1.],
+    #     [-1., 1.],
+    #     [-1., 1.],
+    #     [-100., 100.],
+    #     [0., 100],
+    #     [0., 0.66]],
+    # bin_nums = [32, 32, 32, 32, 64, 64, 64, SHAPE_DIMS, 79],
+    # output_names = ['q1', 'q2', 'q3', 'q4', 'x', 'y', 'z', 'shape', 'shape_id_map'],
     pose_range = [[-1., 1.],
         [-1., 1.],
         [-1., 1.],
         [-1., 1.],
         [-100., 100.],
         [0., 100],
-        [0., 0.66]],
-    bin_nums = [32, 32, 32, 32, 64, 64, 64, SHAPE_DIMS, 79],
-    output_names = ['q1', 'q2', 'q3', 'q4', 'x', 'y', 'z', 'shape', 'shape_id_map'],
-    # pose_range = [[-np.pi, np.pi],
-    #     [-np.pi/2, np.pi/2],
-    #     [-np.pi, np.pi],
-    #     [-100., 100.],
-    #     [0., 100],
-    #     [0., 0.66]],
-    # bin_nums = [8, 8, 64, 64, 64, 64],
-    # output_names = ['row', 'pitch', 'yaw', 'x', 'y', 'z'],
+        [0., 0.66],
+        [-154., 179.],
+        [-44., 116.],
+        [-43., 57.],
+        [-49., 52.],
+        [-25., 34.5],
+        [-22., 28.5],
+        [-24., 30.],
+        [-18., 22.5],
+        [-20., 24.5],
+        [-15.5, 17.]],
+    bin_nums = [32, 32, 32, 32, 64, 64, 64] + [32]*SHAPE_DIMS,
+    output_names = ['q1', 'q2', 'q3', 'q4', 'x', 'y', 'z'] + ['shape_%d'%dim for dim in range(SHAPE_DIMS)],
 )
 
 _DATASETS_INFORMATION = {
@@ -224,6 +235,7 @@ def get_dataset(dataset_name, split_name, dataset_dir):
       # ignore_label=ignore_label,
       pose_range=pose_range,
       bin_nums=bin_nums,
+      SHAPE_DIMS=SHAPE_DIMS,
       output_names=output_names,
       num_classes=num_classes,
       shape_dims=shape_dims,

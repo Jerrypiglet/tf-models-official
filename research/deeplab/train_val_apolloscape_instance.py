@@ -252,7 +252,7 @@ def main(unused_argv):
 
   with tf.Graph().as_default() as graph:
     with tf.device(config.inputs_device()):
-      bin_range = [np.linspace(r[0], r[1], num=b).tolist() for r, b in zip(dataset.pose_range, dataset.bin_nums[:7])]
+      bin_range = [np.linspace(r[0], r[1], num=b).tolist() for r, b in zip(dataset.pose_range, dataset.bin_nums)]
       outputs_to_num_classes = {}
       outputs_to_indices = {}
       for output, bin_num, idx in zip(dataset.output_names, dataset.bin_nums,range(len(dataset.output_names))):
@@ -262,7 +262,7 @@ def main(unused_argv):
            outputs_to_num_classes[output] = 1
           outputs_to_indices[output] = idx
       bin_vals = [tf.constant(value=[bin_range[i]], dtype=tf.float32, shape=[1, dataset.bin_nums[i]], name=name) \
-              for i, name in enumerate(dataset.output_names[:7])]
+              for i, name in enumerate(dataset.output_names)]
       # print outputs_to_num_classes
       # print spaces_to_indices
 
@@ -343,14 +343,14 @@ def main(unused_argv):
           summary_tensor_uint8 = tf.cast(summary_tensor_float, tf.uint8)
           return summary_tensor_uint8, (offset_to_zero, scale_to_255)
 
-      label_outputs = graph.get_tensor_by_name(pattern%common.LABEL)
+      label_outputs = graph.get_tensor_by_name(pattern%'pose_map')
       label_id_outputs = graph.get_tensor_by_name(pattern%'label_id')
       logit_outputs = graph.get_tensor_by_name(pattern%'scaled_logits')
 
-      summary_rot_diffs = graph.get_tensor_by_name(pattern%'rot_diffs')
+      summary_rot_diffs = graph.get_tensor_by_name(pattern%'rot_error_map')
       summaries.add(tf.summary.image('diff_map/%s' % 'rot_diffs', tf.gather(summary_rot_diffs, [0, 1, 2])))
 
-      summary_trans_diffs = graph.get_tensor_by_name(pattern%'trans_diffs')
+      summary_trans_diffs = graph.get_tensor_by_name(pattern%'trans_error_map')
       summaries.add(tf.summary.image('diff_map/%s' % 'trans_diffs', tf.gather(summary_trans_diffs, [0, 1, 2])))
 
       shape_id_outputs = graph.get_tensor_by_name(pattern%'shape_id_map')
@@ -369,11 +369,11 @@ def main(unused_argv):
       summaries.add(tf.summary.image('test/shape_id_map_predict', tf.gather(summary_shape_id_output_uint8, [0, 1, 2])))
 
       shape_id_cls_error_map = graph.get_tensor_by_name(pattern%'shape_id_cls_error_map')
-      # summary_shape_id_output = tf.where(summary_mask, shape_id_outputs, tf.zeros_like(shape_id_outputs))
+      summary_shape_id_output = tf.where(summary_mask, shape_id_outputs, tf.zeros_like(shape_id_outputs))
       shape_id_cls_error_map_uint8, _ = scale_to_255(shape_id_cls_error_map)
       summaries.add(tf.summary.image('test/shape_id_cls_error_map', tf.gather(shape_id_cls_error_map_uint8, [0, 1, 2])))
 
-      for output_idx, output in enumerate(dataset.output_names[:7]):
+      for output_idx, output in enumerate(dataset.output_names):
           # # Scale up summary image pixel values for better visualization.
           summary_label_output = tf.gather(label_outputs, [output_idx], axis=3)
           summary_label_output= tf.where(summary_mask, summary_label_output, tf.zeros_like(summary_label_output))
@@ -397,15 +397,15 @@ def main(unused_argv):
           summary_diff = tf.where(summary_mask, summary_diff, tf.zeros_like(summary_diff))
           summaries.add(tf.summary.image('output/%s_ldiff' % output, tf.gather(tf.cast(summary_diff, tf.uint8), [0, 1, 2])))
 
-          summary_loss = graph.get_tensor_by_name((pattern%'loss_reg_').replace(':0', '')+output+':0')
-          summaries.add(tf.summary.scalar('slice_loss/'+(pattern%'_loss_reg_').replace(':0', '')+output, summary_loss))
+          summary_loss = graph.get_tensor_by_name((pattern%'loss_slice_reg_').replace(':0', '')+output+':0')
+          summaries.add(tf.summary.scalar('slice_loss/'+(pattern%'_reg_').replace(':0', '')+output, summary_loss))
 
-          summary_loss = graph.get_tensor_by_name((pattern%'loss_cls_').replace(':0', '')+output+':0')
-          summaries.add(tf.summary.scalar('slice_loss/'+(pattern%'_loss_cls_').replace(':0', '')+output, summary_loss))
+          summary_loss = graph.get_tensor_by_name((pattern%'loss_slice_cls_').replace(':0', '')+output+':0')
+          summaries.add(tf.summary.scalar('slice_loss/'+(pattern%'_cls_').replace(':0', '')+output, summary_loss))
 
       for pattern in [pattern_train, pattern_val] if FLAGS.if_val else [pattern_train]:
-          for loss_name in ['loss_all', 'loss_all_rot_quat_metric', 'loss_all_rot_quat', 'loss_all_trans_metric',
-                  'loss_all_trans', 'loss_cls_ALL', 'loss_all_shape', 'loss_all_shape_id_cls', 'loss_all_shape_id_cls_metric']:
+          for loss_name in ['loss_reg_rot_quat_metric', 'loss_reg_rot_quat', 'loss_reg_trans_metric',
+                  'loss_reg_trans', 'loss_cls_ALL', 'loss_reg_shape', 'loss_all_shape_id_cls_metric', 'loss_all_shape_id_cls_metric_check']:
               if pattern == pattern_val:
                 summary_loss_avg = graph.get_tensor_by_name(pattern%loss_name)
                 # summary_loss_dict['val-'+loss_name] = summary_loss_avg
@@ -489,7 +489,7 @@ def main(unused_argv):
             # test = sess.run(first_clone_test)
             print '-- Validating...'
             first_clone_test = graph.get_tensor_by_name(
-                    ('%s/%s:0' % (first_clone_scope, 'shape_id_cls_error_map')).strip('/'))
+                    ('%s/%s:0' % (first_clone_scope, 'shape_id_map')).strip('/'))
             first_clone_test2 = graph.get_tensor_by_name(
                     ('%s/%s:0' % (first_clone_scope, 'shape_id_map_gt')).strip('/'))
                     # 'ttttrow:0')
@@ -503,7 +503,7 @@ def main(unused_argv):
             print 'label: ', test_out2.shape, np.max(test_out2), np.min(test_out2), np.mean(test_out2), np.median(test_out2), test_out2.dtype
 
         # first_clone_label = graph.get_tensor_by_name(
-        #         ('%s/%s:0' % (first_clone_scope, common.LABEL)).strip('/')) # clone_0/val-loss:0
+        #         ('%s/%s:0' % (first_clone_scope, 'pose_map')).strip('/')) # clone_0/val-loss:0
         # # first_clone_pose_dict = graph.get_tensor_by_name(
         # #         ('%s/%s:0' % (first_clone_scope, 'pose_dict')).strip('/'))
         # first_clone_logit = graph.get_tensor_by_name(
