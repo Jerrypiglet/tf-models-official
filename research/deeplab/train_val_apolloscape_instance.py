@@ -250,9 +250,17 @@ def main(unused_argv):
       FLAGS.dataset, FLAGS.val_split, dataset_dir=FLAGS.dataset_dir)
   print '#### The data has size:', dataset.num_samples, dataset_val.num_samples
 
+  codes = np.load('/ssd2/public/zhurui/Documents/mesh-voxelization/models/cars_64/codes.npy')
+
   with tf.Graph().as_default() as graph:
     with tf.device(config.inputs_device()):
-      bin_range = [np.linspace(r[0], r[1], num=b).tolist() for r, b in zip(dataset.pose_range, dataset.bin_nums)]
+      codes_max = np.amax(codes, axis=1).reshape((-1, 1))
+      codes_min = np.amin(codes, axis=1).reshape((-1, 1))
+      shape_range = np.hstack((codes_max + (codes_max - codes_min)/(dataset.SHAPE_BINS-1.), codes_min - (codes_max - codes_min)/(dataset.SHAPE_BINS-1.)))
+      bin_range = [np.linspace(r[0], r[1], num=b).tolist() for r, b in zip(np.vstack((dataset.pose_range, shape_range)), dataset.bin_nums)]
+      print np.vstack((dataset.pose_range, shape_range))
+      print bin_range[0]
+      print bin_range[-1]
       outputs_to_num_classes = {}
       outputs_to_indices = {}
       for output, bin_num, idx in zip(dataset.output_names, dataset.bin_nums,range(len(dataset.output_names))):
@@ -268,6 +276,7 @@ def main(unused_argv):
 
       samples = input_generator.get(
           dataset,
+          codes,
           clone_batch_size,
           dataset_split=FLAGS.train_split,
           is_training=True,
@@ -277,6 +286,7 @@ def main(unused_argv):
 
       samples_val = input_generator.get(
           dataset_val,
+          codes,
           clone_batch_size,
           dataset_split=FLAGS.val_split,
           is_training=False,
@@ -290,7 +300,7 @@ def main(unused_argv):
 
       # Define the model and create clones.
       model_fn = _build_deeplab
-      model_args = (FLAGS, inputs_queue.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_vals, dataset, True, False)
+      model_args = (FLAGS, inputs_queue.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_vals, bin_range, dataset, codes, True, False)
       clones = model_deploy.create_clones(config, model_fn, args=model_args)
 
       # Gather update_ops from the first clone. These contain, for example,
@@ -301,7 +311,7 @@ def main(unused_argv):
     with tf.device('/device:GPU:3'):
         if FLAGS.if_val:
           ## Construct the validation graph; takes one GPU.
-          _build_deeplab(FLAGS, inputs_queue_val.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_vals, dataset_val, is_training=False, reuse=True)
+          _build_deeplab(FLAGS, inputs_queue_val.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_vals, bin_range, dataset_val, codes, is_training=False, reuse=True)
 
     # Gather initial summaries.
     summaries = set(tf.get_collection(tf.GraphKeys.SUMMARIES))
@@ -327,6 +337,9 @@ def main(unused_argv):
       summary_image_name = graph.get_tensor_by_name(pattern%common.IMAGE_NAME)
       summaries.add(tf.summary.text('gt/%s' % common.IMAGE_NAME, tf.gather(summary_image_name, [0, 1, 2])))
 
+      summary_image_name = graph.get_tensor_by_name(pattern_train%common.IMAGE_NAME)
+      summaries.add(tf.summary.text('gt/%s_train' % common.IMAGE_NAME, tf.gather(summary_image_name, [0, 1, 2])))
+
       summary_vis = graph.get_tensor_by_name(pattern%'vis')
       summaries.add(tf.summary.image('gt/%s' % 'vis', tf.gather(summary_vis, [0, 1, 2])))
 
@@ -343,35 +356,42 @@ def main(unused_argv):
           summary_tensor_uint8 = tf.cast(summary_tensor_float, tf.uint8)
           return summary_tensor_uint8, (offset_to_zero, scale_to_255)
 
-      label_outputs = graph.get_tensor_by_name(pattern%'pose_map')
-      label_id_outputs = graph.get_tensor_by_name(pattern%'label_id')
-      logit_outputs = graph.get_tensor_by_name(pattern%'scaled_logits')
+      label_outputs = graph.get_tensor_by_name(pattern%'label_pose_shape_map')
+      label_id_outputs = graph.get_tensor_by_name(pattern%'pose_shape_label_id_map')
+      logit_outputs = graph.get_tensor_by_name(pattern%'scaled_prob_logits_pose_shape_map')
 
       summary_rot_diffs = graph.get_tensor_by_name(pattern%'rot_error_map')
-      summaries.add(tf.summary.image('diff_map/%s' % 'rot_diffs', tf.gather(summary_rot_diffs, [0, 1, 2])))
+      summary_rot_diffs = tf.where(summary_mask, summary_rot_diffs, tf.zeros_like(summary_rot_diffs))
+      summary_rot_diffs_uint8, _ = scale_to_255(summary_rot_diffs)
+      summaries.add(tf.summary.image('metrics_map/%s' % 'rot_diffs', tf.gather(summary_rot_diffs_uint8, [0, 1, 2])))
 
       summary_trans_diffs = graph.get_tensor_by_name(pattern%'trans_error_map')
-      summaries.add(tf.summary.image('diff_map/%s' % 'trans_diffs', tf.gather(summary_trans_diffs, [0, 1, 2])))
+      summary_trans_diffs = tf.where(summary_mask, summary_trans_diffs, tf.zeros_like(summary_trans_diffs))
+      summary_trans_diffs_uint8, _ = scale_to_255(summary_trans_diffs)
+      summaries.add(tf.summary.image('metrics_map/%s' % 'trans_diffs', tf.gather(summary_trans_diffs, [0, 1, 2])))
 
       shape_id_outputs = graph.get_tensor_by_name(pattern%'shape_id_map')
       shape_id_outputs = tf.where(summary_mask, shape_id_outputs+1, tf.zeros_like(shape_id_outputs))
       summary_shape_id_output_uint8, _ = scale_to_255(shape_id_outputs)
-      summaries.add(tf.summary.image('test/shape_id_map', tf.gather(summary_shape_id_output_uint8, [0, 1, 2])))
+      summaries.add(tf.summary.image('shape/shape_id_map', tf.gather(summary_shape_id_output_uint8, [0, 1, 2])))
 
       shape_id_outputs_gt = graph.get_tensor_by_name(pattern%'shape_id_map_gt')
       shape_id_outputs_gt = tf.where(summary_mask, shape_id_outputs_gt+1, tf.zeros_like(shape_id_outputs))
       summary_shape_id_output_uint8_gt, _ = scale_to_255(shape_id_outputs_gt)
-      summaries.add(tf.summary.image('test/shape_id_map_gt', tf.gather(summary_shape_id_output_uint8_gt, [0, 1, 2])))
+      summaries.add(tf.summary.image('shape/shape_id_map_gt', tf.gather(summary_shape_id_output_uint8_gt, [0, 1, 2])))
 
       shape_id_outputs = graph.get_tensor_by_name(pattern%'shape_id_map_predict')
       summary_shape_id_output = tf.where(summary_mask, shape_id_outputs, tf.zeros_like(shape_id_outputs))
       summary_shape_id_output_uint8, _ = scale_to_255(summary_shape_id_output)
-      summaries.add(tf.summary.image('test/shape_id_map_predict', tf.gather(summary_shape_id_output_uint8, [0, 1, 2])))
+      summaries.add(tf.summary.image('shape/shape_id_map_predict', tf.gather(summary_shape_id_output_uint8, [0, 1, 2])))
 
-      shape_id_cls_error_map = graph.get_tensor_by_name(pattern%'shape_id_cls_error_map')
-      summary_shape_id_output = tf.where(summary_mask, shape_id_outputs, tf.zeros_like(shape_id_outputs))
-      shape_id_cls_error_map_uint8, _ = scale_to_255(shape_id_cls_error_map)
-      summaries.add(tf.summary.image('test/shape_id_cls_error_map', tf.gather(shape_id_cls_error_map_uint8, [0, 1, 2])))
+      shape_id_sim_map_train = graph.get_tensor_by_name(pattern_train%'shape_id_sim_map')
+      shape_id_sim_map_uint8_train, _ = scale_to_255(shape_id_sim_map_train, pixel_scaling=(0., 255.))
+      summaries.add(tf.summary.image('metrics_map/shape_id_sim_map-trainInv', tf.gather(shape_id_sim_map_uint8_train, [0, 1, 2])))
+
+      shape_id_sim_map = graph.get_tensor_by_name(pattern%'shape_id_sim_map')
+      shape_id_sim_map_uint8, _ = scale_to_255(shape_id_sim_map, pixel_scaling=(0., 255.))
+      summaries.add(tf.summary.image('metrics_map/shape_id_sim_map-valInv', tf.gather(shape_id_sim_map_uint8, [0, 1, 2])))
 
       for output_idx, output in enumerate(dataset.output_names):
           # # Scale up summary image pixel values for better visualization.
@@ -386,26 +406,26 @@ def main(unused_argv):
           summaries.add(tf.summary.image(
               'output/%s_logit' % output, tf.gather(summary_logit_output_uint8, [0, 1, 2])))
 
-          summary_label_id_output = tf.to_float(tf.gather(label_id_outputs, [output_idx], axis=3))
-          summary_label_id_output = tf.where(summary_mask, summary_label_id_output+1, tf.zeros_like(summary_label_id_output))
-          summary_label_id_output_uint8, _ = scale_to_255(summary_label_id_output)
-          summary_label_id_output_uint8 = tf.identity(summary_label_id_output_uint8, 'tttt'+output)
-          summaries.add(tf.summary.image(
-              'test/%s_label_id' % output, tf.gather(summary_label_id_output_uint8, [0, 1, 2])))
+          # summary_label_id_output = tf.to_float(tf.gather(label_id_outputs, [output_idx], axis=3))
+          # summary_label_id_output = tf.where(summary_mask, summary_label_id_output+1, tf.zeros_like(summary_label_id_output))
+          # summary_label_id_output_uint8, _ = scale_to_255(summary_label_id_output)
+          # summary_label_id_output_uint8 = tf.identity(summary_label_id_output_uint8, 'tttt'+output)
+          # summaries.add(tf.summary.image(
+          #     'test/%s_label_id' % output, tf.gather(summary_label_id_output_uint8, [0, 1, 2])))
 
           summary_diff = tf.abs(tf.to_float(summary_label_output_uint8) - tf.to_float(summary_logit_output_uint8))
           summary_diff = tf.where(summary_mask, summary_diff, tf.zeros_like(summary_diff))
-          summaries.add(tf.summary.image('output/%s_ldiff' % output, tf.gather(tf.cast(summary_diff, tf.uint8), [0, 1, 2])))
+          summaries.add(tf.summary.image('diff_map/%s_ldiff' % output, tf.gather(tf.cast(summary_diff, tf.uint8), [0, 1, 2])))
 
           summary_loss = graph.get_tensor_by_name((pattern%'loss_slice_reg_').replace(':0', '')+output+':0')
-          summaries.add(tf.summary.scalar('slice_loss/'+(pattern%'_reg_').replace(':0', '')+output, summary_loss))
+          summaries.add(tf.summary.scalar('slice_loss/'+(pattern%'reg_').replace(':0', '')+output, summary_loss))
 
           summary_loss = graph.get_tensor_by_name((pattern%'loss_slice_cls_').replace(':0', '')+output+':0')
-          summaries.add(tf.summary.scalar('slice_loss/'+(pattern%'_cls_').replace(':0', '')+output, summary_loss))
+          summaries.add(tf.summary.scalar('slice_loss/'+(pattern%'cls_').replace(':0', '')+output, summary_loss))
 
       for pattern in [pattern_train, pattern_val] if FLAGS.if_val else [pattern_train]:
           for loss_name in ['loss_reg_rot_quat_metric', 'loss_reg_rot_quat', 'loss_reg_trans_metric',
-                  'loss_reg_trans', 'loss_cls_ALL', 'loss_reg_shape', 'loss_all_shape_id_cls_metric', 'loss_all_shape_id_cls_metric_check']:
+                  'loss_reg_trans', 'loss_cls_ALL', 'loss_reg_shape', 'loss_all_shape_id_cls_metric']:
               if pattern == pattern_val:
                 summary_loss_avg = graph.get_tensor_by_name(pattern%loss_name)
                 # summary_loss_dict['val-'+loss_name] = summary_loss_avg
@@ -491,16 +511,22 @@ def main(unused_argv):
             first_clone_test = graph.get_tensor_by_name(
                     ('%s/%s:0' % (first_clone_scope, 'shape_id_map')).strip('/'))
             first_clone_test2 = graph.get_tensor_by_name(
-                    ('%s/%s:0' % (first_clone_scope, 'shape_id_map_gt')).strip('/'))
+                    ('%s/%s:0' % (first_clone_scope, 'shape_id_sim_map')).strip('/'))
                     # 'ttttrow:0')
-            test_out, test_out2 = sess.run([first_clone_test, first_clone_test2])
+            first_clone_test3 = graph.get_tensor_by_name(
+                    ('%s/%s:0' % (first_clone_scope, 'not_ignore_mask_in_loss')).strip('/'))
+                    # 'ttttrow:0')
+            test_out, test_out2, test_out3 = sess.run([first_clone_test, first_clone_test2, first_clone_test3])
             # test_out = test[:, :, :, 3]
-            test_out = test_out[test_out!=0]
+            test_out = test_out[test_out3]
             # test_out2 = test2[:, :, :, 3]
-            test_out2 = test_out2[test_out2!=0]
+            test_out2 = test_out2[test_out3]
             # print test_out
-            print 'output: ', test_out.shape, np.max(test_out), np.min(test_out), np.mean(test_out), np.median(test_out), test_out.dtype
-            print 'label: ', test_out2.shape, np.max(test_out2), np.min(test_out2), np.mean(test_out2), np.median(test_out2), test_out2.dtype
+            print 'shape_id_map: ', test_out.shape, np.max(test_out), np.min(test_out), np.mean(test_out), np.median(test_out), test_out.dtype
+            print 'shape_id_sim_map: ', test_out2.shape, np.max(test_out2), np.min(test_out2), np.mean(test_out2), np.median(test_out2), test_out2.dtype
+            print 'masks sum: ', test_out3.dtype, np.sum(test_out3.astype(float))
+            # assert np.max(test_out) == np.max(test_out2), 'MAtch1!!!'
+            # assert np.min(test_out) == np.min(test_out2), 'MAtch2!!!'
 
         # first_clone_label = graph.get_tensor_by_name(
         #         ('%s/%s:0' % (first_clone_scope, 'pose_map')).strip('/')) # clone_0/val-loss:0

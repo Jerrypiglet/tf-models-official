@@ -76,6 +76,7 @@ DatasetDescriptor = collections.namedtuple(
                       # VOC 2012 dataset. Thus, we set num_classes=21.
      # 'ignore_label',  # Ignore label value.
      'shape_dims',
+     'shape_bins',
      'height',
      'width',
      'pose_range',
@@ -85,6 +86,7 @@ DatasetDescriptor = collections.namedtuple(
 )
 
 SHAPE_DIMS = 10
+SHAPE_BINS = 32
 
 _APOLLOSCAPE_INFORMATION = DatasetDescriptor(
     splits_to_sizes={
@@ -95,6 +97,7 @@ _APOLLOSCAPE_INFORMATION = DatasetDescriptor(
     },
     num_classes=7+2,
     shape_dims = SHAPE_DIMS,
+    shape_bins = SHAPE_BINS,
     # ignore_label=255.,
     # height=544,
     height=272,
@@ -114,18 +117,18 @@ _APOLLOSCAPE_INFORMATION = DatasetDescriptor(
         [-1., 1.],
         [-100., 100.],
         [0., 100],
-        [0., 0.66],
-        [-154., 179.],
-        [-44., 116.],
-        [-43., 57.],
-        [-49., 52.],
-        [-25., 34.5],
-        [-22., 28.5],
-        [-24., 30.],
-        [-18., 22.5],
-        [-20., 24.5],
-        [-15.5, 17.]],
-    bin_nums = [32, 32, 32, 32, 64, 64, 64] + [32]*SHAPE_DIMS,
+        [0., 0.66]],
+        # [-131., 194.5],
+        # [-49., 52.5],
+        # [-27.5, 36.5],
+        # [-33.5, 38.5],
+        # [-12.5, 31.],
+        # [-17.5, 28.5],
+        # [-13.5, 20.5],
+        # [-16., 19.5],
+        # [-12.5, 15.],
+        # [-13.5, 16.]],
+    bin_nums = [32, 32, 32, 32, 64, 64, 64] + [SHAPE_BINS]*SHAPE_DIMS,
     output_names = ['q1', 'q2', 'q3', 'q4', 'x', 'y', 'z'] + ['shape_%d'%dim for dim in range(SHAPE_DIMS)],
 )
 
@@ -160,7 +163,8 @@ def get_dataset(dataset_name, split_name, dataset_dir):
 
   # Prepare the variables for different datasets.
   num_classes = _DATASETS_INFORMATION[dataset_name].num_classes
-  shape_dims = _DATASETS_INFORMATION[dataset_name].shape_dims
+  SHAPE_DIMS = _DATASETS_INFORMATION[dataset_name].shape_dims
+  SHAPE_BINS = _DATASETS_INFORMATION[dataset_name].shape_bins
   pose_range = _DATASETS_INFORMATION[dataset_name].pose_range
   bin_nums = _DATASETS_INFORMATION[dataset_name].bin_nums
   output_names = _DATASETS_INFORMATION[dataset_name].output_names
@@ -238,7 +242,8 @@ def get_dataset(dataset_name, split_name, dataset_dir):
       SHAPE_DIMS=SHAPE_DIMS,
       output_names=output_names,
       num_classes=num_classes,
-      shape_dims=shape_dims,
+      # shape_dims=shape_dims,
+      SHAPE_BINS=SHAPE_BINS,
       name=dataset_name,
       height=height,
       width=width,

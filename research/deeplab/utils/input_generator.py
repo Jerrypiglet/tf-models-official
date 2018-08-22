@@ -80,12 +80,12 @@ def _get_data(dataset, data_provider, dataset_split, codes_cons):
   label = None
   if dataset_split != common.TEST_SET:
     seg, shape_id_map_gt, pose_dict, shape_id_dict = data_provider.get(['seg', 'shape_id_map', 'pose_dict', 'shape_id_dict'])
-    shape_id_map_gt = shape_id_map_gt - 1 # Gt is written as one plus
+    # shape_id_map_gt = shape_id_map_gt - 1 # Gt is written as one plus
   if dataset.name == 'apolloscape':
     pose_dict = tf.reshape(pose_dict, [-1, 6])
     pose_dict = tf.identity(pose_dict, name='pose_dict')
     seg = tf.reshape(seg, [_DATASETS_INFORMATION[dataset.name].height, _DATASETS_INFORMATION[dataset.name].width, 1])
-    mask = tf.not_equal(seg, 0)
+    mask = tf.greater(seg, 0)
 
     seg_one_hot_posemap = tf.one_hot(tf.reshape(seg, [-1]), depth=tf.shape(pose_dict)[0])
     pose_map = tf.matmul(seg_one_hot_posemap, pose_dict)
@@ -100,13 +100,13 @@ def _get_data(dataset, data_provider, dataset_split, codes_cons):
     seg_one_hot_shapemap = tf.one_hot(tf.reshape(seg, [-1]), depth=tf.shape(shape_dict)[0])
     shape_map = tf.matmul(seg_one_hot_shapemap, shape_dict)
     shape_map = tf.reshape(shape_map, [_DATASETS_INFORMATION[dataset.name].height, _DATASETS_INFORMATION[dataset.name].width, _DATASETS_INFORMATION[dataset.name].shape_dims])
-    shape_map_masked = tf.where(tf.tile(mask, [1, 1, dataset.shape_dims]), shape_map, tf.zeros_like(shape_map))
+    shape_map_masked = tf.where(tf.tile(mask, [1, 1, dataset.SHAPE_DIMS]), shape_map, tf.zeros_like(shape_map))
 
     shape_id_map = tf.matmul(seg_one_hot_shapemap, tf.reshape(shape_id_dict, [-1, 1]))
     shape_id_map = tf.reshape(tf.cast(shape_id_map, tf.int64), [_DATASETS_INFORMATION[dataset.name].height, _DATASETS_INFORMATION[dataset.name].width, 1])
     shape_id_map_masked = tf.where(tf.tile(mask, [1, 1, tf.shape(shape_id_map)[2]]), shape_id_map, tf.zeros_like(shape_id_map))
     shape_id_map_gt = tf.reshape(tf.cast(shape_id_map_gt, tf.int64), [_DATASETS_INFORMATION[dataset.name].height, _DATASETS_INFORMATION[dataset.name].width, 1])
-    shape_id_map_gt_masked = tf.where(tf.tile(mask, [1, 1, tf.shape(shape_id_map_gt)[2]]), shape_id_map_gt, tf.zeros_like(shape_id_map_gt))
+    shape_id_map_gt_masked = tf.where(tf.tile(mask, [1, 1, tf.shape(shape_id_map_gt)[2]]), shape_id_map_gt-1, tf.zeros_like(shape_id_map_gt))
 
     seg = tf.cast(seg, tf.float32)
 
@@ -126,6 +126,7 @@ def _get_data(dataset, data_provider, dataset_split, codes_cons):
 
 
 def get(dataset,
+        codes,
         batch_size,
         num_readers=1,
         num_threads=1,
@@ -173,8 +174,8 @@ def get(dataset,
     tf.logging.warning('Please specify a model_variant. See '
                        'feature_extractor.network_map for supported model '
                        'variants.')
-  codes = np.load('/home/share/zhurui/Documents/tf-models-official/research/deeplab/datasets/apolloscape/codes.npy')
-  # options = {'options': tf.python_io.TFRecordOptions(tf.python_io.TFRecordCompressionType.GZIP)}
+  # codes = np.load('/home/share/zhurui/Documents/tf-models-official/research/deeplab/datasets/apolloscape/codes.npy')
+  # codes = np.load('/ssd2/public/zhurui/Documents/mesh-voxelization/models/cars_64/codes.npy')
   options = {}
   data_provider = dataset_data_provider.DatasetDataProvider(
       dataset,
@@ -205,7 +206,7 @@ def get(dataset,
   if label is not None:
     sample['pose_map'] = label
     sample['shape_map'] = shape_map
-    sample['pose_shape_map'] = pose_shape_map
+    sample['label_pose_shape_map'] = pose_shape_map
     sample['shape_id_map'] = shape_id_map
     sample['shape_id_map_gt'] = shape_id_map_gt
     # sample['label_id'] = label_id,
