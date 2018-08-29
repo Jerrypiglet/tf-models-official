@@ -1,0 +1,1 @@
+BUILD_SUBMITTER -x -m baidu/VideoSegRec/DeMoN -c "cd baidu/VideoSegRec/DeMoN && mkdir output && cp BCLOUD ./output/" -u ./

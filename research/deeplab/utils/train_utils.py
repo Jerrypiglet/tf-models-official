@@ -36,8 +36,6 @@ def get_avg_tensor_from_scopes(num_clones, pattern_train_postfix, graph, config,
 
 def scale_logits_to_labels(logits, labels, upsample_logits):
     """ Scaled logits and labels to the same scale."""
-    if labels is None:
-      raise ValueError('No label for softmax cross entropy loss.')
     if upsample_logits:
       # Label is not downsampled, and instead we upsample logits.
       scaled_logits = tf.image.resize_bilinear(
@@ -163,6 +161,12 @@ def logits_cls_to_logits_probReg(logits, bin_vals):
     prob = tf.multiply(prob, bin_vals_expand)
     prob_logits = tf.reduce_sum(prob, axis=3, keepdims=True)
     return prob_logits
+
+def scale_for_l1_loss(logits, labels, masks, upsample_logits):
+    scaled_logits, scaled_labels = scale_logits_to_labels(logits, labels, upsample_logits)
+    masks_expanded = tf.tile(masks, [1, 1, 1, tf.shape(scaled_logits)[3]])
+    scaled_logits_masked = tf.where(masks_expanded, scaled_logits, tf.zeros_like(scaled_logits))
+    return scaled_logits_masked
 
 def add_l1_regression_loss(logits,
         labels,

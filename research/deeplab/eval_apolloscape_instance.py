@@ -32,7 +32,7 @@ from deployment import model_deploy
 import numpy as np
 np.set_printoptions(threshold=np.nan)
 np.set_printoptions(precision=4)
-
+from scipy.io import savemat, loadmat
 from deeplab.core import preprocess_utils
 
 slim = tf.contrib.slim
@@ -118,7 +118,7 @@ flags.DEFINE_integer('output_stride', 16,
 flags.DEFINE_string('dataset', 'apolloscape',
                     'Name of the segmentation dataset.')
 
-flags.DEFINE_string('eval_split', 'val',
+flags.DEFINE_string('val_split', 'val',
                     'Which split of the dataset to be used for evaluation.')
 
 flags.DEFINE_string('dataset_dir', 'deeplab/datasets/apolloscape', 'Where the dataset reside.')
@@ -127,13 +127,13 @@ from build_deeplab import _build_deeplab
 
 def main(unused_argv):
   FLAGS.restore_logdir = FLAGS.base_logdir + '/' + FLAGS.restore_name
-  FLAGS.eval_logdir = FLAGS.base_logdir + '/' + FLAGS.task_name + '/' + 'eval'
+  # FLAGS.eval_logdir = FLAGS.base_logdir + '/' + FLAGS.task_name + '/' + 'eval'
   tf.logging.set_verbosity(tf.logging.INFO)
-  tf.logging.info('==== Logging in dir:%s; Evaluating on %s set', FLAGS.eval_logdir, FLAGS.eval_split)
+  tf.logging.info('==== Logging in dir:%s; Evaluating on %s set', FLAGS.eval_logdir, FLAGS.val_split)
 
   # Get dataset-dependent information.
   dataset = regression_dataset.get_dataset(
-      FLAGS.dataset, FLAGS.eval_split, dataset_dir=FLAGS.dataset_dir)
+      FLAGS.dataset, FLAGS.val_split, dataset_dir=FLAGS.dataset_dir)
   print '#### The data has size:', dataset.num_samples
 
   with tf.Graph().as_default() as graph:
@@ -155,7 +155,7 @@ def main(unused_argv):
         dataset,
         codes,
         FLAGS.eval_batch_size,
-        dataset_split=FLAGS.eval_split,
+        dataset_split=FLAGS.val_split,
         is_training=False,
         model_variant=FLAGS.model_variant,
         num_epochs=None if FLAGS.max_number_of_evaluations>=1 else 1)
@@ -175,13 +175,13 @@ def main(unused_argv):
     # Define the evaluation metric.
     num_batches = int(math.ceil(dataset.num_samples / float(FLAGS.eval_batch_size)))
     num_eval_iters = None
-    metric = tf.metrics.mean_squared_error(
-            graph.get_tensor_by_name(pattern%'label_pose_shape_map'),
-            graph.get_tensor_by_name(pattern%'scaled_prob_logits_pose_shape_map'))
-    print metric
-    names_to_values, names_to_updates = tf.contrib.metrics.aggregate_metric_map({'mse': metric})
+    # metric = tf.metrics.mean_squared_error(
+    #         graph.get_tensor_by_name(pattern%'label_pose_shape_map'),
+    #         graph.get_tensor_by_name(pattern%'scaled_prob_logits_pose_shape_map'))
+    # print metric
+    # names_to_values, names_to_updates = tf.contrib.metrics.aggregate_metric_map({'mse': metric})
 
-    # Start the evaluation.
+    # For single evaluation across the dataset.
     # metric_values = slim.evaluation.evaluate_once(
     #         master='',
     #         checkpoint_path=tf.train.latest_checkpoint(FLAGS.restore_logdir),
@@ -190,6 +190,8 @@ def main(unused_argv):
     #         eval_op=names_to_updates.values(),
     #         final_op=names_to_updates.values(),
     #         )
+
+    # For continuous timed evalatiion on new checkpoint.
     # metric_values = slim.evaluation.evaluation_loop(
     #         master='',
     #         checkpoint_dir=FLAGS.restore_logdir,
@@ -204,18 +206,40 @@ def main(unused_argv):
     #     print 'Metric %s has value: %f', metric, value
 
     shape_sim_mat = np.loadtxt('./deeplab/dataset-api/car_instance/sim_mat.txt')
-    def _process_batch(sess):
-        label_pose_shape_map = graph.get_tensor_by_name(pattern%'label_pose_shape_map')
+    def _process_batch(sess, batch):
+        # Label and outputs for pose and shape
+        image = graph.get_tensor_by_name(pattern%common.IMAGE)
+        seg = graph.get_tensor_by_name(pattern%'seg')
         logits_pose_shape_map = graph.get_tensor_by_name(pattern%'scaled_prob_logits_pose_shape_map')
-
-        first_clone_test = graph.get_tensor_by_name(pattern%'shape_id_map')
-        first_clone_test2 = graph.get_tensor_by_name(pattern%common.IMAGE_NAME)
-        first_clone_test3 = graph.get_tensor_by_name(pattern%'not_ignore_mask_in_loss')
-        test_out, test_out2, test_out3 = sess.run([first_clone_test, first_clone_test2, first_clone_test3])
-        test_out = test_out[test_out3]
-        print 'output: ', test_out.shape, np.max(test_out), np.min(test_out), np.mean(test_out), np.median(test_out), test_out.dtype
-        print 'masks sum: ', test_out3.dtype, np.sum(test_out3.astype(float))
-        print test_out2
+        # For logging
+        image_name = graph.get_tensor_by_name(pattern%common.IMAGE_NAME)
+        mask = graph.get_tensor_by_name(pattern%'not_ignore_mask_in_loss')
+        if FLAGS.val_split != 'test':
+            label_pose_shape_map = graph.get_tensor_by_name(pattern%'label_pose_shape_map')
+            vis = graph.get_tensor_by_name(pattern%'vis')
+            shape_id_map = graph.get_tensor_by_name(pattern%'shape_id_map')
+            shape_id_map_predict = graph.get_tensor_by_name(pattern%'shape_id_map_predict')
+            # The metrics map
+            rot_error_map = graph.get_tensor_by_name(pattern%'rot_error_map')
+            trans_error_map = graph.get_tensor_by_name(pattern%'trans_error_map')
+            shape_id_sim_map = graph.get_tensor_by_name(pattern%'shape_id_sim_map')
+            image_out, vis_out, seg_out, \
+                    label_pose_shape_map_out, logits_pose_shape_map_out, shape_id_map_out, shape_id_map_predict_out, \
+                    rot_error_map_out, trans_error_map_out, shape_id_sim_map_out, \
+                    image_name_out, mask_out = sess.run([image, vis, seg, \
+                    label_pose_shape_map, logits_pose_shape_map, shape_id_map, shape_id_map_predict,  \
+                    rot_error_map, trans_error_map, shape_id_sim_map, \
+                    image_name, mask])
+            print image_name_out
+            savemat(FLAGS.eval_logdir+'/%d-%s.mat'%(batch, image_name_out[0]), {'image': image_out, 'vis': vis_out, 'seg': seg_out, \
+                    'label_pose_shape_map': label_pose_shape_map_out, 'logits_pose_shape_map': logits_pose_shape_map_out, 'shape_id_map': shape_id_map_out, 'shape_id_map_predict': shape_id_map_predict_out, \
+                    'rot_error_map': rot_error_map_out, 'trans_error_map': trans_error_map_out, 'shape_id_sim_map': shape_id_sim_map_out, \
+                    'image_name': image_name_out, 'mask': mask_out})
+        else:
+            image_out, seg_out, logits_pose_shape_map_out, image_name_out, mask_out = \
+                    sess.run([image, seg, logits_pose_shape_map, image_name, mask])
+            print image_name_out
+            savemat(FLAGS.eval_logdir+'/%d-%s.mat'%(batch, image_name_out[0]), {'image': image_out, 'seg': seg_out, 'logits_pose_shape_map': logits_pose_shape_map_out, 'image_name': image_name_out, 'mask': mask_out})
 
     tf.train.get_or_create_global_step()
     saver = tf.train.Saver(slim.get_variables_to_restore())
@@ -245,11 +269,11 @@ def main(unused_argv):
             sv.saver.restore(sess, last_checkpoint)
 
             image_id_offset = 0
-            for batch in range(1):
-            # for batch in range(num_batches):
+            # for batch in range(2):
+            for batch in range(num_batches):
                 tf.logging.info('Visualizing batch %d / %d', batch + 1, num_batches)
 
-                _process_batch(sess)
+                _process_batch(sess, batch)
 
                 image_id_offset += FLAGS.eval_batch_size
 

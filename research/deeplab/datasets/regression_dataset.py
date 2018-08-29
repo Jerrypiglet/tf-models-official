@@ -92,6 +92,7 @@ _APOLLOSCAPE_INFORMATION = DatasetDescriptor(
     splits_to_sizes={
         'train': 4611,
         'val': 480,
+        'test': 1041
         # 'train': 731,
         # 'val': 107,
     },
@@ -118,17 +119,7 @@ _APOLLOSCAPE_INFORMATION = DatasetDescriptor(
         [-100., 100.],
         [0., 100],
         [0., 0.66]],
-        # [-131., 194.5],
-        # [-49., 52.5],
-        # [-27.5, 36.5],
-        # [-33.5, 38.5],
-        # [-12.5, 31.],
-        # [-17.5, 28.5],
-        # [-13.5, 20.5],
-        # [-16., 19.5],
-        # [-12.5, 15.],
-        # [-13.5, 16.]],
-    bin_nums = [32, 32, 32, 32, 64, 64, 64] + [SHAPE_BINS]*SHAPE_DIMS,
+    bin_nums = [32, 32, 32, 32, 32, 32, 32] + [SHAPE_BINS]*SHAPE_DIMS,
     output_names = ['q1', 'q2', 'q3', 'q4', 'x', 'y', 'z'] + ['shape_%d'%dim for dim in range(SHAPE_DIMS)],
 )
 
@@ -175,58 +166,89 @@ def get_dataset(dataset_name, split_name, dataset_dir):
   file_pattern = _FILE_PATTERN
   file_pattern = os.path.join(dataset_dir, file_pattern % split_name)
 
-  # Specify how the TF-Examples are **decoded**.
-  keys_to_features = {
-      'image/encoded': tf.FixedLenFeature(
-          (), tf.string, default_value=''),
-      'image/filename': tf.FixedLenFeature(
-          (), tf.string, default_value=''),
-      'image/format': tf.FixedLenFeature(
-          (), tf.string, default_value='png'),
-      'image/height': tf.FixedLenFeature(
-          (), tf.int64, default_value=0),
-      'image/width': tf.FixedLenFeature(
-          (), tf.int64, default_value=0),
-      # 'image/posemap/class/encoded': tf.VarLenFeature(dtype=tf.float32),
-      'posedict/encoded': tf.VarLenFeature(dtype=tf.float32),
-      'shapeiddict/encoded': tf.VarLenFeature(dtype=tf.float32),
-      'vis/encoded': tf.FixedLenFeature(
-          (), tf.string, default_value=''),
-      'vis/format': tf.FixedLenFeature(
-          (), tf.string, default_value='png'),
-      'seg/encoded': tf.FixedLenFeature(
-          (), tf.string, default_value=''),
-      'seg/format': tf.FixedLenFeature(
-          (), tf.string, default_value='png'),
-      'shape_id_map/encoded': tf.FixedLenFeature(
-          (), tf.string, default_value=''),
-      'shape_id_map/format': tf.FixedLenFeature(
-          (), tf.string, default_value='png'),
-  }
-  items_to_handlers = {
-      'image': tfexample_decoder.Image(
-          image_key='image/encoded',
-          format_key='image/format',
-          channels=3),
-      'vis': tfexample_decoder.Image(
-          image_key='vis/encoded',
-          format_key='vis/format',
-          channels=3),
-      'seg': tfexample_decoder.Image(
-          image_key='seg/encoded',
-          format_key='seg/format',
-          channels=1),
-      'image_name': tfexample_decoder.Tensor('image/filename'),
-      'height': tfexample_decoder.Tensor('image/height'),
-      'width': tfexample_decoder.Tensor('image/width'),
-      # 'labels_class': tfexample_decoder.Tensor('image/posemap/class/encoded')
-      'pose_dict': tfexample_decoder.Tensor('posedict/encoded'),
-      'shape_id_dict': tfexample_decoder.Tensor('shapeiddict/encoded'),
-      'shape_id_map': tfexample_decoder.Image(
-          image_key='shape_id_map/encoded',
-          format_key='shape_id_map/format',
-          channels=1),
-  }
+  # Specify how the TF-Examples are **decoded**
+  if split_name != 'test':
+      keys_to_features = {
+          'image/encoded': tf.FixedLenFeature(
+              (), tf.string, default_value=''),
+          'image/filename': tf.FixedLenFeature(
+              (), tf.string, default_value=''),
+          'image/format': tf.FixedLenFeature(
+              (), tf.string, default_value='png'),
+          'image/height': tf.FixedLenFeature(
+              (), tf.int64, default_value=0),
+          'image/width': tf.FixedLenFeature(
+              (), tf.int64, default_value=0),
+          # 'image/posemap/class/encoded': tf.VarLenFeature(dtype=tf.float32),
+          'posedict/encoded': tf.VarLenFeature(dtype=tf.float32),
+          'shapeiddict/encoded': tf.VarLenFeature(dtype=tf.float32),
+          'vis/encoded': tf.FixedLenFeature(
+              (), tf.string, default_value=''),
+          'vis/format': tf.FixedLenFeature(
+              (), tf.string, default_value='png'),
+          'seg/encoded': tf.FixedLenFeature(
+              (), tf.string, default_value=''),
+          'seg/format': tf.FixedLenFeature(
+              (), tf.string, default_value='png'),
+          'shape_id_map/encoded': tf.FixedLenFeature(
+              (), tf.string, default_value=''),
+          'shape_id_map/format': tf.FixedLenFeature(
+              (), tf.string, default_value='png'),
+      }
+      items_to_handlers = {
+          'image': tfexample_decoder.Image(
+              image_key='image/encoded',
+              format_key='image/format',
+              channels=3),
+          'vis': tfexample_decoder.Image(
+              image_key='vis/encoded',
+              format_key='vis/format',
+              channels=3),
+          'seg': tfexample_decoder.Image(
+              image_key='seg/encoded',
+              format_key='seg/format',
+              channels=1),
+          'image_name': tfexample_decoder.Tensor('image/filename'),
+          'height': tfexample_decoder.Tensor('image/height'),
+          'width': tfexample_decoder.Tensor('image/width'),
+          # 'labels_class': tfexample_decoder.Tensor('image/posemap/class/encoded')
+          'pose_dict': tfexample_decoder.Tensor('posedict/encoded'),
+          'shape_id_dict': tfexample_decoder.Tensor('shapeiddict/encoded'),
+          'shape_id_map': tfexample_decoder.Image(
+              image_key='shape_id_map/encoded',
+              format_key='shape_id_map/format',
+              channels=1),
+      }
+  else:
+      keys_to_features = {
+          'image/encoded': tf.FixedLenFeature(
+              (), tf.string, default_value=''),
+          'image/filename': tf.FixedLenFeature(
+              (), tf.string, default_value=''),
+          'image/format': tf.FixedLenFeature(
+              (), tf.string, default_value='png'),
+          'image/height': tf.FixedLenFeature(
+              (), tf.int64, default_value=0),
+          'image/width': tf.FixedLenFeature(
+              (), tf.int64, default_value=0),
+          'seg/encoded': tf.FixedLenFeature(
+              (), tf.string, default_value=''),
+          'seg/format': tf.FixedLenFeature(
+              (), tf.string, default_value='png'),
+      }
+      items_to_handlers = {
+          'image': tfexample_decoder.Image(
+              image_key='image/encoded',
+              format_key='image/format',
+              channels=3),
+          'seg': tfexample_decoder.Image(
+              image_key='seg/encoded',
+              format_key='seg/format',
+              channels=1),
+          'image_name': tfexample_decoder.Tensor('image/filename'),
+          'height': tfexample_decoder.Tensor('image/height'),
+          'width': tfexample_decoder.Tensor('image/width'),
+      }
 
   decoder = tfexample_decoder.TFExampleDecoder(
       keys_to_features, items_to_handlers)

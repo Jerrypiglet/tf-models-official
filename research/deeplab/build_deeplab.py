@@ -33,17 +33,18 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
       samples[common.IMAGE], name=is_training_prefix+common.IMAGE)
   samples[common.IMAGE_NAME] = tf.identity(
       samples[common.IMAGE_NAME], name=is_training_prefix+common.IMAGE_NAME)
-  samples['vis'] = tf.identity(samples['vis'], name=is_training_prefix+'vis')
-  samples['pose_map'] = tf.identity(
-      samples['pose_map'], name=is_training_prefix+'pose_map')
-  samples['shape_map'] = tf.identity(samples['shape_map'], name=is_training_prefix+'shape_map')
-  samples['label_pose_shape_map'] = tf.identity(samples['label_pose_shape_map'], name=is_training_prefix+'label_pose_shape_map')
-  samples['shape_id_map'] = tf.identity(samples['shape_id_map'], name=is_training_prefix+'shape_id_map')
-  samples['shape_id_map_gt'] = tf.identity(samples['shape_id_map_gt'], name=is_training_prefix+'shape_id_map_gt')
   samples['seg'] = tf.identity(samples['seg'], name=is_training_prefix+'seg')
-
   masks = tf.identity(samples['mask'], name=is_training_prefix+'not_ignore_mask_in_loss')
   count_valid = tf.reduce_sum(tf.to_float(masks))+1e-6
+
+  if FLAGS.val_split != 'test':
+      samples['vis'] = tf.identity(samples['vis'], name=is_training_prefix+'vis')
+      samples['pose_map'] = tf.identity(
+          samples['pose_map'], name=is_training_prefix+'pose_map')
+      samples['shape_map'] = tf.identity(samples['shape_map'], name=is_training_prefix+'shape_map')
+      samples['label_pose_shape_map'] = tf.identity(samples['label_pose_shape_map'], name=is_training_prefix+'label_pose_shape_map')
+      samples['shape_id_map'] = tf.identity(samples['shape_id_map'], name=is_training_prefix+'shape_id_map')
+      samples['shape_id_map_gt'] = tf.identity(samples['shape_id_map_gt'], name=is_training_prefix+'shape_id_map_gt')
 
   model_options = common.ModelOptions(
       outputs_to_num_classes=outputs_to_num_classes,
@@ -71,11 +72,20 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
       else:
           reg_logits = outputs_to_logits[output]
       reg_logits_list.append(reg_logits)
+  reg_logits_concat = tf.concat(reg_logits_list, axis=3)
+
+  if FLAGS.val_split == 'test':
+      scaled_prob_logits_pose = train_utils.scale_for_l1_loss(
+              tf.gather(reg_logits_concat, [0, 1, 2, 3, 4, 5, 6], axis=3), samples['mask'], samples['mask'], upsample_logits=FLAGS.upsample_logits)
+      scaled_prob_logits_shape = train_utils.scale_for_l1_loss(
+              tf.gather(reg_logits_concat, range(7, dataset.SHAPE_DIMS+7), axis=3), samples['mask'], samples['mask'], upsample_logits=FLAGS.upsample_logits)
+      scaled_prob_logits = tf.concat([scaled_prob_logits_pose, scaled_prob_logits_shape], axis=3)
+      scaled_prob_logits = tf.identity(scaled_prob_logits, name=is_training_prefix+'scaled_prob_logits_pose_shape_map')
+      return
 
   ## Regression loss for pose
   balance_rot_reg_loss = 10.
   balance_trans_reg_loss = 1.
-  reg_logits_concat = tf.concat(reg_logits_list, axis=3)
   _, scaled_prob_logits_pose, rot_q_error_map, trans_error_map = train_utils.add_my_pose_loss(
           tf.gather(reg_logits_concat, [0, 1, 2, 3, 4, 5, 6], axis=3),
           samples['pose_map'],
@@ -162,26 +172,25 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
 
   # shape_id_map_predicts = tf.expand_dims(tf.argmax(scaled_shape_id_map_logits, axis=3), axis=-1)
 
-  shape_sim_mat = np.loadtxt('./deeplab/dataset-api/car_instance/sim_mat.txt')
-  assert shape_sim_mat.shape[0] == shape_sim_mat.shape[1]
-  num_cads = shape_sim_mat.shape[0]
-  scaled_prob_logits_shape_expanded = tf.tile(tf.expand_dims(scaled_prob_logits_shape, axis=3), [1, 1, 1, num_cads, 1])
-  # codes = np.load('/home/share/zhurui/Documents/tf-models-official/research/deeplab/datasets/apolloscape/codes.npy')
-  # codes = np.load('/ssd2/public/zhurui/Documents/mesh-voxelization/models/cars_64/codes.npy')
-  codes_cons = tf.constant(np.transpose(codes), dtype=tf.float32) # [79, 10]
-  codes_expanded = tf.tile(tf.expand_dims(tf.expand_dims(tf.expand_dims(codes_cons, 0), 0), 0), [tf.shape(scaled_prob_logits_shape)[0], tf.shape(scaled_prob_logits_shape)[1], tf.shape(scaled_prob_logits_shape)[2], 1, 1])
-  shape_l2_error_per_cls = tf.reduce_sum(tf.square(scaled_prob_logits_shape_expanded - codes_expanded), axis=4)
-  shape_id_map_predicts = tf.expand_dims(tf.argmin(shape_l2_error_per_cls, axis=3), axis=-1)
+  if FLAGS.if_summary_metrics:
+      shape_sim_mat = np.loadtxt('./deeplab/dataset-api/car_instance/sim_mat.txt')
+      assert shape_sim_mat.shape[0] == shape_sim_mat.shape[1]
+      num_cads = shape_sim_mat.shape[0]
+      scaled_prob_logits_shape_expanded = tf.tile(tf.expand_dims(scaled_prob_logits_shape, axis=3), [1, 1, 1, num_cads, 1])
+      codes_cons = tf.constant(np.transpose(codes), dtype=tf.float32) # [79, 10]
+      codes_expanded = tf.tile(tf.expand_dims(tf.expand_dims(tf.expand_dims(codes_cons, 0), 0), 0), [tf.shape(scaled_prob_logits_shape)[0], tf.shape(scaled_prob_logits_shape)[1], tf.shape(scaled_prob_logits_shape)[2], 1, 1])
+      shape_l2_error_per_cls = tf.reduce_sum(tf.square(scaled_prob_logits_shape_expanded - codes_expanded), axis=4)
+      shape_id_map_predicts = tf.expand_dims(tf.argmin(shape_l2_error_per_cls, axis=3), axis=-1)
 
-  shape_id_map_predicts = tf.identity(shape_id_map_predicts, name=is_training_prefix + 'shape_id_map_predict')
+      shape_id_map_predicts = tf.identity(shape_id_map_predicts, name=is_training_prefix + 'shape_id_map_predict')
 
-  shape_cls_metric_error_map = tf.gather_nd(tf.constant(shape_sim_mat, dtype=tf.float32),
-          tf.stack([samples['shape_id_map'], shape_id_map_predicts], axis=-1))
-  shape_cls_metric_error_map = tf.where(masks, shape_cls_metric_error_map, tf.zeros_like(shape_cls_metric_error_map))
-  shape_cls_metric_error_map = tf.identity(shape_cls_metric_error_map, name=is_training_prefix + 'shape_id_sim_map')
+      shape_cls_metric_error_map = tf.gather_nd(tf.constant(shape_sim_mat, dtype=tf.float32),
+              tf.stack([samples['shape_id_map'], shape_id_map_predicts], axis=-1))
+      shape_cls_metric_error_map = tf.where(masks, shape_cls_metric_error_map, tf.zeros_like(shape_cls_metric_error_map))
+      shape_cls_metric_error_map = tf.identity(shape_cls_metric_error_map, name=is_training_prefix + 'shape_id_sim_map')
 
-  shape_cls_metric_loss_check = tf.reduce_sum(shape_cls_metric_error_map) / count_valid
-  shape_cls_metric_loss_check = tf.identity(shape_cls_metric_loss_check, name=is_training_prefix + 'loss_all_shape_id_cls_metric')
+      shape_cls_metric_loss_check = tf.reduce_sum(shape_cls_metric_error_map) / count_valid
+      shape_cls_metric_loss_check = tf.identity(shape_cls_metric_loss_check, name=is_training_prefix + 'loss_all_shape_id_cls_metric')
 
 
 
