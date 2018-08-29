@@ -161,7 +161,7 @@ def _bytes_list_feature(values):
       bytes_list=tf.train.BytesList(value=[norm2bytes(values)]))
 
 
-def image_posedict_to_tfexample(image_data, vis_data, seg_data, filename, height, width, pose_dict):
+def image_posedict_to_tfexample(is_training, image_data, vis_data, seg_data, shape_id_map_data, filename, height, width, pose_dict, shape_id_dict):
   """Converts one image/posemap pair to tf example.
 
   Args:
@@ -175,49 +175,67 @@ def image_posedict_to_tfexample(image_data, vis_data, seg_data, filename, height
   Returns:
     tf example of one image/posemap pair.
   """
+  if is_training:
+      return tf.train.Example(features=tf.train.Features(feature={
+          'image/encoded': _bytes_list_feature(image_data),
+          'vis/encoded': _bytes_list_feature(vis_data),
+          'seg/encoded': _bytes_list_feature(seg_data),
+          'shape_id_map/encoded': _bytes_list_feature(shape_id_map_data),
+          'image/filename': _bytes_list_feature(filename),
+          'image/format': _bytes_list_feature(
+              _IMAGE_FORMAT_MAP[FLAGS.image_format]),
+          'image/height': _int64_list_feature(height//2),
+          'image/width': _int64_list_feature(width),
+          'image/channels': _int64_list_feature(3),
+          'vis/format': _bytes_list_feature(
+              _IMAGE_FORMAT_MAP['png']),
+          'seg/format': _bytes_list_feature(
+              _IMAGE_FORMAT_MAP['png']),
+          'posedict/encoded': (
+              _float_list_feature(pose_dict)),
+          'shapeiddict/encoded': (
+              _float_list_feature(shape_id_dict)),
+          'posedict/encoded': (
+              _float_list_feature(pose_dict)),
+      }))
+  else:
+      return tf.train.Example(features=tf.train.Features(feature={
+          'image/encoded': _bytes_list_feature(image_data),
+          'seg/encoded': _bytes_list_feature(seg_data),
+          'image/filename': _bytes_list_feature(filename),
+          'image/format': _bytes_list_feature(
+              _IMAGE_FORMAT_MAP[FLAGS.image_format]),
+          'image/height': _int64_list_feature(height//2),
+          'image/width': _int64_list_feature(width),
+          'image/channels': _int64_list_feature(3),
+          'seg/format': _bytes_list_feature(
+              _IMAGE_FORMAT_MAP['png']),
+      }))
 
-  return tf.train.Example(features=tf.train.Features(feature={
-      'image/encoded': _bytes_list_feature(image_data),
-      'vis/encoded': _bytes_list_feature(vis_data),
-      'seg/encoded': _bytes_list_feature(seg_data),
-      'image/filename': _bytes_list_feature(filename),
-      'image/format': _bytes_list_feature(
-          _IMAGE_FORMAT_MAP[FLAGS.image_format]),
-      'image/height': _int64_list_feature(height//2),
-      'image/width': _int64_list_feature(width),
-      'image/channels': _int64_list_feature(3),
-      'vis/format': _bytes_list_feature(
-          _IMAGE_FORMAT_MAP['png']),
-      'seg/format': _bytes_list_feature(
-          _IMAGE_FORMAT_MAP['png']),
-      'posedict/encoded': (
-          _float_list_feature(pose_dict)),
-  }))
+# def image_posemap_to_tfexample(image_data, filename, height, width, posemap_data, posemap_format='npy'):
+#   """Converts one image/posemap pair to tf example.
 
-def image_posemap_to_tfexample(image_data, filename, height, width, posemap_data, posemap_format='npy'):
-  """Converts one image/posemap pair to tf example.
+#   Args:
+#     image_data: string of image data.
+#     filename: image filename.
+#     height: image height.
+#     width: image width.
+#     posemap_data: np array of semantic posemap data.
 
-  Args:
-    image_data: string of image data.
-    filename: image filename.
-    height: image height.
-    width: image width.
-    posemap_data: np array of semantic posemap data.
-
-  Returns:
-    tf example of one image/posemap pair.
-  """
-  return tf.train.Example(features=tf.train.Features(feature={
-      'image/encoded': _bytes_list_feature(image_data),
-      'image/filename': _bytes_list_feature(filename),
-      'image/format': _bytes_list_feature(
-          _IMAGE_FORMAT_MAP[FLAGS.image_format]),
-      'image/height': _int64_list_feature(height),
-      'image/width': _int64_list_feature(width),
-      'image/channels': _int64_list_feature(3),
-      'image/posemap/class/encoded': (
-          _float_list_feature(posemap_data)),
-  }))
+#   Returns:
+#     tf example of one image/posemap pair.
+#   """
+#   return tf.train.Example(features=tf.train.Features(feature={
+#       'image/encoded': _bytes_list_feature(image_data),
+#       'image/filename': _bytes_list_feature(filename),
+#       'image/format': _bytes_list_feature(
+#           _IMAGE_FORMAT_MAP[FLAGS.image_format]),
+#       'image/height': _int64_list_feature(height),
+#       'image/width': _int64_list_feature(width),
+#       'image/channels': _int64_list_feature(3),
+#       'image/posemap/class/encoded': (
+#           _float_list_feature(posemap_data)),
+#   }))
 
 def image_seg_to_tfexample(image_data, filename, height, width, seg_data):
   """Converts one image/segmentation pair to tf example.

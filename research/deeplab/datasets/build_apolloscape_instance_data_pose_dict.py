@@ -32,26 +32,33 @@ import sys
 import build_data
 import tensorflow as tf
 import numpy as np
+np.set_printoptions(suppress=True)
 import ntpath
 import h5py
+from scipy.io import savemat
+import matplotlib.pyplot as plt
 
 FLAGS = tf.app.flags.FLAGS
 dataset_folders = ['3d_car_instance_sample', 'full', 'combined']
-dataset_subfolders = ['', '/train', '/train']
+tf.app.flags.DEFINE_boolean(
+    'if_test',
+    False,
+    'False for train/val for True for test.')
+if FLAGS.if_test:
+    dataset_subfolders = ['', '/test', '/test']
+else:
+    dataset_subfolders = ['', '/train', '/train']
 dataset_folder_index = 2
 dataset_folder = dataset_folders[dataset_folder_index] + dataset_subfolders[dataset_folder_index]
-
 print '===== dataset_folder: ', dataset_folder
 
 tf.app.flags.DEFINE_string('apolloscape_root',
                            './apolloscape/%s'%dataset_folder,
                            'Apolloscape dataset root folder.')
-
 tf.app.flags.DEFINE_string(
     'output_dir',
     './apolloscape/%s/tfrecord_02_posedict_half'%dataset_folder,
     'Path to save converted SSTable of TensorFlow examples.')
-
 tf.app.flags.DEFINE_string(
     'splits_dir',
     './apolloscape/%s/split'%dataset_folder,
@@ -63,19 +70,23 @@ _NUM_SHARDS = 5
 _FOLDERS_MAP = {
     'image': 'pose_maps_02',
     'seg': 'pose_maps_02',
+    'shape_id_map': 'pose_maps_02',
     'vis': 'pose_maps_02',
-    'pose_dict': 'pose_maps_02'
+    'pose_dict': 'pose_maps_02',
+    'shape_id_dict': 'pose_maps_02',
 }
 
 # A map from data type to filename postfix.
 _POSTFIX_MAP = {
     'image': '_rescaled_half',
     'seg': '_seg_half',
+    'shape_id_map': '_shape_id_half',
     'vis': '_vis_half',
     # 'image': '_rescaled',
     # 'seg': '_seg',
     # 'vis': '_vis',
-    'pose_dict': '_posedict'
+    'pose_dict': '_posedict',
+    'shape_id_dict': '_shapeiddict'
 }
 
 # A map from data type to data format.
@@ -83,7 +94,9 @@ _DATA_FORMAT_MAP = {
     'image': 'png',
     'vis': 'png',
     'seg': 'png',
-    'pose_dict': 'npy'
+    'shape_id_map': 'png',
+    'pose_dict': 'npy',
+    'shape_id_dict': 'npy'
 }
 
 # Image file pattern.
@@ -100,12 +113,10 @@ def _get_files(data, dataset_split):
     A list of sorted file names or None when getting label for
       test set.
   """
-
+  print '----', '%s/%s.txt'%(FLAGS.splits_dir, dataset_split)
   text_file = open('%s/%s.txt'%(FLAGS.splits_dir, dataset_split), "r")
   filenames_split = [line.replace('.jpg', '') for line in text_file.read().split('\n') if '.jpg' in line]
 
-  if data == 'seg' and dataset_split == 'test':
-    return None
   pattern = '*%s.%s' % (_POSTFIX_MAP[data], _DATA_FORMAT_MAP[data])
   search_files = os.path.join(
       FLAGS.apolloscape_root, _FOLDERS_MAP[data], pattern)
@@ -127,29 +138,45 @@ def _convert_dataset(dataset_split):
       image file with specified postfix could not be found.
   """
   image_files = _get_files('image', dataset_split)
-  vis_files = _get_files('vis', dataset_split)
   seg_files = _get_files('seg', dataset_split)
-  pose_dict_files = _get_files('pose_dict', dataset_split)
+  if dataset_split != 'test':
+      vis_files = _get_files('vis', dataset_split)
+      shape_id_map_files = _get_files('shape_id_map', dataset_split)
+      pose_dict_files = _get_files('pose_dict', dataset_split)
+      shape_id_dict_files = _get_files('shape_id_dict', dataset_split)
+
   num_images = len(image_files)
   num_per_shard = int(math.ceil(num_images / float(_NUM_SHARDS)))
-  assert len(image_files) == len(vis_files) == len(seg_files) == len(pose_dict_files), 'Three list lengths not equal!'
-  print 'num_images, num_segs, num_pose_dicts, num_per_shard: ', num_images, len(seg_files), len(pose_dict_files), num_per_shard
+  print len(image_files), len(seg_files)
+  if dataset_split != 'test':
+      print len(vis_files), len(pose_dict_files), len(shape_id_dict_files), len(shape_id_map_files), 'Three list lengths.'
+      assert len(image_files) == len(vis_files) == len(seg_files) == len(pose_dict_files) == len(shape_id_dict_files) == len(shape_id_map_files), 'Three list lengths not equal!'
+      print 'num_images, num_segs, num_pose_dicts, num_per_shard: ', num_images, len(seg_files), len(pose_dict_files), num_per_shard
   import random
   indices = range(num_images)
   random.shuffle(indices)
   image_files = [image_files[indice] for indice in indices]
-  vis_files = [vis_files[indice] for indice in indices]
   seg_files = [seg_files[indice] for indice in indices]
-  pose_dict_files = [pose_dict_files[indice] for indice in indices]
+  if dataset_split != 'test':
+      vis_files = [vis_files[indice] for indice in indices]
+      shape_id_map_files = [shape_id_map_files[indice] for indice in indices]
+      pose_dict_files = [pose_dict_files[indice] for indice in indices]
+      shape_id_dict_files = [shape_id_dict_files[indice] for indice in indices]
 
   image_reader = build_data.ImageReader('png', channels=3)
-  vis_reader = build_data.ImageReader('png', channels=3)
   seg_reader = build_data.ImageReader('png', channels=1)
+  if dataset_split != 'test':
+      vis_reader = build_data.ImageReader('png', channels=3)
+      shape_id_map_reader = build_data.ImageReader('png', channels=1)
 
   def return_id(filepath):
       file_name = ntpath.basename(filepath)
       splits = file_name.split('_')
       return splits[0]+'_'+splits[1]
+
+  dims_min = np.zeros(6) + np.inf
+  dims_max = np.zeros(6) - np.inf
+  pose_dict_split = []
 
   for shard_id in range(_NUM_SHARDS):
     shard_filename = '%s-%05d-of-%05d.tfrecord' % (
@@ -165,39 +192,80 @@ def _convert_dataset(dataset_split):
             i + 1, num_images, shard_id))
         sys.stdout.flush()
         # Read the image.
-        print return_id(image_files[i]), return_id(seg_files[i]), return_id(pose_dict_files[i])
-        assert return_id(image_files[i]) == return_id(vis_files[i]) == return_id(seg_files[i]) == return_id(pose_dict_files[i]), 'File name mismatch!'
+        if dataset_split != 'test':
+            assert return_id(image_files[i]) == return_id(vis_files[i]) == return_id(seg_files[i]) == return_id(pose_dict_files[i]), 'File name mismatch!'
+        else:
+            assert return_id(image_files[i]) == return_id(seg_files[i]), 'File name mismatch!'
 
         image_data = tf.gfile.FastGFile(image_files[i], 'rb').read()
         height, width = image_reader.read_image_dims(image_data)
-        vis_data = tf.gfile.FastGFile(vis_files[i], 'rb').read()
-        print vis_files[i]
         seg_data = tf.gfile.FastGFile(seg_files[i], 'rb').read()
         height_seg, width_seg = seg_reader.read_image_dims(seg_data)
         assert height == height_seg and width == width_seg, 'W and H for image and seg must match!'
-        # Read the semantic segmentation annotation.
-        pose_dict_data = np.load(pose_dict_files[i])
-        pose_dict_data = np.vstack((np.zeros((1, 6)) + 255., pose_dict_data))
-        print np.mean(pose_dict_data[1:, :]), np.shape(pose_dict_data), np.shape(image_data)
-        # print np.mean(seg_data.astype(np.float)), np.shape(seg_data)
-        # pose_dict_data = np.hstack((np.arange(0, pose_dict_data.shape[0]).reshape((-1, 1)), pose_dict_data))
+        if dataset_split != 'test':
+            # Read the semantic segmentation annotation.
+            vis_data = tf.gfile.FastGFile(vis_files[i], 'rb').read()
+            pose_dict_data = np.load(pose_dict_files[i])
+            shape_id_dict_data = np.load(shape_id_dict_files[i])
+            shape_id_map_data = tf.gfile.FastGFile(shape_id_map_files[i], 'rb').read()
+            for instance in pose_dict_data:
+                pose_dict_split.append(instance)
+                for dim in range(6):
+                    dims_min[dim] = min(instance[dim], dims_min[dim])
+                    dims_max[dim] = max(instance[dim], dims_max[dim])
+            pose_dict_data = np.vstack((np.zeros((1, 6)) + 255., pose_dict_data))
+            shape_id_dict_data = np.vstack((np.zeros((1, 1)), shape_id_dict_data.reshape((-1, 1))))
+            print pose_dict_data.shape, shape_id_dict_data.shape
+            assert pose_dict_data.shape[0] == shape_id_dict_data.shape[0], 'pose_dict_data.shape[0] == shape_id_dict_data.shape[0]'+pose_dict_files[i]+shape_id_dict_files[i]
+            assert np.min(shape_id_dict_data)>=0, 'assert np.min(shape_id_dict_data)>=0'
+            assert np.max(shape_id_dict_data)<79, 'np.max(shape_id_dict_data)<79'
+            assert len(shape_id_dict_data) < 255, 'len(shape_id_dict_data) < 255'
+
+        seg_array = np.int32(plt.imread(seg_files[i]) * 255.)
+        # print np.max(seg_array), np.min(seg_array)
+        assert np.min(seg_array)==0, '1'
+        mask_array = seg_array>0
+        if dataset_split != 'test':
+            shape_id_array = np.int32(plt.imread(shape_id_map_files[i]) * 255.)
+            assert np.min(shape_id_array)==0, '2'
+            max_shape_id = np.max(shape_id_array[mask_array])
+            print max_shape_id
+            assert max_shape_id <= 79, '3'
+            min_shape_id = np.min(shape_id_array[mask_array])
+            print min_shape_id
+            assert min_shape_id >= 1, '4'+shape_id_map_files[i]
+
         # Convert to tf example.
         re_match = _IMAGE_FILENAME_RE.search(image_files[i])
         if re_match is None:
           raise RuntimeError('Invalid image filename: ' + image_files[i])
         filename = '%s-%s'%(dataset_split, os.path.basename(re_match.group(1)))
-        example = build_data.image_posedict_to_tfexample(
-            image_data, vis_data, seg_data, filename, height, width, pose_dict_data)
+        if dataset_split != 'test':
+            example = build_data.image_posedict_to_tfexample(True,
+                    image_data, vis_data, seg_data, shape_id_map_data, filename,
+                    height, width, pose_dict_data, shape_id_dict_data)
+        else:
+            example = build_data.image_posedict_to_tfexample(False,
+                    image_data, None, seg_data, None, filename,
+                    height, width, None, None)
         tfrecord_writer.write(example.SerializeToString())
     sys.stdout.write('\n')
     sys.stdout.flush()
 
+  print dims_min
+  print dims_max
+  return pose_dict_split
+
 
 def main(unused_argv):
-  # Only support converting 'train' and 'val' sets for now.
-  for dataset_split in ['train', 'val']:
-    _convert_dataset(dataset_split)
-
+    if FLAGS.if_test:
+        _ = _convert_dataset('test')
+    else:
+        pose_dict_all = []
+        for dataset_split in ['train', 'val']:
+            pose_dict_split = _convert_dataset(dataset_split)
+            pose_dict_all.append(pose_dict_split)
+            # savemat('/home/zhurui/Documents/pose_dict_all.mat', {'pose_dict_all': pose_dict_all})
 
 if __name__ == '__main__':
   tf.app.run()
