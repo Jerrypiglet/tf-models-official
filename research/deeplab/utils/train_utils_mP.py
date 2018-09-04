@@ -87,7 +87,7 @@ def smooth_l1_loss(predictions, labels, weights, name='', loss_collection=tf.Gra
     # return loss_sum / (tf.reduce_sum(tf.to_float(masks))+1.)
     return loss_sum
 
-def add_my_pose_loss_cars(prob_logits, labels, balance_rot=1., balance_trans=1., upsample_logits=True, name=None, loss_collection=None):
+def add_my_pose_loss_cars(prob_logits, labels, masks_float, balance_rot=1., balance_trans=1., upsample_logits=True, name=None, loss_collection=None):
     """ Loss for discrete pose from Peng Wang (http://icode.baidu.com/repos/baidu/personal-code/video_seg_transfer/blob/with_db:Networks/mx_losses.py)
     prob_logits, labels: [car_num, D]"""
 
@@ -96,22 +96,24 @@ def add_my_pose_loss_cars(prob_logits, labels, balance_rot=1., balance_trans=1.,
         trans = tf.gather(pose_in, [4, 5, 6], axis=1)
         return rot, trans
 
+    count_valid = tf.reduce_sum(masks_float)+1e-10
+
     rot, trans = slice_pose(prob_logits)
     rot_gt, trans_gt = slice_pose(labels)
 
     trans_loss = smooth_l1_loss(trans, trans_gt,
-            tf.ones_like(trans, dtype=tf.float32), '', loss_collection=None) * balance_trans
+            masks_float, '', loss_collection=None) * balance_trans
     trans_loss = tf.identity(trans_loss, name=name+'_trans')
     tf.losses.add_loss(trans_loss, loss_collection=loss_collection)
 
     trans_metric = tf.concat([tf.gather(trans, [0, 1], axis=1), 1./tf.gather(trans, [2], axis=1)], axis=1)
     trans_gt_metric = tf.concat([tf.gather(trans_gt, [0, 1], axis=1), 1./tf.gather(trans_gt, [2], axis=1)], axis=1)
-    trans_diff_metric = trans_metric - trans_gt_metric
+    trans_diff_metric = tf.multiply(trans_metric - trans_gt_metric, masks_float)
     trans_error_cars = tf.reduce_sum(tf.square(trans_diff_metric), axis=1, keepdims=True)
-    trans_loss_metric_loss = tf.reduce_mean(trans_diff_metric / 2.0)
+    trans_loss_metric_loss = tf.reduce_sum(tf.sqrt(trans_error_cars)) / count_valid
     trans_loss_metric_loss = tf.identity(trans_loss_metric_loss, name=name+'_trans_metric')
 
-    rot_q_loss = tf.reduce_mean(tf.reduce_sum(tf.square(rot - rot_gt), axis=1) / 2.0)
+    rot_q_loss = tf.reduce_sum(tf.reduce_sum(tf.square(tf.multiply(masks_float, rot - rot_gt)), axis=1) / 2.0) / count_valid
     rot_q_loss = rot_q_loss * balance_rot
     tf.losses.add_loss(tf.identity(rot_q_loss, name=name+'_rot_quat'), loss_collection=loss_collection)
     total_loss = rot_q_loss + trans_loss
@@ -120,7 +122,7 @@ def add_my_pose_loss_cars(prob_logits, labels, balance_rot=1., balance_trans=1.,
     rot_q_gt_unit = tf.nn.l2_normalize(rot_gt, axis=1)
     # [1/2 Peng] rotation matric following https://github.com/ApolloScapeAuto/dataset-api/blob/master/self_localization/eval_pose.py#L122a
     rot_q_error_cars = tf.acos(tf.abs(1. - tf.reduce_sum(tf.square(rot_q_unit - rot_q_gt_unit) / 2., axis=1, keepdims=True))) * 2 * 180 / np.pi
-    dis_rot_metric_loss = tf.reduce_mean(rot_q_error_cars) # per-car angle error
+    dis_rot_metric_loss = tf.reduce_sum(tf.multiply(masks_float, rot_q_error_cars)) / count_valid # per-car angle error
     dis_rot_metric_loss = tf.identity(dis_rot_metric_loss, name=name+'_rot_quat_metric')
 
     total_loss = tf.identity(total_loss, name=name)
@@ -210,6 +212,7 @@ def scale_for_l1_loss(logits, labels, masks, upsample_logits):
 
 def add_l1_regression_loss_cars(logits,
         labels,
+        masks_float,
         balance=1.,
         upsample_logits=True,
         name='',
@@ -230,7 +233,7 @@ def add_l1_regression_loss_cars(logits,
       ValueError: Label or logits is None.
     """
     loss = smooth_l1_loss(logits, labels,
-            tf.ones_like(labels, dtype=tf.float32),'', loss_collection=None) * balance
+            masks_float,'', loss_collection=None) * balance
     loss = tf.identity(loss, name=name)
     if loss_collection!=None:
         tf.losses.add_loss(loss, loss_collection=tf.GraphKeys.LOSSES)

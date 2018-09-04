@@ -86,8 +86,8 @@ DatasetDescriptor = collections.namedtuple(
 )
 
 SHAPE_DIMS = 10
-SHAPE_BINS = 16
-POSE_BINS = 16
+SHAPE_BINS = 32
+POSE_BINS = 32
 
 _APOLLOSCAPE_INFORMATION = DatasetDescriptor(
     splits_to_sizes={

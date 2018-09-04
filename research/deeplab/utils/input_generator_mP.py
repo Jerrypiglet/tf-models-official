@@ -90,6 +90,8 @@ def _get_data(dataset, model_options, data_provider, dataset_split, codes_cons):
   seg_rescaled_float = tf.squeeze(
       tf.image.resize_nearest_neighbor(tf.expand_dims(seg_float, 0), [logits_height, logits_width], align_corners=True), 0)
   seg_rescaled_flatten = tf.cast(tf.reshape(seg_rescaled_float, [-1]), tf.int32)
+  mask_rescaled_float = tf.squeeze(
+      tf.image.resize_nearest_neighbor(tf.expand_dims(mask_float, 0), [logits_height, logits_width], align_corners=True), 0)
 
   if dataset_split != common.TEST_SET:
     pose_dict = tf.reshape(pose_dict, [-1, 6])
@@ -143,7 +145,7 @@ def _get_data(dataset, model_options, data_provider, dataset_split, codes_cons):
 
     idxs = tf.expand_dims(tf.range(tf.shape(shape_dict)[0]), -1) # [N, 1]
 
-    return image, vis, pose_map_masked, shape_map_masked, pose_shape_map_masked, shape_id_map_masked, image_name, height, width, seg_rescaled_float, mask, pose_dict_quat_invd, shape_dict, shape_id_dict, seg_one_hots_flattened, idxs
+    return image, vis, pose_map_masked, shape_map_masked, pose_shape_map_masked, shape_id_map_masked, image_name, height, width, seg_rescaled_float, seg_float, mask, mask_rescaled_float, pose_dict_quat_invd, shape_dict, shape_id_dict, seg_one_hots_flattened, idxs
   else:
     return image, image_name, height, width, seg_float, mask
 
@@ -207,7 +209,7 @@ def get(dataset,
       shuffle=is_training)
   codes_cons = tf.constant(np.transpose(codes), dtype=tf.float32)
   if dataset_split != common.TEST_SET:
-    image, vis, pose_map_masked, shape_map_masked, pose_shape_map_masked, shape_id_map, image_name, height, width, seg, mask, pose_dict, shape_dict, shape_id_dict, seg_one_hots_flattened, idxs = _get_data(dataset, model_options, data_provider, dataset_split, codes_cons)
+    image, vis, pose_map_masked, shape_map_masked, pose_shape_map_masked, shape_id_map, image_name, height, width, seg_rescaled, seg, mask, mask_rescaled_float, pose_dict, shape_dict, shape_id_dict, seg_one_hots_flattened, idxs = _get_data(dataset, model_options, data_provider, dataset_split, codes_cons)
   else:
     image, image_name, height, width, seg, mask = _get_data(dataset, model_options, data_provider, dataset_split, codes_cons)
 
@@ -226,7 +228,9 @@ def get(dataset,
       'label_pose_shape_map': pose_shape_map_masked,
       'shape_id_map': shape_id_map,
       'seg': seg, # float
+      'seg_rescaled': seg_rescaled, # float
       'mask': mask,
+      'mask_rescaled_float': mask_rescaled_float,
       'pose_dict': pose_dict,
       'shape_dict': shape_dict,
       'shape_id_dict': shape_id_dict,

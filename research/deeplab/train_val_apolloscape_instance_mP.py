@@ -112,7 +112,7 @@ flags.DEFINE_enum('learning_policy', 'poly', ['poly', 'step'],
 flags.DEFINE_float('base_learning_rate', .0001,
                    'The base learning rate for model training.')
 
-flags.DEFINE_float('learning_rate_decay_factor', 0.1,
+flags.DEFINE_float('learning_rate_decay_factor', 0.2,
                    'The rate to decay the base learning rate.')
 
 flags.DEFINE_integer('learning_rate_decay_step', 5000,
@@ -222,16 +222,16 @@ def main(unused_argv):
   tf.logging.set_verbosity(tf.logging.INFO)
 
   # Get logging dir ready.
-  if len(os.listdir(FLAGS.train_logdir) ) != 0:
-      if not(FLAGS.if_restore):
-          # if_delete_all = raw_input('#### The log folder %s exists and non-empty; delete all logs? [y/n] '%FLAGS.train_logdir)
-          # if if_delete_all == 'y':
-          shutil.rmtree(FLAGS.train_logdir)
-          print '==== Log folder %s emptied: '%FLAGS.train_logdir + 'rm -rf %s/*'%FLAGS.train_logdir
-      else:
-          print '==== Log folder exists; not emptying it because we need to restore from it.'
   if not(os.path.isdir(FLAGS.train_logdir)):
       tf.gfile.MakeDirs(FLAGS.train_logdir)
+  elif len(os.listdir(FLAGS.train_logdir)) != 0:
+      if not(FLAGS.if_restore):
+          if_delete_all = raw_input('#### The log folder %s exists and non-empty; delete all logs? [y/n] '%FLAGS.train_logdir)
+          if if_delete_all == 'y':
+              shutil.rmtree(FLAGS.train_logdir)
+              print '==== Log folder %s emptied: '%FLAGS.train_logdir + 'rm -rf %s/*'%FLAGS.train_logdir
+      else:
+          print '==== Log folder exists; not emptying it because we need to restore from it.'
   tf.logging.info('==== Logging in dir:%s; Training on %s set', FLAGS.train_logdir, FLAGS.train_split)
 
   # Set up deployment (i.e., multi-GPUs and/or multi-replicas).
@@ -323,7 +323,7 @@ def main(unused_argv):
     with tf.device('/device:GPU:3'):
         if FLAGS.if_val:
           ## Construct the validation graph; takes one GPU.
-          test_tensor = _build_deeplab(FLAGS, inputs_queue_val.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_vals, bin_range, dataset_val, codes, is_training=False)
+          image_names, z_logits, outputs_to_weights, seg_one_hots_list = _build_deeplab(FLAGS, inputs_queue_val.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_vals, bin_range, dataset_val, codes, is_training=False)
           # test_tensor, test_tensor2, test_tensor3 = _build_deeplab(FLAGS, inputs_queue_val.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_vals, bin_range, dataset_val, codes, is_training=False, reuse=True)
 
     # Gather initial summaries.
@@ -337,14 +337,17 @@ def main(unused_argv):
       else:
           pattern_train = '%s:0'
       pattern_val = 'val-%s:0'
-      pattern = pattern_val if FLAGS.if_val else pattern_train
+      # pattern = pattern_val if FLAGS.if_val else pattern_train
+      pattern = pattern_train
 
-      gather_list = [0] if FLAGS.num_clones < 3 else [0, 1, 2]
-
+      gather_list = range(min(3, int(FLAGS.train_batch_size/FLAGS.num_clones)))
+      print gather_list
       summary_mask = graph.get_tensor_by_name(pattern%'not_ignore_mask_in_loss')
       summary_mask = tf.reshape(summary_mask, [-1, dataset.height, dataset.width, 1])
       summary_mask_float = tf.to_float(summary_mask)
       summaries.add(tf.summary.image('gt/%s' % 'not_ignore_mask', tf.gather(tf.cast(summary_mask_float*255., tf.uint8), gather_list)))
+
+      mask_rescaled_float = graph.get_tensor_by_name(pattern%'mask_rescaled_float')
 
       summary_image = graph.get_tensor_by_name(pattern%common.IMAGE)
       summaries.add(tf.summary.image('gt/%s' % common.IMAGE, tf.gather(summary_image, gather_list)))
@@ -361,6 +364,9 @@ def main(unused_argv):
       def scale_to_255(tensor, pixel_scaling=None):
           tensor = tf.to_float(tensor)
           if pixel_scaling == None:
+              # offset_to_zero = tf.reduce_min(tf.reduce_min(tf.reduce_min(tensor, axis=-1, keepdims=True), axis=-1, keepdims=True), axis=-1, keepdims=True)
+              # scale_to_255 = tf.div(255., tf.reduce_max(tf.reduce_max(tf.reduce_max(
+              #     tensor - offset_to_zero, axis=-1, keepdims=True), axis=-1, keepdims=True), axis=-1, keepdims=True))
               offset_to_zero = tf.reduce_min(tensor)
               scale_to_255 = tf.div(255., tf.reduce_max(tensor - offset_to_zero))
           else:
@@ -418,6 +424,12 @@ def main(unused_argv):
           summaries.add(tf.summary.image(
               'output/%s_logit' % output, tf.gather(summary_logit_output_uint8, gather_list)))
 
+          summary_weights_output = outputs_to_weights[output]
+          summary_weights_output = mask_rescaled_float * summary_weights_output
+          summary_weights_output_uint8, _ = scale_to_255(summary_weights_output, pixel_scaling=(0., 255.))
+          summaries.add(tf.summary.image(
+              'output/%s_weights' % output, tf.gather(summary_weights_output_uint8, gather_list)))
+
           # summary_seg_one_hots_output = tf.gather(seg_one_hots_outputs, [output_idx], axis=3)
           # summary_seg_one_hots_output_uint8, _ = scale_to_255(summary_seg_one_hots_output, pixel_scaling=(0., 255.))
           # summaries.add(tf.summary.image('test/%s_one_hot' % output, tf.gather(summary_seg_one_hots_output_uint8, gather_list)))
@@ -433,11 +445,11 @@ def main(unused_argv):
           summary_diff = tf.where(summary_mask, summary_diff, tf.zeros_like(summary_diff))
           summaries.add(tf.summary.image('diff_map/%s_ldiff' % output, tf.gather(tf.cast(summary_diff, tf.uint8), gather_list)))
 
-          summary_loss = graph.get_tensor_by_name((pattern%'loss_slice_reg_').replace(':0', '')+output+':0')
-          summaries.add(tf.summary.scalar('slice_loss/'+(pattern%'reg_').replace(':0', '')+output, summary_loss))
+          # summary_loss = graph.get_tensor_by_name((pattern%'loss_slice_reg_').replace(':0', '')+output+':0')
+          # summaries.add(tf.summary.scalar('slice_loss/'+(pattern%'reg_').replace(':0', '')+output, summary_loss))
 
-          summary_loss = graph.get_tensor_by_name((pattern%'loss_slice_cls_').replace(':0', '')+output+':0')
-          summaries.add(tf.summary.scalar('slice_loss/'+(pattern%'cls_').replace(':0', '')+output, summary_loss))
+          # summary_loss = graph.get_tensor_by_name((pattern%'loss_slice_cls_').replace(':0', '')+output+':0')
+          # summaries.add(tf.summary.scalar('slice_loss/'+(pattern%'cls_').replace(':0', '')+output, summary_loss))
 
       for pattern in [pattern_train, pattern_val] if FLAGS.if_val else [pattern_train]:
           add_metrics = ['loss_all_shape_id_cls_metric'] if FLAGS.if_summary_metrics else []
@@ -469,7 +481,7 @@ def main(unused_argv):
       total_loss, grads_and_vars = model_deploy.optimize_clones(
           clones, optimizer)
       print '------ total_loss', total_loss, tf.get_collection(tf.GraphKeys.LOSSES, first_clone_scope)
-      # total_loss = tf.check_numerics(total_loss, 'Loss is inf or nan.')
+      total_loss = tf.check_numerics(total_loss, 'Loss is inf or nan.')
       summaries.add(tf.summary.scalar('total_loss/train', total_loss))
 
       # Modify the gradients for biases and last layer variables.
@@ -509,56 +521,93 @@ def main(unused_argv):
 
     def train_step_fn(sess, train_op, global_step, train_step_kwargs):
         train_step_fn.step += 1  # or use global_step.eval(session=sess)
+        loss= 0
 
         # calc training losses
         loss, should_stop = slim.learning.train_step(sess, train_op, global_step, train_step_kwargs)
-        # print loss
+        print loss
         # # print 'loss: ', loss
         # first_clone_test = graph.get_tensor_by_name(
-        #         ('%s/%s:0' % (first_clone_scope, 'z')).strip('/'))
-        # test = sess.run(first_clone_test)
-        # print test
+                # ('%s/%s:0' % (first_clone_scope, 'z')).strip('/'))
+        # test = sess.run(outputs_to_weights['z'])
+        # # print test
         # print 'test: ', test.shape, np.max(test), np.min(test), np.mean(test), test.dtype
+
+        # mask_rescaled_float = graph.get_tensor_by_name('%s:0'%'mask_rescaled_float')
+        # _, test_out, test_out2, test_out3, test_out4 = sess.run([summary_op, image_names, z_logits, outputs_to_weights['z'], mask_rescaled_float])
+        # print test_out
+        # print test_out2.shape
+        # test_out3 = test_out3[test_out4!=0.]
+        # print test_out3
+        # print 'outputs_to_weights[z] masked: ', test_out3.shape, np.max(test_out3), np.min(test_out3), np.mean(test_out3), test_out3.dtype
+        # print 'mask_rescaled_float: ', test_out4.shape, np.max(test_out4), np.min(test_out4), np.mean(test_out4), test_out4.dtype
+
+        # test_1 = graph.get_tensor_by_name(
+        #         ('%s/%s:0' % (first_clone_scope, 'prob_logits_pose')).strip('/'))
+        # test_2 = graph.get_tensor_by_name(
+        #         ('%s/%s:0' % (first_clone_scope, 'pose_dict_N')).strip('/'))
+        # test_out, test_out2 = sess.run([test_1, test_2])
+        # print '-- prob_logits_pose: ', test_out.shape, np.max(test_out), np.min(test_out), np.mean(test_out), test_out.dtype
+        # print test_out, test_out.shape
+        # print '-- pose_dict_N: ', test_out2.shape, np.max(test_out2), np.min(test_out2), np.mean(test_out2), test_out2.dtype
+        # print test_out2, test_out2.shape
+
         should_stop = 0
 
         if FLAGS.if_val and train_step_fn.step % FLAGS.val_interval_steps == 0:
             # first_clone_test = graph.get_tensor_by_name('val-loss_all:0')
             # test = sess.run(first_clone_test)
             print '-- Validating...'
-            first_clone_test = graph.get_tensor_by_name(
-                    ('%s/%s:0' % (first_clone_scope, 'z')).strip('/'))
-            # first_clone_test2 = graph.get_tensor_by_name(
-            #         ('%s/%s:0' % (first_clone_scope, 'shape_id_sim_map')).strip('/'))
-            # first_clone_test3 = graph.get_tensor_by_name(
-            #         ('%s/%s:0' % (first_clone_scope, 'not_ignore_mask_in_loss')).strip('/'))
-            _, test_out, test_out2, test_out3 = sess.run([summary_op, test_tensor, test_tensor, test_tensor])
+            # first_clone_test = graph.get_tensor_by_name(
+            #         ('%s/%s:0' % (first_clone_scope, 'z')).strip('/'))
+            # # first_clone_test2 = graph.get_tensor_by_name(
+            # #         ('%s/%s:0' % (first_clone_scope, 'shape_id_sim_map')).strip('/'))
+            # # first_clone_test3 = graph.get_tensor_by_name(
+            # #         ('%s/%s:0' % (first_clone_scope, 'not_ignore_mask_in_loss')).strip('/'))
+
+            mask_rescaled_float = graph.get_tensor_by_name(pattern%'mask_rescaled_float')
+            _, test_out, test_out2, test_out3, test_out4 = sess.run([summary_op, image_names, z_logits, outputs_to_weights['z'], mask_rescaled_float])
             print test_out
-            print test_out.shape
-            # Vlen(test_out), test_out[0].shape
-            # print test_out2.shape, test_out2
-            # print test_out3
-            # print test_out, test_out.shape
-            # # test_out = test[:, :, :, 3]
-            # test_out = test_out[test_out3]
-            # # test_out2 = test2[:, :, :, 3]
-            # test_out2 = test_out2[test_out3]
-            # # print test_out
-            # print 'shape_id_map: ', test_out.shape, np.max(test_out), np.min(test_out), np.mean(test_out), np.median(test_out), test_out.dtype
-            # print 'shape_id_sim_map: ', test_out2.shape, np.max(test_out2), np.min(test_out2), np.mean(test_out2), np.median(test_out2), test_out2.dtype
-            # print 'masks sum: ', test_out3.dtype, np.sum(test_out3.astype(float))
-            # assert np.max(test_out) == np.max(test_out2), 'MAtch1!!!'
-            # assert np.min(test_out) == np.min(test_out2), 'MAtch2!!!'
+            print test_out2.shape
+            test_out3 = test_out3[test_out4!=0.]
+            print test_out3
+            print 'outputs_to_weights[z] masked: ', test_out3.shape, np.max(test_out3), np.min(test_out3), np.mean(test_out3), test_out3.dtype
+
+            test_1 = graph.get_tensor_by_name(
+                    ('%s/%s:0' % (first_clone_scope, 'prob_logits_pose')).strip('/'))
+            test_2 = graph.get_tensor_by_name(
+                    ('%s/%s:0' % (first_clone_scope, 'pose_dict_N')).strip('/'))
+            test_out, test_out2 = sess.run([test_1, test_2])
+            print '-- prob_logits_pose: ', test_out.shape, np.max(test_out), np.min(test_out), np.mean(test_out), test_out.dtype
+            print test_out, test_out.shape
+            print '-- pose_dict_N: ', test_out2.shape, np.max(test_out2), np.min(test_out2), np.mean(test_out2), test_out2.dtype
+            print test_out2, test_out2.shape
+
+            # # Vlen(test_out), test_out[0].shape
+            # # print test_out2.shape, test_out2
+            # # print test_out3
+            # # print test_out, test_out.shape
+            # # # test_out = test[:, :, :, 3]
+            # # test_out = test_out[test_out3]
+            # # # test_out2 = test2[:, :, :, 3]
+            # # test_out2 = test_out2[test_out3]
+            # # # print test_out
+            # # print 'shape_id_map: ', test_out.shape, np.max(test_out), np.min(test_out), np.mean(test_out), np.median(test_out), test_out.dtype
+            # # print 'shape_id_sim_map: ', test_out2.shape, np.max(test_out2), np.min(test_out2), np.mean(test_out2), np.median(test_out2), test_out2.dtype
+            # # print 'masks sum: ', test_out3.dtype, np.sum(test_out3.astype(float))
+            # # assert np.max(test_out) == np.max(test_out2), 'MAtch1!!!'
+            # # assert np.min(test_out) == np.min(test_out2), 'MAtch2!!!'
 
         return [loss, should_stop]
     train_step_fn.step = 0
 
 
-    trainables = [v.name for v in tf.trainable_variables()]
-    alls =[v.name for v in tf.all_variables()]
-    print '----- Trainables %d: '%len(trainables), trainables
-    print '----- All %d: '%len(alls), alls
-    print '===== ', len(list(set(trainables) - set(alls)))
-    print '===== ', len(list(set(alls) - set(trainables))), list(set(alls) - set(trainables))
+    # trainables = [v.name for v in tf.trainable_variables()]
+    # alls =[v.name for v in tf.all_variables()]
+    # print '----- Trainables %d: '%len(trainables), trainables
+    # print '----- All %d: '%len(alls), alls
+    # print '===== ', len(list(set(trainables) - set(alls)))
+    # print '===== ', len(list(set(alls) - set(trainables))), list(set(alls) - set(trainables))
     # print summaries
 
     if FLAGS.if_print_tensors:
