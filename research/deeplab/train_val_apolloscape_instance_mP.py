@@ -23,7 +23,8 @@ import os
 import shutil
 import tensorflow as tf
 from deeplab import common
-from deeplab import model
+# from deeplab import model
+from deeplab import model_twoBranch as model
 from deeplab.datasets import regression_dataset_mP as regression_dataset
 from deeplab.utils import input_generator_mP as input_generator
 from deeplab.utils import train_utils_mP as train_utils
@@ -31,6 +32,7 @@ from deployment import model_deploy
 import numpy as np
 np.set_printoptions(threshold=np.nan)
 np.set_printoptions(precision=4)
+np.set_printoptions(suppress=True)
 
 from deeplab.core import preprocess_utils
 
@@ -115,10 +117,10 @@ flags.DEFINE_float('base_learning_rate', .0001,
 flags.DEFINE_float('learning_rate_decay_factor', 0.2,
                    'The rate to decay the base learning rate.')
 
-flags.DEFINE_integer('learning_rate_decay_step', 5000,
+flags.DEFINE_integer('learning_rate_decay_step', 3000,
                      'Decay the base learning rate at a fixed step.')
 
-flags.DEFINE_float('learning_power', 0.9,
+flags.DEFINE_float('learning_power', 0.6,
                    'The power value used in the poly learning policy.')
 
 flags.DEFINE_integer('training_number_of_steps', 300000,
@@ -320,10 +322,10 @@ def main(unused_argv):
       first_clone_scope = config.clone_scope(0) # clone_0
       update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS, first_clone_scope)
 
-    with tf.device('/device:GPU:3'):
+    with tf.device('/device:GPU:%d'%(FLAGS.num_clones+1)):
         if FLAGS.if_val:
           ## Construct the validation graph; takes one GPU.
-          image_names, z_logits, outputs_to_weights, seg_one_hots_list = _build_deeplab(FLAGS, inputs_queue_val.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_vals, bin_range, dataset_val, codes, is_training=False)
+          image_names, z_logits, outputs_to_weights, seg_one_hots_list, weights_normalized = _build_deeplab(FLAGS, inputs_queue_val.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_vals, bin_range, dataset_val, codes, is_training=False)
           # test_tensor, test_tensor2, test_tensor3 = _build_deeplab(FLAGS, inputs_queue_val.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_vals, bin_range, dataset_val, codes, is_training=False, reuse=True)
 
     # Gather initial summaries.
@@ -445,11 +447,12 @@ def main(unused_argv):
           summary_diff = tf.where(summary_mask, summary_diff, tf.zeros_like(summary_diff))
           summaries.add(tf.summary.image('diff_map/%s_ldiff' % output, tf.gather(tf.cast(summary_diff, tf.uint8), gather_list)))
 
-          # summary_loss = graph.get_tensor_by_name((pattern%'loss_slice_reg_').replace(':0', '')+output+':0')
-          # summaries.add(tf.summary.scalar('slice_loss/'+(pattern%'reg_').replace(':0', '')+output, summary_loss))
+          if output_idx < 7:
+              # summary_loss = graph.get_tensor_by_name((pattern%'loss_slice_reg_').replace(':0', '')+output+':0')
+              # summaries.add(tf.summary.scalar('slice_loss/'+(pattern%'reg_').replace(':0', '')+output, summary_loss))
 
-          # summary_loss = graph.get_tensor_by_name((pattern%'loss_slice_cls_').replace(':0', '')+output+':0')
-          # summaries.add(tf.summary.scalar('slice_loss/'+(pattern%'cls_').replace(':0', '')+output, summary_loss))
+              summary_loss = graph.get_tensor_by_name((pattern%'loss_slice_cls_').replace(':0', '')+output+':0')
+              summaries.add(tf.summary.scalar('slice_loss/'+(pattern%'cls_').replace(':0', '')+output, summary_loss))
 
       for pattern in [pattern_train, pattern_val] if FLAGS.if_val else [pattern_train]:
           add_metrics = ['loss_all_shape_id_cls_metric'] if FLAGS.if_summary_metrics else []
@@ -471,8 +474,8 @@ def main(unused_argv):
           FLAGS.learning_rate_decay_step, FLAGS.learning_rate_decay_factor,
           FLAGS.training_number_of_steps, FLAGS.learning_power,
           FLAGS.slow_start_step, FLAGS.slow_start_learning_rate)
-      optimizer = tf.train.MomentumOptimizer(learning_rate, FLAGS.momentum)
-      # optimizer = tf.train.AdamOptimizer(learning_rate)
+      # optimizer = tf.train.MomentumOptimizer(learning_rate, FLAGS.momentum)
+      optimizer = tf.train.AdamOptimizer(learning_rate)
       summaries.add(tf.summary.scalar('learning_rate', learning_rate))
 
     startup_delay_steps = FLAGS.task * FLAGS.startup_delay_steps
@@ -565,23 +568,23 @@ def main(unused_argv):
             # # first_clone_test3 = graph.get_tensor_by_name(
             # #         ('%s/%s:0' % (first_clone_scope, 'not_ignore_mask_in_loss')).strip('/'))
 
-            mask_rescaled_float = graph.get_tensor_by_name(pattern%'mask_rescaled_float')
-            _, test_out, test_out2, test_out3, test_out4 = sess.run([summary_op, image_names, z_logits, outputs_to_weights['z'], mask_rescaled_float])
+            mask_rescaled_float = graph.get_tensor_by_name('val-%s:0'%'mask_rescaled_float')
+            test_1 = graph.get_tensor_by_name(
+                    ('%s/%s:0' % (first_clone_scope, 'prob_logits_pose')).strip('/'))
+            test_2 = graph.get_tensor_by_name(
+                    ('%s/%s:0' % (first_clone_scope, 'pose_dict_N')).strip('/'))
+            _, test_out, test_out2, test_out3, test_out4, test_out5, test_out6, test_out7 = sess.run([summary_op, image_names, z_logits, outputs_to_weights['z'], mask_rescaled_float, weights_normalized, test_1, test_2])
             print test_out
             print test_out2.shape
             test_out3 = test_out3[test_out4!=0.]
             print test_out3
             print 'outputs_to_weights[z] masked: ', test_out3.shape, np.max(test_out3), np.min(test_out3), np.mean(test_out3), test_out3.dtype
+            print test_out5.T, test_out5.shape, np.sum(test_out5)
 
-            test_1 = graph.get_tensor_by_name(
-                    ('%s/%s:0' % (first_clone_scope, 'prob_logits_pose')).strip('/'))
-            test_2 = graph.get_tensor_by_name(
-                    ('%s/%s:0' % (first_clone_scope, 'pose_dict_N')).strip('/'))
-            test_out, test_out2 = sess.run([test_1, test_2])
-            print '-- prob_logits_pose: ', test_out.shape, np.max(test_out), np.min(test_out), np.mean(test_out), test_out.dtype
-            print test_out, test_out.shape
-            print '-- pose_dict_N: ', test_out2.shape, np.max(test_out2), np.min(test_out2), np.mean(test_out2), test_out2.dtype
-            print test_out2, test_out2.shape
+            print '-- prob_logits_pose: ', test_out6.shape, np.max(test_out6), np.min(test_out6), np.mean(test_out6), test_out6.dtype
+            print test_out6, test_out6.shape
+            print '-- pose_dict_N: ', test_out7.shape, np.max(test_out7), np.min(test_out7), np.mean(test_out7), test_out7.dtype
+            print test_out7, test_out7.shape
 
             # # Vlen(test_out), test_out[0].shape
             # # print test_out2.shape, test_out2

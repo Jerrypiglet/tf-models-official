@@ -19,7 +19,8 @@ from deeplab import input_preprocess
 from deeplab.datasets.regression_dataset_mP import DatasetDescriptor, _DATASETS_INFORMATION, _APOLLOSCAPE_INFORMATION
 slim = tf.contrib.slim
 import numpy as np
-from deeplab import model
+# from deeplab import model
+from deeplab import model_twoBranch as model
 
 dataset_data_provider = slim.dataset_data_provider
 

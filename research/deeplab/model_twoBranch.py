@@ -87,104 +87,6 @@ def get_extra_layer_scopes(last_layers_contain_logits_only=False):
     ]
 
 
-def not_predict_labels_multi_scale(images,
-                               model_options,
-                               eval_scales=(1.0,),
-                               add_flipped_images=False):
-  """Predicts segmentation labels.
-
-  Args:
-    images: A tensor of size [batch, height, width, channels].
-    model_options: A ModelOptions instance to configure models.
-    eval_scales: The scales to resize images for evaluation.
-    add_flipped_images: Add flipped images for evaluation or not.
-
-  Returns:
-    A dictionary with keys specifying the output_type (e.g., semantic
-      prediction) and values storing Tensors representing predictions (argmax
-      over channels). Each prediction has size [batch, height, width].
-  """
-  outputs_to_predictions = {
-      output: []
-      for output in model_options.outputs_to_num_classes
-  }
-
-  for i, image_scale in enumerate(eval_scales):
-    with tf.variable_scope(tf.get_variable_scope(), reuse=True if i else None):
-      outputs_to_scales_to_logits = multi_scale_logits(
-          images,
-          model_options=model_options,
-          image_pyramid=[image_scale],
-          is_training=False,
-          fine_tune_batch_norm=False)
-
-    if add_flipped_images:
-      with tf.variable_scope(tf.get_variable_scope(), reuse=True):
-        outputs_to_scales_to_logits_reversed = multi_scale_logits(
-            tf.reverse_v2(images, [2]),
-            model_options=model_options,
-            image_pyramid=[image_scale],
-            is_training=False,
-            fine_tune_batch_norm=False)
-
-    for output in sorted(outputs_to_scales_to_logits):
-      scales_to_logits = outputs_to_scales_to_logits[output]
-      logits = tf.image.resize_bilinear(
-          scales_to_logits[MERGED_LOGITS_SCOPE],
-          tf.shape(images)[1:3],
-          align_corners=True)
-      outputs_to_predictions[output].append(
-          tf.expand_dims(tf.nn.softmax(logits), 4))
-
-      if add_flipped_images:
-        scales_to_logits_reversed = (
-            outputs_to_scales_to_logits_reversed[output])
-        logits_reversed = tf.image.resize_bilinear(
-            tf.reverse_v2(scales_to_logits_reversed[MERGED_LOGITS_SCOPE], [2]),
-            tf.shape(images)[1:3],
-            align_corners=True)
-        outputs_to_predictions[output].append(
-            tf.expand_dims(tf.nn.softmax(logits_reversed), 4))
-
-  for output in sorted(outputs_to_predictions):
-    predictions = outputs_to_predictions[output]
-    # Compute average prediction across different scales and flipped images.
-    predictions = tf.reduce_mean(tf.concat(predictions, 4), axis=4)
-    outputs_to_predictions[output] = tf.argmax(predictions, 3)
-
-  return outputs_to_predictions
-
-
-def predict_labels(images, model_options, image_pyramid=None):
-  """Predicts segmentation labels.
-
-  Args:
-    images: A tensor of size [batch, height, width, channels].
-    model_options: A ModelOptions instance to configure models.
-    image_pyramid: Input image scales for multi-scale feature extraction.
-
-  Returns:
-    A dictionary with keys specifying the output_type (e.g., semantic
-      prediction) and values storing Tensors representing predictions (argmax
-      over channels). Each prediction has size [batch, height, width].
-  """
-  outputs_to_scales_to_logits = multi_scale_logits(
-      images,
-      model_options=model_options,
-      image_pyramid=image_pyramid,
-      is_training=False,
-      fine_tune_batch_norm=False)
-
-  predictions = {}
-  for output in sorted(outputs_to_scales_to_logits):
-    scales_to_logits = outputs_to_scales_to_logits[output]
-    logits = tf.image.resize_bilinear(
-        scales_to_logits[MERGED_LOGITS_SCOPE],
-        tf.shape(images)[1:3],
-        align_corners=True)
-    predictions[output] = tf.argmax(logits, 3)
-
-  return predictions
 
 
 def scale_dimension(dim, scale):
@@ -296,7 +198,7 @@ def _get_logits_mP(images,
   Returns:
     outputs_to_logits: A map from output_type to logits.
   """
-  features, end_points = extract_features(
+  features, end_points, features_backbone = extract_features(
       images,
       model_options,
       weight_decay=weight_decay,
@@ -573,6 +475,15 @@ def extract_features(images,
   if not model_options.aspp_with_batch_norm:
     return features, end_points
   else:
+    return aspp_with_batch_norm(features, model_options, is_training, fine_tune_batch_norm, weight_decay, activation_fn=tf.nn.relu, depth=256), end_points, features_backbone
+
+def aspp_with_batch_norm(features,
+                        model_options,
+                        is_training,
+                        fine_tune_batch_norm,
+                        weight_decay,
+                        activation_fn=tf.nn.relu,
+                        depth=256):
     batch_norm_params = {
         'is_training': is_training and fine_tune_batch_norm,
         'decay': 0.9997,
@@ -583,13 +494,13 @@ def extract_features(images,
     with slim.arg_scope(
         [slim.conv2d, slim.separable_conv2d],
         weights_regularizer=slim.l2_regularizer(weight_decay),
-        activation_fn=tf.nn.relu,
+        activation_fn=activation_fn,
         normalizer_fn=slim.batch_norm,
         padding='SAME',
         stride=1,
         reuse=reuse):
       with slim.arg_scope([slim.batch_norm], **batch_norm_params):
-        depth = 256
+        depth = depth
         branch_logits = []
 
         if model_options.add_image_level_feature:
@@ -636,9 +547,7 @@ def extract_features(images,
             keep_prob=0.9,
             is_training=is_training,
             scope=CONCAT_PROJECTION_SCOPE + '_dropout')
-
-        return concat_logits, end_points
-
+        return concat_logits
 
 def refine_by_decoder(features,
                       end_points,
@@ -805,6 +714,105 @@ def get_branch_logits(features,
 
       return tf.add_n(branch_logits)
 
+
+def not_predict_labels_multi_scale(images,
+                               model_options,
+                               eval_scales=(1.0,),
+                               add_flipped_images=False):
+  """Predicts segmentation labels.
+
+  Args:
+    images: A tensor of size [batch, height, width, channels].
+    model_options: A ModelOptions instance to configure models.
+    eval_scales: The scales to resize images for evaluation.
+    add_flipped_images: Add flipped images for evaluation or not.
+
+  Returns:
+    A dictionary with keys specifying the output_type (e.g., semantic
+      prediction) and values storing Tensors representing predictions (argmax
+      over channels). Each prediction has size [batch, height, width].
+  """
+  outputs_to_predictions = {
+      output: []
+      for output in model_options.outputs_to_num_classes
+  }
+
+  for i, image_scale in enumerate(eval_scales):
+    with tf.variable_scope(tf.get_variable_scope(), reuse=True if i else None):
+      outputs_to_scales_to_logits = multi_scale_logits(
+          images,
+          model_options=model_options,
+          image_pyramid=[image_scale],
+          is_training=False,
+          fine_tune_batch_norm=False)
+
+    if add_flipped_images:
+      with tf.variable_scope(tf.get_variable_scope(), reuse=True):
+        outputs_to_scales_to_logits_reversed = multi_scale_logits(
+            tf.reverse_v2(images, [2]),
+            model_options=model_options,
+            image_pyramid=[image_scale],
+            is_training=False,
+            fine_tune_batch_norm=False)
+
+    for output in sorted(outputs_to_scales_to_logits):
+      scales_to_logits = outputs_to_scales_to_logits[output]
+      logits = tf.image.resize_bilinear(
+          scales_to_logits[MERGED_LOGITS_SCOPE],
+          tf.shape(images)[1:3],
+          align_corners=True)
+      outputs_to_predictions[output].append(
+          tf.expand_dims(tf.nn.softmax(logits), 4))
+
+      if add_flipped_images:
+        scales_to_logits_reversed = (
+            outputs_to_scales_to_logits_reversed[output])
+        logits_reversed = tf.image.resize_bilinear(
+            tf.reverse_v2(scales_to_logits_reversed[MERGED_LOGITS_SCOPE], [2]),
+            tf.shape(images)[1:3],
+            align_corners=True)
+        outputs_to_predictions[output].append(
+            tf.expand_dims(tf.nn.softmax(logits_reversed), 4))
+
+  for output in sorted(outputs_to_predictions):
+    predictions = outputs_to_predictions[output]
+    # Compute average prediction across different scales and flipped images.
+    predictions = tf.reduce_mean(tf.concat(predictions, 4), axis=4)
+    outputs_to_predictions[output] = tf.argmax(predictions, 3)
+
+  return outputs_to_predictions
+
+
+def predict_labels(images, model_options, image_pyramid=None):
+  """Predicts segmentation labels.
+
+  Args:
+    images: A tensor of size [batch, height, width, channels].
+    model_options: A ModelOptions instance to configure models.
+    image_pyramid: Input image scales for multi-scale feature extraction.
+
+  Returns:
+    A dictionary with keys specifying the output_type (e.g., semantic
+      prediction) and values storing Tensors representing predictions (argmax
+      over channels). Each prediction has size [batch, height, width].
+  """
+  outputs_to_scales_to_logits = multi_scale_logits(
+      images,
+      model_options=model_options,
+      image_pyramid=image_pyramid,
+      is_training=False,
+      fine_tune_batch_norm=False)
+
+  predictions = {}
+  for output in sorted(outputs_to_scales_to_logits):
+    scales_to_logits = outputs_to_scales_to_logits[output]
+    logits = tf.image.resize_bilinear(
+        scales_to_logits[MERGED_LOGITS_SCOPE],
+        tf.shape(images)[1:3],
+        align_corners=True)
+    predictions[output] = tf.argmax(logits, 3)
+
+  return predictions
 
 def split_separable_conv2d(inputs,
                            filters,

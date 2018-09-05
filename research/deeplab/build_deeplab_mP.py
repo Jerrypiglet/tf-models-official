@@ -1,6 +1,6 @@
 import tensorflow as tf
 from deeplab import common
-from deeplab import model
+from deeplab import model_twoBranch as model
 from deeplab.utils import train_utils_mP as train_utils
 import numpy as np
 
@@ -85,7 +85,7 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
     logits_map = tf.stack(logits_samples_list, axis=0) # (3, 272, 680, 17)
     return logits_map
 
-  outputs_to_logits, outputs_to_weights = model.single_scale_logits(
+  outputs_to_logits, outputs_to_weights_map, outputs_to_weights_N = model.single_scale_logits(
     samples[common.IMAGE],
     samples['seg_rescaled'],
     samples['car_nums'],
@@ -110,6 +110,11 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
   reg_logits_mask = tf.logical_not(tf.is_nan(tf.reduce_sum(reg_logits_concat, axis=1, keepdims=True)))
   masks_float = tf.to_float(reg_logits_mask)
   count_valid = tf.reduce_sum(masks_float)+1e-10
+  # for output in dataset.output_names: # should be identical for all outputs
+  weights_masked = tf.multiply(outputs_to_weights_N[dataset.output_names[0]], masks_float)
+  pixels_valid = tf.reduce_sum(weights_masked)+1e-10
+  # weights_normalized = tf.to_float(tf.shape(weights_masked)[0]) * weights_masked / tf.reduce_sum(weights_masked) # [N, 1]. sum should be N in for N cars in the batch
+  weights_normalized = weights_masked
 
   # if FLAGS.val_split == 'test':
   #     scaled_prob_logits_pose = train_utils.scale_for_l1_loss(
@@ -122,7 +127,7 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
 
   print '+++++++'
   ## Regression loss for pose
-  balance_rot_reg_loss = 10.
+  balance_rot_reg_loss = 1.
   balance_trans_reg_loss = 1.
   pose_dict_N = tf.gather_nd(samples['pose_dict'], idx_xys) # [N, 7]
   pose_dict_N = tf.identity(pose_dict_N, 'pose_dict_N')
@@ -131,6 +136,7 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
           tf.gather(reg_logits_concat, [0, 1, 2, 3, 4, 5, 6], axis=1),
           pose_dict_N,
           masks_float,
+          weights_normalized,
           balance_rot=balance_rot_reg_loss,
           balance_trans=balance_trans_reg_loss,
           upsample_logits=FLAGS.upsample_logits,
@@ -148,6 +154,7 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
           tf.gather(reg_logits_concat, range(7, dataset.SHAPE_DIMS+7), axis=1),
           shape_dict_N,
           masks_float,
+          weights_normalized,
           balance=balance_shape_loss,
           upsample_logits=FLAGS.upsample_logits,
           name=is_training_prefix + 'loss_reg_shape',
@@ -176,16 +183,16 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
     label_id_list.append(label_id_slice)
 
     # Add losses for each output names for logging
-    prob_logits_slice = tf.gather(prob_logits_pose_shape, [idx_output], axis=1)
-    loss_slice_reg = tf.losses.huber_loss(label_slice, prob_logits_slice, masks_float, delta=1.0, loss_collection=None)
-    loss_slice_reg = tf.identity(loss_slice_reg, name=is_training_prefix+'loss_slice_reg_'+output)
+    # prob_logits_slice = tf.gather(prob_logits_pose_shape, [idx_output], axis=1)
+    # loss_slice_reg = tf.losses.huber_loss(label_slice, prob_logits_slice, weights_normalized, delta=1.0, loss_collection=None)
+    # loss_slice_reg = tf.identity(loss_slice_reg, name=is_training_prefix+'loss_slice_reg_'+output)
 
     ## Cross-entropy loss for each output http://icode.baidu.com/repos/baidu/personal-code/video_seg_transfer/blob/with_db:Networks/mx_losses.py (L89)
     balance_cls_loss = 1e-1
     neg_log = -1. * tf.nn.log_softmax(outputs_to_logits[output])
     gt_idx = tf.one_hot(tf.squeeze(label_id_slice), depth=dataset.bin_nums[idx_output], axis=-1)
     loss_slice_crossentropy = tf.reduce_sum(tf.multiply(gt_idx, neg_log), axis=1, keepdims=True)
-    loss_slice_crossentropy= tf.reduce_sum(tf.multiply(masks_float, loss_slice_crossentropy)) / count_valid * balance_cls_loss
+    loss_slice_crossentropy= tf.reduce_sum(tf.multiply(weights_normalized, loss_slice_crossentropy)) / pixels_valid * balance_cls_loss
     loss_slice_crossentropy = tf.identity(loss_slice_crossentropy, name=is_training_prefix+'loss_slice_cls_'+output)
     loss_slice_crossentropy_list.append(loss_slice_crossentropy)
     if is_training:
@@ -216,7 +223,4 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
       shape_cls_metric_loss_check = tf.reduce_mean(shape_cls_metric_error_map)
       shape_cls_metric_loss_check = tf.identity(shape_cls_metric_loss_check, name=is_training_prefix + 'loss_all_shape_id_cls_metric')
 
-  return samples[common.IMAGE_NAME], outputs_to_logits['z'], outputs_to_weights, seg_one_hots_list
-
-
-
+  return samples[common.IMAGE_NAME], outputs_to_logits['z'], outputs_to_weights_map, seg_one_hots_list, weights_normalized

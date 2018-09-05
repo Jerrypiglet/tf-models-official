@@ -79,15 +79,15 @@ def euler_angles_to_quaternions(angle):
     q = tf.concat([q0, q1, q2, q3], axis=1)
     return q
 
-def smooth_l1_loss(predictions, labels, weights, name='', loss_collection=tf.GraphKeys.LOSSES):
-    loss_sum = tf.losses.huber_loss(labels, predictions, weights=weights, delta=1.0, scope='loss_l1_reg_'+name, loss_collection=loss_collection)
+def smooth_l1_loss(predictions, labels, weights, name='', loss_collection=tf.GraphKeys.LOSSES, reduction=tf.losses.Reduction.SUM_OVER_NONZERO_WEIGHTS):
+    loss_sum = tf.losses.huber_loss(labels, predictions, weights=weights, delta=1.0, scope='loss_l1_reg_'+name, loss_collection=loss_collection, reduction=reduction)
     # loss_sum = tf.losses.absolute_difference(
     #         labels,
     #         predictions)
     # return loss_sum / (tf.reduce_sum(tf.to_float(masks))+1.)
     return loss_sum
 
-def add_my_pose_loss_cars(prob_logits, labels, masks_float, balance_rot=1., balance_trans=1., upsample_logits=True, name=None, loss_collection=None):
+def add_my_pose_loss_cars(prob_logits, labels, masks_float, weights_normalized, balance_rot=1., balance_trans=1., upsample_logits=True, name=None, loss_collection=None):
     """ Loss for discrete pose from Peng Wang (http://icode.baidu.com/repos/baidu/personal-code/video_seg_transfer/blob/with_db:Networks/mx_losses.py)
     prob_logits, labels: [car_num, D]"""
 
@@ -97,12 +97,15 @@ def add_my_pose_loss_cars(prob_logits, labels, masks_float, balance_rot=1., bala
         return rot, trans
 
     count_valid = tf.reduce_sum(masks_float)+1e-10
+    pixels_valid = tf.reduce_sum(weights_normalized) + 1e-10
+    # reduction = tf.losses.Reduction.SUM
+    reduction = tf.losses.Reduction.SUM_OVER_NONZERO_WEIGHTS
 
     rot, trans = slice_pose(prob_logits)
     rot_gt, trans_gt = slice_pose(labels)
 
     trans_loss = smooth_l1_loss(trans, trans_gt,
-            masks_float, '', loss_collection=None) * balance_trans
+            weights_normalized, '', loss_collection=None, reduction=reduction) * balance_trans * count_valid / pixels_valid
     trans_loss = tf.identity(trans_loss, name=name+'_trans')
     tf.losses.add_loss(trans_loss, loss_collection=loss_collection)
 
@@ -113,7 +116,7 @@ def add_my_pose_loss_cars(prob_logits, labels, masks_float, balance_rot=1., bala
     trans_loss_metric_loss = tf.reduce_sum(tf.sqrt(trans_error_cars)) / count_valid
     trans_loss_metric_loss = tf.identity(trans_loss_metric_loss, name=name+'_trans_metric')
 
-    rot_q_loss = tf.reduce_sum(tf.reduce_sum(tf.square(tf.multiply(masks_float, rot - rot_gt)), axis=1) / 2.0) / count_valid
+    rot_q_loss = tf.reduce_sum(tf.multiply(tf.reduce_sum(tf.square(rot - rot_gt), axis=1) / 2.0, weights_normalized)) / pixels_valid
     rot_q_loss = rot_q_loss * balance_rot
     tf.losses.add_loss(tf.identity(rot_q_loss, name=name+'_rot_quat'), loss_collection=loss_collection)
     total_loss = rot_q_loss + trans_loss
@@ -213,6 +216,7 @@ def scale_for_l1_loss(logits, labels, masks, upsample_logits):
 def add_l1_regression_loss_cars(logits,
         labels,
         masks_float,
+        weights_normalized,
         balance=1.,
         upsample_logits=True,
         name='',
