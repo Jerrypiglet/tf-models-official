@@ -63,6 +63,7 @@ IMAGE_POOLING_SCOPE = 'image_pooling'
 ASPP_SCOPE = 'aspp'
 CONCAT_PROJECTION_SCOPE = 'concat_projection'
 DECODER_SCOPE = 'decoder'
+WEIGHTS_DECODER_SCOPE = 'decoder_weights'
 
 
 def get_extra_layer_scopes(last_layers_contain_logits_only=False):
@@ -227,7 +228,7 @@ def _get_logits_mP(images,
   outputs_to_weights_N = {}
 
   N_batch_idxs = tf.reshape(tf.slice(idx_xys, [0, 0], [-1, 1]), [-1])
-  print car_nums.get_shape(), car_nums.dtype
+  # print car_nums.get_shape(), car_nums.dtype
   last_dim = tf.shape(features)[3]
 
   for output in sorted(model_options.outputs_to_num_classes):
@@ -243,7 +244,9 @@ def _get_logits_mP(images,
         reuse=reuse,
         is_training=is_training,
         fine_tune_batch_norm=fine_tune_batch_norm,
-        activation_fn=tf.tanh)
+        activation_fn=tf.tanh,
+        decoder_scope=WEIGHTS_DECODER_SCOPE,
+        decoder_depth=1)
       # get_branch_logits(
       # features,
       # 1,
@@ -363,9 +366,9 @@ def _get_logits_mP(images,
 
         # features_all = tf.map_fn(per_sample, (features, weights, seg_maps, car_nums), dtype=tf.float32, infer_shape=False) # [N, ?, 256]
 
-    print features_weights_all.concat().get_shape()
+    # print features_weights_all.concat().get_shape()
     features_weights_N = tf.reshape(features_weights_all.concat(), [-1, last_dim+1])
-    print features_weights_N.get_shape(), features_weights_N.dtype
+    # print features_weights_N.get_shape(), features_weights_N.dtype
     features_N = tf.expand_dims(tf.expand_dims(tf.slice(features_weights_N, [0, 0], [-1, last_dim]), 1), 1)
     weights_N = tf.slice(features_weights_N, [0, last_dim], [-1, 1])
 
@@ -573,7 +576,9 @@ def refine_by_decoder(features,
                       reuse=None,
                       is_training=False,
                       fine_tune_batch_norm=False,
-                      activation_fn=tf.nn.relu):
+                      activation_fn=tf.nn.relu,
+                      decoder_scope=DECODER_SCOPE,
+                      decoder_depth=256):
   """Adds the decoder to obtain sharper segmentation results.
 
   Args:
@@ -610,7 +615,7 @@ def refine_by_decoder(features,
       stride=1,
       reuse=reuse):
     with slim.arg_scope([slim.batch_norm], **batch_norm_params):
-      with tf.variable_scope(DECODER_SCOPE, DECODER_SCOPE, [features]):
+      with tf.variable_scope(decoder_scope, decoder_scope, [features]):
         feature_list = feature_extractor.networks_to_feature_maps[
             model_variant][feature_extractor.DECODER_END_POINTS]
         if feature_list is None:
@@ -639,7 +644,7 @@ def refine_by_decoder(features,
                   feature, [decoder_height, decoder_width], align_corners=True)
               decoder_features_list[j].set_shape(
                   [None, decoder_height, decoder_width, None])
-            decoder_depth = 256
+            # decoder_depth = 256
             if decoder_use_separable_conv:
               decoder_features = split_separable_conv2d(
                   tf.concat(decoder_features_list, 3),

@@ -125,7 +125,6 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
   #     scaled_prob_logits = tf.identity(scaled_prob_logits, name=is_training_prefix+'scaled_prob_logits_pose_shape_map')
   # return samples['idxs']
 
-  print '+++++++'
   ## Regression loss for pose
   balance_rot_reg_loss = 1.
   balance_trans_reg_loss = 1.

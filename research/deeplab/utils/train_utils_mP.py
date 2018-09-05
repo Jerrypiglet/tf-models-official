@@ -406,6 +406,7 @@ def get_model_learning_rate(
     ValueError: If learning policy is not recognized.
   """
   global_step = tf.train.get_or_create_global_step()
+  print '===== Lr decay policy: ' + learning_policy
   if learning_policy == 'step':
     learning_rate = tf.train.exponential_decay(
         base_learning_rate,
