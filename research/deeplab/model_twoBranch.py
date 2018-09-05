@@ -157,7 +157,6 @@ def single_scale_logits(images,
       # [logits_height, logits_width], align_corners=True)
   # seg_one_hots_N_rescaled = tf.reshape(seg_one_hots_N_flattened, [-1, logits_height, logits_width, 1])
 
-
   outputs_to_logits, outputs_to_weights_map, outputs_to_weights_N = _get_logits_mP( # Here we get the regression 'logits' from features!
         images,
         seg_map,
@@ -171,8 +170,6 @@ def single_scale_logits(images,
         fine_tune_feature_extractor=fine_tune_feature_extractor)
 
   return outputs_to_logits, outputs_to_weights_map, outputs_to_weights_N
-
-
 
 def _get_logits_mP(images,
                 seg_maps, # [batch_size, H, W, 1] float
@@ -198,22 +195,22 @@ def _get_logits_mP(images,
   Returns:
     outputs_to_logits: A map from output_type to logits.
   """
-  features, end_points, features_backbone = extract_features(
+  features_aspp, end_points, features_backbone = extract_features(
       images,
       model_options,
       weight_decay=weight_decay,
       reuse=reuse,
       is_training=is_training,
       fine_tune_batch_norm=fine_tune_batch_norm,
-      fine_tune_feature_extractor=fine_tune_feature_extractor) # [batch_size, 68, 170, 256]
+      fine_tune_feature_extractor=fine_tune_feature_extractor) # (1, 34, 85, 256), ..,  (1, 34, 85, 2048)
 
-  if model_options.decoder_output_stride is not None:
-    decoder_height = scale_dimension(model_options.crop_size[0],
+  decoder_height = scale_dimension(model_options.crop_size[0],
                                      1.0 / model_options.decoder_output_stride)
-    decoder_width = scale_dimension(model_options.crop_size[1],
+  decoder_width = scale_dimension(model_options.crop_size[1],
                                     1.0 / model_options.decoder_output_stride)
+  if model_options.decoder_output_stride is not None:
     features = refine_by_decoder(
-        features,
+        features_aspp,
         end_points,
         decoder_height=decoder_height,
         decoder_width=decoder_width,
@@ -223,6 +220,7 @@ def _get_logits_mP(images,
         reuse=reuse,
         is_training=is_training,
         fine_tune_batch_norm=fine_tune_batch_norm)
+  print '== Features_aspp/backbone, features:', features_aspp.get_shape(), features_backbone.get_shape(), features.get_shape()
 
   outputs_to_logits = {}
   outputs_to_weights_map = {}
@@ -233,17 +231,31 @@ def _get_logits_mP(images,
   last_dim = tf.shape(features)[3]
 
   for output in sorted(model_options.outputs_to_num_classes):
-    weights = (get_branch_logits(
-      features,
-      1,
-      model_options.atrous_rates,
-      aspp_with_batch_norm=model_options.aspp_with_batch_norm,
-      kernel_size=model_options.logits_kernel_size,
-      weight_decay=weight_decay,
-      reuse=reuse,
-      scope_suffix=output,
-      activation=tf.tanh,
-      normalizer_fn=slim.batch_norm) + 1.) / 2. # (batch_size, 68, 170, 1)
+    weights = (
+        refine_by_decoder(
+        features_aspp,
+        end_points,
+        decoder_height=decoder_height,
+        decoder_width=decoder_width,
+        decoder_use_separable_conv=model_options.decoder_use_separable_conv,
+        model_variant=model_options.model_variant,
+        weight_decay=weight_decay,
+        reuse=reuse,
+        is_training=is_training,
+        fine_tune_batch_norm=fine_tune_batch_norm,
+        activation_fn=tf.tanh)
+      # get_branch_logits(
+      # features,
+      # 1,
+      # model_options.atrous_rates,
+      # aspp_with_batch_norm=model_options.aspp_with_batch_norm,
+      # kernel_size=model_options.logits_kernel_size,
+      # weight_decay=weight_decay,
+      # reuse=reuse,
+      # scope_suffix=output,
+      # activation=tf.tanh,
+      # normalizer_fn=slim.batch_norm)
+      + 1.) / 2. # (batch_size, 68, 170, 1)
 
     # Too large to fit into GPU
     # features_N = tf.gather(features, N_batch_idxs) # [N, 68, 170, 256]
@@ -475,15 +487,17 @@ def extract_features(images,
   if not model_options.aspp_with_batch_norm:
     return features, end_points
   else:
-    return aspp_with_batch_norm(features, model_options, is_training, fine_tune_batch_norm, weight_decay, activation_fn=tf.nn.relu, depth=256), end_points, features_backbone
+    return aspp_with_batch_norm(features, model_options, weight_decay, reuse, is_training, fine_tune_batch_norm, activation_fn=tf.nn.relu, depth=256), end_points, features
 
 def aspp_with_batch_norm(features,
-                        model_options,
-                        is_training,
-                        fine_tune_batch_norm,
-                        weight_decay,
-                        activation_fn=tf.nn.relu,
-                        depth=256):
+                         model_options,
+                         weight_decay=0.0001,
+                         reuse=None,
+                         is_training=False,
+                         fine_tune_batch_norm=False,
+                         fine_tune_feature_extractor=True,
+                         activation_fn=tf.nn.relu,
+                         depth=256):
     batch_norm_params = {
         'is_training': is_training and fine_tune_batch_norm,
         'decay': 0.9997,
@@ -558,7 +572,8 @@ def refine_by_decoder(features,
                       weight_decay=0.0001,
                       reuse=None,
                       is_training=False,
-                      fine_tune_batch_norm=False):
+                      fine_tune_batch_norm=False,
+                      activation_fn=tf.nn.relu):
   """Adds the decoder to obtain sharper segmentation results.
 
   Args:
@@ -589,7 +604,7 @@ def refine_by_decoder(features,
   with slim.arg_scope(
       [slim.conv2d, slim.separable_conv2d],
       weights_regularizer=slim.l2_regularizer(weight_decay),
-      activation_fn=tf.nn.relu,
+      activation_fn=activation_fn,
       normalizer_fn=slim.batch_norm,
       padding='SAME',
       stride=1,
