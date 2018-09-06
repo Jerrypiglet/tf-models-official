@@ -1,6 +1,6 @@
 import tensorflow as tf
 from deeplab import common
-from deeplab import model_twoBranch as model
+from deeplab import model_maskLogits as model
 from deeplab.utils import train_utils_mP as train_utils
 import numpy as np
 

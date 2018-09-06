@@ -24,7 +24,7 @@ import shutil
 import tensorflow as tf
 from deeplab import common
 # from deeplab import model
-from deeplab import model_twoBranch as model
+from deeplab import model_maskLogits as model
 from deeplab.datasets import regression_dataset_mP as regression_dataset
 from deeplab.utils import input_generator_mP as input_generator
 from deeplab.utils import train_utils_mP as train_utils
@@ -120,7 +120,7 @@ flags.DEFINE_float('learning_rate_decay_factor', 0.2,
 flags.DEFINE_integer('learning_rate_decay_step', 2000,
                      'Decay the base learning rate at a fixed step.')
 
-flags.DEFINE_float('learning_power', 0.5,
+flags.DEFINE_float('learning_power', 1.,
                    'The power value used in the poly learning policy.')
 
 flags.DEFINE_integer('training_number_of_steps', 100000,
@@ -228,10 +228,10 @@ def main(unused_argv):
       tf.gfile.MakeDirs(FLAGS.train_logdir)
   elif len(os.listdir(FLAGS.train_logdir)) != 0:
       if not(FLAGS.if_restore):
-          # if_delete_all = raw_input('#### The log folder %s exists and non-empty; delete all logs? [y/n] '%FLAGS.train_logdir)
-          # if if_delete_all == 'y':
-          shutil.rmtree(FLAGS.train_logdir)
-          print '==== Log folder %s emptied: '%FLAGS.train_logdir + 'rm -rf %s/*'%FLAGS.train_logdir
+          if_delete_all = raw_input('#### The log folder %s exists and non-empty; delete all logs? [y/n] '%FLAGS.train_logdir)
+          if if_delete_all == 'y':
+              shutil.rmtree(FLAGS.train_logdir)
+              print '==== Log folder %s emptied: '%FLAGS.train_logdir + 'rm -rf %s/*'%FLAGS.train_logdir
       else:
           print '==== Log folder exists; not emptying it because we need to restore from it.'
   tf.logging.info('==== Logging in dir:%s; Training on %s set', FLAGS.train_logdir, FLAGS.train_split)
@@ -573,7 +573,6 @@ def main(unused_argv):
             print test_out
             print test_out2.shape
             test_out3 = test_out3[test_out4!=0.]
-            print test_out3
             print 'outputs_to_weights[z] masked: ', test_out3.shape, np.max(test_out3), np.min(test_out3), np.mean(test_out3), test_out3.dtype
             print test_out5.T, test_out5.shape, np.sum(test_out5)
 

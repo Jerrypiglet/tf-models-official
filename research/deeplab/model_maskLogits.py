@@ -228,95 +228,41 @@ def _get_logits_mP(images,
   outputs_to_weights_N = {}
 
   N_batch_idxs = tf.reshape(tf.slice(idx_xys, [0, 0], [-1, 1]), [-1])
-  # print car_nums.get_shape(), car_nums.dtype
-  last_dim = tf.shape(features)[3]
+  # last_dim = tf.shape(features)[3]
 
   for output in sorted(model_options.outputs_to_num_classes):
+    last_dim = model_options.outputs_to_num_classes[output]
+
     weights = (
-        refine_by_decoder(
-        features_aspp,
-        end_points,
-        decoder_height=decoder_height,
-        decoder_width=decoder_width,
-        decoder_use_separable_conv=model_options.decoder_use_separable_conv,
-        model_variant=model_options.model_variant,
-        weight_decay=weight_decay,
-        reuse=reuse,
-        is_training=is_training,
-        fine_tune_batch_norm=fine_tune_batch_norm,
-        activation_fn=tf.tanh,
-        decoder_scope=WEIGHTS_DECODER_SCOPE+'_'+output,
-        weights_initializer=tf.truncated_normal_initializer(stddev=0.01),
-        decoder_depth=1)
-      # get_branch_logits(
-      # features,
-      # 1,
-      # model_options.atrous_rates,
-      # aspp_with_batch_norm=model_options.aspp_with_batch_norm,
-      # kernel_size=model_options.logits_kernel_size,
-      # weight_decay=weight_decay,
-      # reuse=reuse,
-      # scope_suffix=output,
-      # activation=tf.tanh,
-      # normalizer_fn=slim.batch_norm,
-      # scope=LOGITS_SCOPE_NAME+'_'+output)
+      get_branch_logits(
+      features,
+      1,
+      model_options.atrous_rates,
+      aspp_with_batch_norm=model_options.aspp_with_batch_norm,
+      kernel_size=model_options.logits_kernel_size,
+      weight_decay=weight_decay,
+      reuse=reuse,
+      scope_suffix=output+'_weights',
+      activation=tf.tanh,
+      normalizer_fn=slim.batch_norm)
       + 1.) / 2. # (batch_size, 68, 170, 1)
 
-    # Too large to fit into GPU
-    # features_N = tf.gather(features, N_batch_idxs) # [N, 68, 170, 256]
-    # weights_repeatN = tf.gather(weights, N_batch_idxs) # [N, 68, 170, 1]
-    # weights_N = tf.multiply(weights_repeatN, seg_one_hots_N_rescaled) # [N, 68, 170, 1]
-    # weights_N_sums = tf.reduce_sum(tf.reduce_sum(weights_N, axis=1, keepdims=True), axis=2, keepdims=True)+1e-6 # [N, 1, 1, 1]
-    # weights_N_normalized = tf.multiply(weights_N, tf.reciprocal(weights_N_sums))
-    # features_N_weighted = tf.multiply(features_N, weights_N_normalized) # [N, 68, 170, 256]
-    # features_N_aggre = tf.reduce_sum(tf.reduce_sum(features_N_weighted, 1, keepdims=True), 2, keepdims=True) # (N, 1, 1, 256)
-
-    # Worked
-    # with tf.variable_scope('per_car_feature_aggre'):
-    #     def per_car(inputs):
-    #         batch_id = tf.gather(inputs[0], 0)
-    #         seg_one_hots_car = tf.squeeze(inputs[1])
-    #         # features_car = tf.gather(features, batch_id) # [68, 170, 256]
-    #         # features_car = tf.squeeze(tf.slice(features, [batch_id, 0, 0, 0], [1, -1, -1, -1]), 0) # [68, 170, 256]
-    #         features_car_masked = tf.boolean_mask(
-    #                 tf.squeeze(tf.slice(features, [batch_id, 0, 0, 0], [1, -1, -1, -1]), 0),
-    #                 tf.cast(seg_one_hots_car, tf.bool))# [68, 170, 256]
-    #         # print '----', features_car_masked.get_shape()
-    #         # weights_car = tf.gather(weights, batch_id) # [68, 170, 1]
-    #         # weights_car = tf.squeeze(tf.slice(weights, [batch_id, 0, 0, 0], [1, -1, -1, -1]), 0) # [68, 170, 1]
-    #         weights_car_masked = tf.boolean_mask(
-    #                 tf.squeeze(tf.slice(weights, [batch_id, 0, 0, 0], [1, -1, -1, -1]), 0),
-    #                 tf.cast(seg_one_hots_car, tf.bool))# [68, 170, 256]
-    #         # weights_car_masked = tf.multiply(weights_car, tf.to_float(seg_one_hots_car)) # [68, 170, 1]
-    #         weights_car_normlized = weights_car_masked / (tf.reduce_sum(weights_car_masked)+1e-6)
-    #         features_car_weighted = tf.multiply(features_car_masked, weights_car_normlized) # [68, 170, 256]
-    #         # features_car_aggre = tf.reduce_sum(tf.reduce_sum(features_car_weighted, 0, keepdims=True), 1, keepdims=True) # (1, 1, 256)
-    #         features_car_aggre = tf.expand_dims(tf.reduce_sum(features_car_weighted, 0, keepdims=True), 0) # (1, 1, 256)
-    #         return features_car_aggre
-    #     features_N_aggre = tf.map_fn(per_car, (idx_xys, seg_one_hots_N_rescaled), dtype=tf.float32) # [N, 1, 1, 256]
-
-    # with slim.arg_scope(
-    #     [slim.conv2d],
-    #     weights_regularizer=slim.l2_regularizer(weight_decay),
-    #     weights_initializer=tf.truncated_normal_initializer(stddev=0.01),
-    #     reuse=reuse):
-    #   with tf.variable_scope(LOGITS_SCOPE_NAME, LOGITS_SCOPE_NAME, [features_N_aggre]):
-    #     logits_car = slim.conv2d(
-    #               features_N_aggre,
-    #               model_options.outputs_to_num_classes[output],
-    #               kernel_size=1,
-    #               activation_fn=None,
-    #               normalizer_fn=None,
-    #               scope='feature_reg_car')
-
-    # outputs_to_logits[output] = tf.squeeze(tf.squeeze(logits_car, 1), 1) # (num_cars, 32)
+    logits = get_branch_logits(
+        features,
+        model_options.outputs_to_num_classes[output],
+        model_options.atrous_rates,
+        aspp_with_batch_norm=model_options.aspp_with_batch_norm,
+        kernel_size=model_options.logits_kernel_size,
+        weight_decay=weight_decay,
+        reuse=reuse,
+        scope_suffix=output+'_logits')
 
     # Working
-    with tf.variable_scope('per_car_feature_aggre_2'):
-        num_samples = tf.shape(features)[0]
+    with tf.variable_scope('per_car_logits_aggre_2'):
+        num_samples = tf.shape(logits)[0]
         init_array = tf.TensorArray(tf.float32, size=num_samples, infer_shape=False) # https://stackoverflow.com/questions/43270849/tensorflow-map-fn-tensorarray-has-inconsistent-shapes
         def loop_body_per_sample(i, ta):
-            feature_sample = tf.gather(features, i) # (68, 170, 256)
+            logits_sample = tf.gather(logits, i) # (68, 170, 256)
             weight_sample = tf.gather(weights, i) # (68, 170, 1), in [0., 1.]
             seg_map_sample = tf.gather(seg_maps, i) # (68, 170, 1)
             car_num_sample = tf.gather(car_nums, i) # ()
@@ -326,68 +272,28 @@ def _get_logits_mP(images,
 
             def per_car(seg_one_hot_car):
                 seg_one_hot_car_bool = tf.cast(seg_one_hot_car, tf.bool)
-                feature_car_masked = tf.boolean_mask(feature_sample, seg_one_hot_car_bool)
+                logits_car_masked = tf.boolean_mask(logits_sample, seg_one_hot_car_bool)
                 weight_car_masked = tf.boolean_mask(weight_sample, seg_one_hot_car_bool)
                 weight_sum = tf.reduce_sum(weight_car_masked)+1e-10
                 weight_car_normlized = weight_car_masked / weight_sum
-                feature_car_weighted = tf.multiply(feature_car_masked, weight_car_normlized) # [-1, 256]
-                feature_car_aggre = tf.reduce_sum(feature_car_weighted, 0) # (256,)
-                return tf.cond(tf.rank(feature_car_masked)<2,
-                        lambda: tf.zeros([tf.shape(features)[-1]], dtype=tf.float32), lambda: feature_car_aggre)
-            features_sample = tf.map_fn(per_car, seg_one_hot_sample, dtype=tf.float32) # [?, 256]
+                logits_car_weighted = tf.multiply(logits_car_masked, weight_car_normlized) # [-1, 256]
+                logits_car_aggre = tf.reduce_sum(logits_car_weighted, 0) # (256,)
+                return tf.cond(tf.rank(logits_car_masked)<2,
+                        lambda: tf.zeros([tf.shape(logits)[-1]], dtype=tf.float32), lambda: logits_car_aggre)
+            logits_sample = tf.map_fn(per_car, seg_one_hot_sample, dtype=tf.float32) # [?, 256]
             weights_sample = tf.reduce_sum(tf.reduce_sum(seg_one_hot_sample, axis=-1), axis=-1, keepdims=True) # [?, 1]
-            features_weights_sample = tf.concat([features_sample, weights_sample], axis=-1)
-            features_weights_sample.set_shape([None, 256+1])
+            logits_weights_sample = tf.concat([logits_sample, weights_sample], axis=-1)
+            logits_weights_sample.set_shape([None, last_dim+1])
 
+            return i + 1, ta.write(i, logits_weights_sample)
 
-            return i + 1, ta.write(i, features_weights_sample)
+        _, logits_weights_all = tf.while_loop(lambda i, ta: i < num_samples, loop_body_per_sample, [0, init_array])
 
-        _, features_weights_all = tf.while_loop(lambda i, ta: i < num_samples, loop_body_per_sample, [0, init_array])
+    logits_weights_N = tf.reshape(logits_weights_all.concat(), [-1, last_dim+1])
+    logits_N = tf.slice(logits_weights_N, [0, 0], [-1, last_dim])
+    weights_N = tf.slice(logits_weights_N, [0, last_dim], [-1, 1])
 
-        # def per_sample(inputs):
-        #     feature_sample = inputs[0] # (68, 170, 256)
-        #     weight_sample = inputs[1] # (68, 170, 1)
-        #     seg_map_sample = inputs[2] # (68, 170, 1)
-        #     car_num_sample = inputs[3] # ()
-
-        #     seg_one_hot_sample = tf.one_hot(tf.cast(tf.squeeze(seg_map_sample), tf.int32), depth=car_num_sample+1) # (68, 170, ?+1)
-        #     seg_one_hot_sample = tf.transpose(tf.slice(seg_one_hot_sample, [0, 0, 1], [-1, -1, -1]), [2, 0, 1]) # (?, 68, 170)
-        #     # print '+++', feature_sample.get_shape(), weight_sample.get_shape(), seg_map_sample.get_shape(), car_num_sample.get_shape()
-        #     # print seg_one_hot_sample.get_shape()
-
-        #     def per_car(seg_one_hot_car):
-        #         seg_one_hot_car_bool = tf.cast(seg_one_hot_car, tf.bool)
-        #         feature_car_masked = tf.boolean_mask(feature_sample, seg_one_hot_car_bool)
-        #         weight_car_masked = tf.boolean_mask(weight_sample, seg_one_hot_car_bool)
-        #         weight_car_normlized = weight_car_masked / (tf.reduce_sum(weight_car_masked)+1e-6)
-        #         feature_car_weighted = tf.multiply(feature_car_masked, weight_car_normlized) # [-1, 256]
-        #         feature_car_aggre = tf.reduce_sum(feature_car_weighted, 0) # (1, 1, 256)
-        #         return feature_car_aggre
-        #     features_sample = tf.map_fn(per_car, seg_one_hot_sample, dtype=tf.float32) # [?, 32]
-        #     return features_sample
-
-        # features_all = tf.map_fn(per_sample, (features, weights, seg_maps, car_nums), dtype=tf.float32, infer_shape=False) # [N, ?, 256]
-
-    # print features_weights_all.concat().get_shape()
-    features_weights_N = tf.reshape(features_weights_all.concat(), [-1, last_dim+1])
-    # print features_weights_N.get_shape(), features_weights_N.dtype
-    features_N = tf.expand_dims(tf.expand_dims(tf.slice(features_weights_N, [0, 0], [-1, last_dim]), 1), 1)
-    weights_N = tf.slice(features_weights_N, [0, last_dim], [-1, 1])
-
-    with slim.arg_scope(
-        [slim.conv2d],
-        weights_regularizer=slim.l2_regularizer(weight_decay),
-        weights_initializer=tf.truncated_normal_initializer(stddev=0.01),
-        reuse=reuse):
-      with tf.variable_scope('FEATURE_REG'):
-        logits_N = slim.conv2d(
-                  features_N,
-                  model_options.outputs_to_num_classes[output],
-                  kernel_size=1,
-                  activation_fn=None,
-                  normalizer_fn=None,
-                  scope='feature_reg_car-%s'%output)
-    outputs_to_logits[output] = tf.squeeze(tf.squeeze(logits_N, 1), 1) # [N, 32]
+    outputs_to_logits[output] = logits_N # [N, 32]
     outputs_to_weights_map[output] = weights # [batch_size, H', W', 1]
     outputs_to_weights_N[output] = weights_N # [N, 1]
   return outputs_to_logits, outputs_to_weights_map, outputs_to_weights_N
@@ -683,8 +589,7 @@ def get_branch_logits(features,
                       reuse=None,
                       scope_suffix='',
                       activation=None,
-                      normalizer_fn=None,
-                      scope=LOGITS_SCOPE_NAME):
+                      normalizer_fn=None):
   """Gets the logits from each model's branch.
 
   The underlying model is branched out in the last layer when atrous
@@ -720,7 +625,7 @@ def get_branch_logits(features,
       weights_regularizer=slim.l2_regularizer(weight_decay),
       weights_initializer=tf.truncated_normal_initializer(stddev=0.01),
       reuse=reuse):
-    with tf.variable_scope(scope, scope, [features]):
+    with tf.variable_scope(LOGITS_SCOPE_NAME, LOGITS_SCOPE_NAME, [features]):
       branch_logits = []
       for i, rate in enumerate(atrous_rates):
         scope = scope_suffix
