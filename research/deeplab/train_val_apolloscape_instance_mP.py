@@ -581,7 +581,7 @@ def main(unused_argv):
             print test_out6, test_out6.shape
             print '-- pose_dict_N: ', test_out7.shape, np.max(test_out7), np.min(test_out7), np.mean(test_out7), test_out7.dtype
             print test_out7, test_out7.shape
-            print '-- car_nums: ', test_out8, test_out9, test_out10
+            print '-- car_nums: ', test_out8, test_out9, test_out10.T
 
             # # Vlen(test_out), test_out[0].shape
             # # print test_out2.shape, test_out2
