@@ -49,7 +49,7 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
     samples['pose_dict'] = tf.identity(samples['pose_dict'], name=is_training_prefix+'pose_dict')
     samples['shape_dict'] = tf.identity(samples['shape_dict'], name=is_training_prefix+'shape_dict')
 
-    car_nums_list = tf.split(samples['car_nums'], samples['car_nums'].get_shape()[0])
+    car_nums_list = tf.split(samples['car_nums'], samples['car_nums'].get_shape()[0], axis=0)
 
     def _unpadding(padded, append_left_idx=False): # input: [batch_size, ?, D], output: [car_num_total, D]
         padded_list = tf.split(padded, padded.get_shape()[0])
@@ -70,7 +70,8 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
     seg_one_hots_flattened_list = []
     seg_list = tf.split(samples['seg'], samples['seg'].get_shape()[0])
     for seg_sample, car_num in zip(seg_list, car_nums_list):
-      seg_one_hots_sample = tf.one_hot(tf.squeeze(tf.cast(seg_sample, tf.int32)), depth=tf.reshape(car_num, []))
+      seg_one_hots_sample = tf.one_hot(tf.squeeze(tf.cast(seg_sample, tf.int32)), depth=tf.reshape(car_num+1, []))
+      seg_one_hots_sample = tf.slice(seg_one_hots_sample, [0, 0, 1], [-1, -1, -1])
       seg_one_hots_list.append(tf.expand_dims(seg_one_hots_sample, 0)) # (1, 272, 680, ?)
       seg_one_hots_flattened_list.append(tf.reshape(seg_one_hots_sample, [-1, tf.shape(seg_one_hots_sample)[2]])) # (272*680, ?)
 
@@ -129,7 +130,7 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
   balance_rot_reg_loss = 1.
   balance_trans_reg_loss = 1.
   pose_dict_N = tf.gather_nd(samples['pose_dict'], idx_xys) # [N, 7]
-  pose_dict_N = tf.identity(pose_dict_N, 'pose_dict_N')
+  pose_dict_N = tf.identity(pose_dict_N, is_training_prefix+'pose_dict_N')
 
   _, prob_logits_pose, rot_q_error_cars, trans_error_cars = train_utils.add_my_pose_loss_cars(
           tf.gather(reg_logits_concat, [0, 1, 2, 3, 4, 5, 6], axis=1),
@@ -217,9 +218,9 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
       shape_cls_metric_error_cars = tf.gather_nd(tf.constant(shape_sim_mat, dtype=tf.float32),
               tf.stack([shape_id_dict_N, shape_id_map_predicts], axis=-1)) # [num_cars, 1]
       if FLAGS.save_summaries_images:
-        shape_cls_metric_error_map = tf.identity(logits_cars_to_map(shape_cls_metric_error_cars), name=is_training_prefix + 'shape_id_sim_map')
+        shape_cls_metric_error_map = tf.identity(logits_cars_to_map(shape_cls_metric_error_cars), name=is_training_prefix+'shape_id_sim_map')
 
       shape_cls_metric_loss_check = tf.reduce_mean(shape_cls_metric_error_map)
-      shape_cls_metric_loss_check = tf.identity(shape_cls_metric_loss_check, name=is_training_prefix + 'loss_all_shape_id_cls_metric')
+      shape_cls_metric_loss_check = tf.identity(shape_cls_metric_loss_check, name=is_training_prefix+'loss_all_shape_id_cls_metric')
 
-  return samples[common.IMAGE_NAME], outputs_to_logits['z'], outputs_to_weights_map, seg_one_hots_list, weights_normalized
+  return samples[common.IMAGE_NAME], outputs_to_logits['z'], outputs_to_weights_map, seg_one_hots_list, weights_normalized, samples['car_nums'], car_nums_list, idx_xys, pose_dict_N, prob_logits_pose

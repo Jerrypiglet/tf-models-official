@@ -228,10 +228,10 @@ def main(unused_argv):
       tf.gfile.MakeDirs(FLAGS.train_logdir)
   elif len(os.listdir(FLAGS.train_logdir)) != 0:
       if not(FLAGS.if_restore):
-          if_delete_all = raw_input('#### The log folder %s exists and non-empty; delete all logs? [y/n] '%FLAGS.train_logdir)
-          if if_delete_all == 'y':
-              shutil.rmtree(FLAGS.train_logdir)
-              print '==== Log folder %s emptied: '%FLAGS.train_logdir + 'rm -rf %s/*'%FLAGS.train_logdir
+          # if_delete_all = raw_input('#### The log folder %s exists and non-empty; delete all logs? [y/n] '%FLAGS.train_logdir)
+          # if if_delete_all == 'y':
+          shutil.rmtree(FLAGS.train_logdir)
+          print '==== Log folder %s emptied: '%FLAGS.train_logdir + 'rm -rf %s/*'%FLAGS.train_logdir
       else:
           print '==== Log folder exists; not emptying it because we need to restore from it.'
   tf.logging.info('==== Logging in dir:%s; Training on %s set', FLAGS.train_logdir, FLAGS.train_split)
@@ -325,7 +325,7 @@ def main(unused_argv):
     with tf.device('/device:GPU:%d'%(FLAGS.num_clones+1)):
         if FLAGS.if_val:
           ## Construct the validation graph; takes one GPU.
-          image_names, z_logits, outputs_to_weights, seg_one_hots_list, weights_normalized = _build_deeplab(FLAGS, inputs_queue_val.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_vals, bin_range, dataset_val, codes, is_training=False)
+          image_names, z_logits, outputs_to_weights, seg_one_hots_list, weights_normalized, car_nums, car_nums_list, idx_xys, pose_dict_N, prob_logits_pose = _build_deeplab(FLAGS, inputs_queue_val.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_vals, bin_range, dataset_val, codes, is_training=False)
           # test_tensor, test_tensor2, test_tensor3 = _build_deeplab(FLAGS, inputs_queue_val.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_vals, bin_range, dataset_val, codes, is_training=False, reuse=True)
 
     # Gather initial summaries.
@@ -569,11 +569,7 @@ def main(unused_argv):
             # #         ('%s/%s:0' % (first_clone_scope, 'not_ignore_mask_in_loss')).strip('/'))
 
             mask_rescaled_float = graph.get_tensor_by_name('val-%s:0'%'mask_rescaled_float')
-            test_1 = graph.get_tensor_by_name(
-                    ('%s/%s:0' % (first_clone_scope, 'prob_logits_pose')).strip('/'))
-            test_2 = graph.get_tensor_by_name(
-                    ('%s/%s:0' % (first_clone_scope, 'pose_dict_N')).strip('/'))
-            _, test_out, test_out2, test_out3, test_out4, test_out5, test_out6, test_out7 = sess.run([summary_op, image_names, z_logits, outputs_to_weights['z'], mask_rescaled_float, weights_normalized, test_1, test_2])
+            _, test_out, test_out2, test_out3, test_out4, test_out5, test_out6, test_out7, test_out8, test_out9, test_out10 = sess.run([summary_op, image_names, z_logits, outputs_to_weights['z'], mask_rescaled_float, weights_normalized, prob_logits_pose, pose_dict_N, car_nums, car_nums_list, idx_xys])
             print test_out
             print test_out2.shape
             test_out3 = test_out3[test_out4!=0.]
@@ -585,6 +581,7 @@ def main(unused_argv):
             print test_out6, test_out6.shape
             print '-- pose_dict_N: ', test_out7.shape, np.max(test_out7), np.min(test_out7), np.mean(test_out7), test_out7.dtype
             print test_out7, test_out7.shape
+            print '-- car_nums: ', test_out8, test_out9, test_out10
 
             # # Vlen(test_out), test_out[0].shape
             # # print test_out2.shape, test_out2
