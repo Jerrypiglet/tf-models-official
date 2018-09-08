@@ -115,7 +115,7 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
   weights_masked = tf.multiply(outputs_to_weights_N[dataset.output_names[0]], masks_float)
   pixels_valid = tf.reduce_sum(weights_masked)+1e-10
   # weights_normalized = tf.to_float(tf.shape(weights_masked)[0]) * weights_masked / tf.reduce_sum(weights_masked) # [N, 1]. sum should be N in for N cars in the batch
-  weights_normalized = weights_masked
+  weights_normalized = weights_masked # weights equals area; will be divided bu num of all pixels later
 
   # if FLAGS.val_split == 'test':
   #     scaled_prob_logits_pose = train_utils.scale_for_l1_loss(
@@ -128,7 +128,7 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
 
   ## Regression loss for pose
   balance_rot_reg_loss = 1.
-  balance_trans_reg_loss = 1.
+  balance_trans_reg_loss = 100.
   pose_dict_N = tf.gather_nd(samples['pose_dict'], idx_xys) # [N, 7]
   pose_dict_N = tf.identity(pose_dict_N, is_training_prefix+'pose_dict_N')
 
@@ -166,7 +166,7 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
   pose_shape_dict_N = tf.concat([pose_dict_N, shape_dict_N], axis=1)
 
   if FLAGS.save_summaries_images:
-    print '++++++', prob_logits_pose_shape.get_shape()
+    # print '++++++', prob_logits_pose_shape.get_shape()
     prob_logits_pose_shape_map = logits_cars_to_map(prob_logits_pose_shape)
     prob_logits_pose_shape_map = tf.identity(prob_logits_pose_shape_map, name=is_training_prefix+'prob_logits_pose_shape_map')
   label_pose_shape_map = tf.identity(samples['label_pose_shape_map'], name=is_training_prefix+'label_pose_shape_map')
@@ -183,9 +183,9 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
     label_id_list.append(label_id_slice)
 
     # Add losses for each output names for logging
-    # prob_logits_slice = tf.gather(prob_logits_pose_shape, [idx_output], axis=1)
-    # loss_slice_reg = tf.losses.huber_loss(label_slice, prob_logits_slice, weights_normalized, delta=1.0, loss_collection=None)
-    # loss_slice_reg = tf.identity(loss_slice_reg, name=is_training_prefix+'loss_slice_reg_'+output)
+    prob_logits_slice = tf.gather(prob_logits_pose_shape, [idx_output], axis=1)
+    loss_slice_reg = tf.losses.huber_loss(label_slice, prob_logits_slice, tf.ones_like(label_slice), delta=1.0, loss_collection=None)
+    loss_slice_reg = tf.identity(loss_slice_reg, name=is_training_prefix+'loss_slice_reg_'+output)
 
     ## Cross-entropy loss for each output http://icode.baidu.com/repos/baidu/personal-code/video_seg_transfer/blob/with_db:Networks/mx_losses.py (L89)
     balance_cls_loss = 1e-1

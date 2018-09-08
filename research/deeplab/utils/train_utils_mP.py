@@ -104,17 +104,25 @@ def add_my_pose_loss_cars(prob_logits, labels, masks_float, weights_normalized, 
     rot, trans = slice_pose(prob_logits)
     rot_gt, trans_gt = slice_pose(labels)
 
-    trans_loss = smooth_l1_loss(trans, trans_gt,
-            weights_normalized, '', loss_collection=None, reduction=reduction) * balance_trans * count_valid / pixels_valid
+    trans_dim_weights = 1./ tf.constant([[200., 50., 0.3]], dtype=tf.float32)
+    # trans_dim_weights = tf.ones([1, 3], dtype=tf.float32)
+    trans_loss = smooth_l1_loss(tf.multiply(trans_dim_weights, trans), tf.multiply(trans_dim_weights, trans_gt),
+            weights_normalized, '', loss_collection=None, reduction=tf.losses.Reduction.SUM) / pixels_valid * balance_trans
     trans_loss = tf.identity(trans_loss, name=name+'_trans')
     tf.losses.add_loss(trans_loss, loss_collection=loss_collection)
 
     trans_metric = tf.concat([tf.gather(trans, [0, 1], axis=1), 1./tf.gather(trans, [2], axis=1)], axis=1)
     trans_gt_metric = tf.concat([tf.gather(trans_gt, [0, 1], axis=1), 1./tf.gather(trans_gt, [2], axis=1)], axis=1)
-    trans_diff_metric = tf.multiply(trans_metric - trans_gt_metric, masks_float)
+    trans_diff_metric = tf.multiply(trans_metric - trans_gt_metric, masks_float) # 1/2
+    # trans_diff_metric = tf.multiply(trans - trans_gt, masks_float) # 2/2
     trans_error_cars = tf.reduce_sum(tf.square(trans_diff_metric), axis=1, keepdims=True)
     trans_loss_metric_loss = tf.reduce_sum(tf.sqrt(trans_error_cars)) / count_valid
     trans_loss_metric_loss = tf.identity(trans_loss_metric_loss, name=name+'_trans_metric')
+    depth_diff = 1./tf.gather(trans, [2], axis=1) - 1./tf.gather(trans_gt, [2], axis=1) # 1/2
+    depth_metric = tf.reduce_sum(tf.multiply(tf.abs(depth_diff), masks_float)) / count_valid
+    depth_metric = tf.identity(depth_metric, name=name+'_Zdepth_metric')
+    depth_relative_metric = tf.reduce_sum(tf.multiply(tf.abs(depth_diff) * tf.gather(trans_gt, [2], axis=1) , masks_float)) / count_valid
+    depth_relative_metric = tf.identity(depth_relative_metric, name=name+'_Zdepth_relative_metric')
 
     rot_q_loss = tf.reduce_sum(tf.multiply(tf.reduce_sum(tf.square(rot - rot_gt), axis=1) / 2.0, weights_normalized)) / pixels_valid
     rot_q_loss = rot_q_loss * balance_rot
@@ -131,72 +139,6 @@ def add_my_pose_loss_cars(prob_logits, labels, masks_float, weights_normalized, 
     total_loss = tf.identity(total_loss, name=name)
     return total_loss, prob_logits, rot_q_error_cars, trans_error_cars
 
-# def add_my_pose_loss(prob_logits, labels, masks, balance_rot=1., balance_trans=1., upsample_logits=True, name=None, loss_collection=None):
-#     """ Loss for discrete pose from Peng Wang (http://icode.baidu.com/repos/baidu/personal-code/video_seg_transfer/blob/with_db:Networks/mx_losses.py)"""
-
-#     scaled_logits, scaled_labels = scale_logits_to_labels(prob_logits, labels, upsample_logits)
-#     masks_expanded = tf.tile(masks, [1, 1, 1, tf.shape(labels)[3]])
-#     scaled_logits_masked = tf.where(masks_expanded, scaled_logits, tf.zeros_like(scaled_logits))
-#     scaled_labels_masked = tf.where(masks_expanded, scaled_labels, tf.zeros_like(scaled_labels))
-#     count_valid = tf.reduce_sum(tf.to_float(masks))+1e-6
-
-#     def slice_pose(pose_in):
-#         rot = tf.gather(pose_in, [0, 1, 2, 3], axis=3)
-#         trans = tf.gather(pose_in, [4, 5, 6], axis=3)
-#         return rot, trans
-
-#     rot, trans = slice_pose(scaled_logits_masked)
-#     rot_gt, trans_gt = slice_pose(scaled_labels_masked)
-
-#     trans_loss = smooth_l1_loss(trans, trans_gt,
-#             tf.to_float(tf.tile(masks, [1, 1, 1, tf.shape(trans)[3]])), '', loss_collection=None) * balance_trans
-#     trans_loss = tf.identity(trans_loss, name=name+'_trans')
-#     tf.losses.add_loss(trans_loss, loss_collection=loss_collection)
-
-#     trans_metric = tf.concat([tf.gather(trans, [0, 1], axis=3), 1./tf.gather(trans, [2], axis=3)], axis=3)
-#     trans_metric = tf.where(tf.tile(masks, [1, 1, 1, tf.shape(trans_metric)[3]]), trans_metric, tf.zeros_like(trans_metric))
-#     trans_gt_metric = tf.concat([tf.gather(trans_gt, [0, 1], axis=3), 1./tf.gather(trans_gt, [2], axis=3)], axis=3)
-#     trans_gt_metric = tf.where(tf.tile(masks, [1, 1, 1, tf.shape(trans_gt_metric)[3]]), trans_gt_metric, tf.zeros_like(trans_gt_metric))
-#     trans_diff_metric = trans_metric - trans_gt_metric
-#     trans_error_map = tf.sqrt(tf.reduce_sum(tf.square(trans_diff_metric), axis=3, keepdims=True))
-#     trans_loss_metric_loss = tf.nn.l2_loss(trans_diff_metric) / count_valid
-#     trans_loss_metric_loss = tf.identity(trans_loss_metric_loss, name=name+'_trans_metric')
-
-#     # rot_flatten = tf.reshape(rot, [-1, 3])
-#     # rot_gt_flatten = tf.reshape(rot_gt, [-1, 3])
-#     # rot_q_flatten = tf.nn.l2_normalize(euler_angles_to_quaternions(rot_flatten), axis=1)
-#     # rot_gt_q_flatten = tf.nn.l2_normalize(euler_angles_to_quaternions(rot_gt_flatten), axis=1)
-#     # rot_loss_quat = tf.nn.l2_loss(rot_gt_q_flatten - rot_q_flatten) / tf.to_float(tf.shape(rot_gt_flatten)[0])
-#     # rot_loss_quat = tf.identity(rot_loss_quat, name=name+'_rot_quat')
-
-#     # [1/3] Train with l1 loss, show with quat
-#     # rot_loss = smooth_l1_loss(rot, rot_gt)
-#     # total_loss = rot_loss*balance + trans_loss
-
-#     # [2/3] Train with quat loss
-#     # tf.losses.add_loss(rot_loss_quat, loss_collection=tf.GraphKeys.LOSSES)
-#     # rot_loss = smooth_l1_loss(rot, rot_gt, loss_collection=None)
-#     # total_loss = rot_loss_quat + trans_loss
-
-#     # [3/3] Train with reg to quar loss
-#     rot_q_loss = tf.reduce_sum(tf.reduce_sum(tf.square(rot - rot_gt), axis=3) / 2.0)
-#     rot_q_loss = rot_q_loss / count_valid * balance_rot
-#     tf.losses.add_loss(tf.identity(rot_q_loss, name=name+'_rot_quat'), loss_collection=loss_collection)
-#     total_loss = rot_q_loss + trans_loss
-
-#     rot_q_unit = tf.nn.l2_normalize(rot, axis=3)
-#     rot_q_gt_unit = tf.nn.l2_normalize(rot_gt, axis=3)
-#     # [1/2 Peng] rotation matric following https://github.com/ApolloScapeAuto/dataset-api/blob/master/self_localization/eval_pose.py#L122a
-#     rot_q_error_map = tf.acos(tf.abs(1. - tf.reduce_sum(tf.square(rot_q_unit - rot_q_gt_unit) / 2., axis=3, keepdims=True))) * 2 * 180 / np.pi
-#     # [2/2 posenet] https://github.com/kentsommer/tensorflow-posenet/blob/master/test.py#L154 OR https://chrischoy.github.io/research/measuring-rotation/ OR https://math.stackexchange.com/questions/90081/quaternion-distance
-#     # rot_q_diff_metric = tf.acos(tf.abs(tf.reduce_sum(rot_q_unit * rot_q_gt_unit, axis=3, keep_dims=True)))
-
-#     rot_q_error_map = tf.where(masks, rot_q_error_map, tf.zeros_like(rot_q_error_map))
-#     dis_rot_metric_loss = tf.reduce_sum(rot_q_error_map) / count_valid # per-pixel angle error
-#     dis_rot_metric_loss = tf.identity(dis_rot_metric_loss, name=name+'_rot_quat_metric')
-
-#     total_loss = tf.identity(total_loss, name=name)
-#     return total_loss, scaled_logits, rot_q_error_map, trans_error_map
 
 def logits_cls_to_logits_probReg(logits, bin_vals):
     prob = tf.contrib.layers.softmax(logits)
@@ -285,12 +227,13 @@ def add_l1_regression_loss_cars(logits,
 
 
 
-def get_model_init_fn(restore_logdir,
+def model_init(restore_logdir,
                       tf_initial_checkpoint,
                       restore_logged,
                       initialize_last_layer,
                       last_layers,
-                      ignore_missing_vars=False):
+                      ignore_including=None,
+                      ignore_missing_vars=True):
   """Gets the function initializing model variables from a checkpoint.
 
   Args:
@@ -321,7 +264,78 @@ def get_model_init_fn(restore_logdir,
   if not initialize_last_layer and last_layers!=None:
     exclude_list.extend(last_layers)
 
+  # output_names = ['q1', 'q2', 'q3', 'q4', 'x', 'y', 'z'] + ['shape_%d'%dim for dim in range(10)]
+  # output_scopes = [output_name+'_weights' for output_name in output_names]
+  # exclude_list.extend(output_scopes)
+  # print exclude_list
+
   variables_to_restore = slim.get_variables_to_restore(exclude=exclude_list)
+  # for variable in variables_to_restore:
+  #     if '_weights/BatchNorm' in variable.op.name:
+  #         print 'wwwwwwwww', variable.op.name
+  #     else:
+  #         print variable.op.name
+  variables_to_restore_ignored = []
+  if ignore_including is not None:
+      for ignore_name in ignore_including:
+          for variable in variables_to_restore:
+            if ignore_name in variable.op.name:
+              variables_to_restore_ignored.append(variable)
+      variables_to_restore = list(set(variables_to_restore) - set(variables_to_restore_ignored))
+  print '==== variables_to_restore: ', [variable.op.name for variable in variables_to_restore]
+
+
+  init_assign_op, init_feed_dict = slim.assign_from_checkpoint(
+      tf_initial_checkpoint,
+      variables_to_restore,
+      ignore_missing_vars=ignore_missing_vars)
+  return init_assign_op, init_feed_dict
+
+def get_model_init_fn(restore_logdir,
+                      tf_initial_checkpoint,
+                      restore_logged,
+                      initialize_last_layer,
+                      last_layers,
+                      ignore_missing_vars=True):
+  """Gets the function initializing model variables from a checkpoint.
+
+  Args:
+    train_logdir: Log directory for training.
+    tf_initial_checkpoint: TensorFlow checkpoint for initialization.
+    initialize_last_layer: Initialize last layer or not.
+    last_layers: Last layers of the model.
+    ignore_missing_vars: Ignore missing variables in the checkpoint.
+
+  Returns:
+    Initialization function.
+  """
+  print restore_logdir
+  if tf_initial_checkpoint is None:
+    tf.logging.info('==== Not initializing the model from the initial checkpoint (not given).')
+  else:
+    exclude_list = ['global_step']
+    # return None
+
+  if tf.train.latest_checkpoint(restore_logdir) and restore_logged:
+    tf_initial_checkpoint = tf.train.latest_checkpoint(restore_logdir)
+    tf.logging.info('==== Ignoring initialization; restoring from logged checkpoint: %s'%tf_initial_checkpoint)
+    exclude_list = []
+
+  tf.logging.info('==== Initializing model from path: %s', tf_initial_checkpoint)
+
+  # Variables that will not be restored.
+  if not initialize_last_layer and last_layers!=None:
+    exclude_list.extend(last_layers)
+
+  output_names = ['q1', 'q2', 'q3', 'q4', 'x', 'y', 'z'] + ['shape_%d'%dim for dim in range(10)]
+  output_scopes = [output_name+'_weights' for output_name in output_names]
+  exclude_list.extend(output_scopes)
+  print exclude_list
+
+  variables_to_restore = slim.get_variables_to_restore(exclude=exclude_list)
+  # variables_to_restore = [variable for variable in variables_to_restore if not('_weights/BatchNorm' in variable.op.name)]
+  for variable in variables_to_restore:
+      print variable.op.name
 
   return slim.assign_from_checkpoint_fn(
       tf_initial_checkpoint,

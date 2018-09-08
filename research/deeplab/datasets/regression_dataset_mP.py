@@ -87,7 +87,7 @@ DatasetDescriptor = collections.namedtuple(
 
 SHAPE_DIMS = 10
 SHAPE_BINS = 32
-POSE_BINS = 32
+POSE_BINS = 64
 
 _APOLLOSCAPE_INFORMATION = DatasetDescriptor(
     splits_to_sizes={
@@ -118,8 +118,9 @@ _APOLLOSCAPE_INFORMATION = DatasetDescriptor(
         [-1., 1.],
         [-1., 1.],
         [-100., 100.],
-        [0., 100],
-        [0., 0.66]],
+        [0., 50],
+        # [0., 300]],
+        [0., 0.25]],
     bin_nums = [POSE_BINS]*7 + [SHAPE_BINS]*SHAPE_DIMS,
     output_names = ['q1', 'q2', 'q3', 'q4', 'x', 'y', 'z'] + ['shape_%d'%dim for dim in range(SHAPE_DIMS)],
 )

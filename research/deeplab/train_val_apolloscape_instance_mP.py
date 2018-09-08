@@ -22,6 +22,10 @@ import six
 import os
 import shutil
 import tensorflow as tf
+from tensorflow import logging
+import coloredlogs
+coloredlogs.install(level='DEBUG')
+tf.logging.set_verbosity(tf.logging.DEBUG)
 from deeplab import common
 # from deeplab import model
 from deeplab import model_maskLogits as model
@@ -221,12 +225,10 @@ def main(unused_argv):
   else:
       FLAGS.restore_logdir = FLAGS.base_logdir + '/' + FLAGS.restore_name
 
-  tf.logging.set_verbosity(tf.logging.INFO)
-
   # Get logging dir ready.
   if not(os.path.isdir(FLAGS.train_logdir)):
       tf.gfile.MakeDirs(FLAGS.train_logdir)
-  elif len(os.listdir(FLAGS.train_logdir)) != 0:
+  if len(os.listdir(FLAGS.train_logdir)) != 0:
       if not(FLAGS.if_restore):
           if_delete_all = raw_input('#### The log folder %s exists and non-empty; delete all logs? [y/n] '%FLAGS.train_logdir)
           if if_delete_all == 'y':
@@ -428,7 +430,7 @@ def main(unused_argv):
 
           summary_weights_output = outputs_to_weights[output]
           summary_weights_output = mask_rescaled_float * summary_weights_output
-          summary_weights_output_uint8, _ = scale_to_255(summary_weights_output, pixel_scaling=(0., 255.))
+          summary_weights_output_uint8, _ = scale_to_255(summary_weights_output)
           summaries.add(tf.summary.image(
               'output/%s_weights' % output, tf.gather(summary_weights_output_uint8, gather_list)))
 
@@ -448,15 +450,15 @@ def main(unused_argv):
           summaries.add(tf.summary.image('diff_map/%s_ldiff' % output, tf.gather(tf.cast(summary_diff, tf.uint8), gather_list)))
 
           if output_idx < 7:
-              # summary_loss = graph.get_tensor_by_name((pattern%'loss_slice_reg_').replace(':0', '')+output+':0')
-              # summaries.add(tf.summary.scalar('slice_loss/'+(pattern%'reg_').replace(':0', '')+output, summary_loss))
+              summary_loss = graph.get_tensor_by_name((pattern%'loss_slice_reg_').replace(':0', '')+output+':0')
+              summaries.add(tf.summary.scalar('slice_loss/'+(pattern%'reg_').replace(':0', '')+output, summary_loss))
 
               summary_loss = graph.get_tensor_by_name((pattern%'loss_slice_cls_').replace(':0', '')+output+':0')
               summaries.add(tf.summary.scalar('slice_loss/'+(pattern%'cls_').replace(':0', '')+output, summary_loss))
 
       for pattern in [pattern_train, pattern_val] if FLAGS.if_val else [pattern_train]:
           add_metrics = ['loss_all_shape_id_cls_metric'] if FLAGS.if_summary_metrics else []
-          for loss_name in ['loss_reg_rot_quat_metric', 'loss_reg_rot_quat', 'loss_reg_trans_metric',
+          for loss_name in ['loss_reg_rot_quat_metric', 'loss_reg_rot_quat', 'loss_reg_trans_metric', 'loss_reg_Zdepth_metric', 'loss_reg_Zdepth_relative_metric',
                   'loss_reg_trans', 'loss_cls_ALL', 'loss_reg_shape'] + add_metrics:
               if pattern == pattern_val:
                 summary_loss_avg = graph.get_tensor_by_name(pattern%loss_name)
@@ -495,11 +497,15 @@ def main(unused_argv):
       # Filter trainable variables for last layers ONLY.
       # grads_and_vars = train_utils.filter_gradients(last_layers, grads_and_vars)
 
-      grad_mult = train_utils.get_model_gradient_multipliers(
-          last_layers, FLAGS.last_layer_gradient_multiplier)
-      if grad_mult:
-        grads_and_vars = slim.learning.multiply_gradients(
-            grads_and_vars, grad_mult)
+      # weight_scopes = [output_name+'_weights' for output_name in dataset.output_names] + ['decoder_weights']
+      # grads_and_vars = train_utils.filter_gradients(weight_scopes, grads_and_vars)
+      print '==== variables_to_train: ', [grad_and_var[1].op.name for grad_and_var in grads_and_vars]
+
+      # grad_mult = train_utils.get_model_gradient_multipliers(
+      #     last_layers, FLAGS.last_layer_gradient_multiplier)
+      # if grad_mult:
+      #   grads_and_vars = slim.learning.multiply_gradients(
+      #       grads_and_vars, grad_mult)
 
       # Create gradient update op.
       grad_updates = optimizer.apply_gradients(
@@ -613,6 +619,19 @@ def main(unused_argv):
         for op in tf.get_default_graph().get_operations():
             print str(op.name)
 
+    init_assign_op, init_feed_dict = train_utils.model_init(
+        FLAGS.restore_logdir,
+        FLAGS.tf_initial_checkpoint,
+        FLAGS.if_restore,
+        FLAGS.initialize_last_layer,
+        last_layers,
+        # ignore_including=['_weights/BatchNorm', 'decoder_weights'],
+        ignore_including=None,
+        ignore_missing_vars=True)
+
+    def InitAssignFn(sess):
+        sess.run(init_assign_op, init_feed_dict)
+
     # Start the training.
     slim.learning.train(
         train_tensor,
@@ -624,13 +643,14 @@ def main(unused_argv):
         is_chief=(FLAGS.task == 0),
         session_config=session_config,
         startup_delay_steps=startup_delay_steps,
-        init_fn=train_utils.get_model_init_fn(
-            FLAGS.restore_logdir,
-            FLAGS.tf_initial_checkpoint,
-            FLAGS.if_restore,
-            FLAGS.initialize_last_layer,
-            last_layers,
-            ignore_missing_vars=True),
+        init_fn=InitAssignFn,
+        # init_fn=train_utils.get_model_init_fn(
+        #     FLAGS.restore_logdir,
+        #     FLAGS.tf_initial_checkpoint,
+        #     FLAGS.if_restore,
+        #     FLAGS.initialize_last_layer,
+        #     last_layers,
+        #     ignore_missing_vars=True),
         summary_op=summary_op,
         save_summaries_secs=FLAGS.save_summaries_secs,
         save_interval_secs=FLAGS.save_interval_secs)

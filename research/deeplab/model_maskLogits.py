@@ -221,7 +221,25 @@ def _get_logits_mP(images,
         reuse=reuse,
         is_training=is_training,
         fine_tune_batch_norm=fine_tune_batch_norm)
-  print '== Features_aspp/backbone, features:', features_aspp.get_shape(), features_backbone.get_shape(), features.get_shape()
+    x_coords = tf.range(tf.shape(features)[1])
+    y_coords = tf.range(tf.shape(features)[2])
+    Xs, Ys = tf.meshgrid(x_coords, y_coords)
+    features_Xs = tf.tile(tf.expand_dims(tf.expand_dims(tf.transpose(Xs), -1), 0), [tf.shape(features)[0], 1, 1, 1])
+    features_Ys = tf.tile(tf.expand_dims(tf.expand_dims(tf.transpose(Ys), -1), 0), [tf.shape(features)[0], 1, 1, 1])
+    features_concat = tf.concat([features, tf.to_float(features_Xs), tf.to_float(features_Ys)], axis=3)
+    print '== Features_aspp/backbone, features, features_concat:', features_aspp.get_shape(), features_backbone.get_shape(), features.get_shape(), features_concat.get_shape() # (3, 34, 85, 256) (3, 34, 85, 2048) (3, 68, 170, 256)
+    features_weight = refine_by_decoder(
+        features_aspp,
+        end_points,
+        decoder_height=decoder_height,
+        decoder_width=decoder_width,
+        decoder_use_separable_conv=model_options.decoder_use_separable_conv,
+        model_variant=model_options.model_variant,
+        weight_decay=weight_decay,
+        reuse=reuse,
+        is_training=is_training,
+        fine_tune_batch_norm=fine_tune_batch_norm,
+        decoder_scope=WEIGHTS_DECODER_SCOPE)
 
   outputs_to_logits = {}
   outputs_to_weights_map = {}
@@ -233,9 +251,8 @@ def _get_logits_mP(images,
   for output in sorted(model_options.outputs_to_num_classes):
     last_dim = model_options.outputs_to_num_classes[output]
 
-    weights = (
-      get_branch_logits(
-      features,
+    weights = (get_branch_logits(
+      features_concat,
       1,
       model_options.atrous_rates,
       aspp_with_batch_norm=model_options.aspp_with_batch_norm,
@@ -248,7 +265,7 @@ def _get_logits_mP(images,
       + 1.) / 2. # (batch_size, 68, 170, 1)
 
     logits = get_branch_logits(
-        features,
+        features_weight,
         model_options.outputs_to_num_classes[output],
         model_options.atrous_rates,
         aspp_with_batch_norm=model_options.aspp_with_batch_norm,
@@ -273,9 +290,18 @@ def _get_logits_mP(images,
             def per_car(seg_one_hot_car):
                 seg_one_hot_car_bool = tf.cast(seg_one_hot_car, tf.bool)
                 logits_car_masked = tf.boolean_mask(logits_sample, seg_one_hot_car_bool)
-                weight_car_masked = tf.boolean_mask(weight_sample, seg_one_hot_car_bool)
-                weight_sum = tf.reduce_sum(weight_car_masked)+1e-10
-                weight_car_normlized = weight_car_masked / weight_sum
+                weight_car_masked = tf.boolean_mask(weight_sample, seg_one_hot_car_bool) # [-1, 1]
+
+                # weight_sum = tf.reduce_sum(weight_car_masked)+1e-10
+                # weight_car_normlized = weight_car_masked / weight_sum
+
+                # weight_car_masked_ones = tf.ones_like(weight_car_masked)
+                # weight_sum_ones = tf.reduce_sum(weight_car_masked_ones)+1e-10
+                # weight_car_normlized_ones = weight_car_masked_ones / weight_sum_ones
+
+                # weight_car_normlized = tf.reshape(tf.nn.softmax(weight_car_masked, axis=0), [tf.shape(weight_car_masked)[0], 1])
+                weight_car_normlized = tf.exp(weight_car_masked) / tf.reduce_sum(tf.exp(weight_car_masked))
+
                 logits_car_weighted = tf.multiply(logits_car_masked, weight_car_normlized) # [-1, 256]
                 logits_car_aggre = tf.reduce_sum(logits_car_weighted, 0) # (256,)
                 return tf.cond(tf.rank(logits_car_masked)<2,
