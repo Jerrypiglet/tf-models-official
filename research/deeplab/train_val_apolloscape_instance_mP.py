@@ -346,61 +346,6 @@ def main(unused_argv):
 
       gather_list = range(min(3, int(FLAGS.train_batch_size/FLAGS.num_clones)))
       print gather_list
-      summary_mask = graph.get_tensor_by_name(pattern%'not_ignore_mask_in_loss')
-      summary_mask = tf.reshape(summary_mask, [-1, dataset.height, dataset.width, 1])
-      summary_mask_float = tf.to_float(summary_mask)
-      summaries.add(tf.summary.image('gt/%s' % 'not_ignore_mask', tf.gather(tf.cast(summary_mask_float*255., tf.uint8), gather_list)))
-
-      mask_rescaled_float = graph.get_tensor_by_name(pattern%'mask_rescaled_float')
-
-      summary_image = graph.get_tensor_by_name(pattern%common.IMAGE)
-      summaries.add(tf.summary.image('gt/%s' % common.IMAGE, tf.gather(summary_image, gather_list)))
-
-      summary_image_name = graph.get_tensor_by_name(pattern%common.IMAGE_NAME)
-      summaries.add(tf.summary.text('gt/%s' % common.IMAGE_NAME, tf.gather(summary_image_name, gather_list)))
-
-      summary_image_name = graph.get_tensor_by_name(pattern_train%common.IMAGE_NAME)
-      summaries.add(tf.summary.text('gt/%s_train' % common.IMAGE_NAME, tf.gather(summary_image_name, gather_list)))
-
-      summary_vis = graph.get_tensor_by_name(pattern%'vis')
-      summaries.add(tf.summary.image('gt/%s' % 'vis', tf.gather(summary_vis, gather_list)))
-
-      def scale_to_255(tensor, pixel_scaling=None):
-          tensor = tf.to_float(tensor)
-          if pixel_scaling == None:
-              offset_to_zero = tf.reduce_min(tf.reduce_min(tf.reduce_min(tensor, axis=3, keepdims=True), axis=2, keepdims=True), axis=1, keepdims=True)
-              scale_to_255 = tf.div(255., tf.reduce_max(tf.reduce_max(tf.reduce_max(
-                  tensor - offset_to_zero, axis=3, keepdims=True), axis=2, keepdims=True), axis=1, keepdims=True))
-              # offset_to_zero = tf.reduce_min(tensor)
-              # scale_to_255 = tf.div(255., tf.reduce_max(tensor - offset_to_zero))
-          else:
-              offset_to_zero, scale_to_255 = pixel_scaling
-          summary_tensor_float = tensor - offset_to_zero
-          summary_tensor_float = summary_tensor_float * scale_to_255
-          # print tensor.get_shape(), offset_to_zero.get_shape(), scale_to_255.get_shape(), summary_tensor_float.get_shape()
-          summary_tensor_float = tf.clip_by_value(summary_tensor_float, 0., 255.)
-          summary_tensor_uint8 = tf.cast(summary_tensor_float, tf.uint8)
-          return summary_tensor_uint8, (offset_to_zero, scale_to_255)
-
-
-      summary_rot_diffs = graph.get_tensor_by_name(pattern%'rot_error_map')
-      summary_rot_diffs = tf.where(summary_mask, summary_rot_diffs, tf.zeros_like(summary_rot_diffs))
-      summary_rot_diffs_uint8, _ = scale_to_255(summary_rot_diffs)
-      summaries.add(tf.summary.image('metrics_map/%s' % 'rot_diffs', tf.gather(summary_rot_diffs_uint8, gather_list)))
-
-      summary_trans_diffs = graph.get_tensor_by_name(pattern%'trans_error_map')
-      summary_trans_diffs = tf.where(summary_mask, summary_trans_diffs, tf.zeros_like(summary_trans_diffs))
-      summary_trans_diffs_uint8, _ = scale_to_255(summary_trans_diffs)
-      summaries.add(tf.summary.image('metrics_map/%s' % 'trans_diffs', tf.gather(summary_trans_diffs, gather_list)))
-
-      if FLAGS.if_summary_shape_metrics:
-          shape_id_sim_map_train = graph.get_tensor_by_name(pattern_train%'shape_id_sim_map')
-          shape_id_sim_map_uint8_train, _ = scale_to_255(shape_id_sim_map_train, pixel_scaling=(0., 255.))
-          summaries.add(tf.summary.image('metrics_map/shape_id_sim_map-trainInv', tf.gather(shape_id_sim_map_uint8_train, gather_list)))
-
-          shape_id_sim_map = graph.get_tensor_by_name(pattern%'shape_id_sim_map')
-          shape_id_sim_map_uint8, _ = scale_to_255(shape_id_sim_map, pixel_scaling=(0., 255.))
-          summaries.add(tf.summary.image('metrics_map/shape_id_sim_map-valInv', tf.gather(shape_id_sim_map_uint8, gather_list)))
 
       for pattern in [pattern_train, pattern_val] if FLAGS.if_val else [pattern_train]:
           if pattern == pattern_train:
@@ -408,7 +353,64 @@ def main(unused_argv):
           else:
               label_postfix = '_val'
 
+          summary_mask = graph.get_tensor_by_name(pattern%'not_ignore_mask_in_loss')
+          summary_mask = tf.reshape(summary_mask, [-1, dataset.height, dataset.width, 1])
+          summary_mask_float = tf.to_float(summary_mask)
+          summaries.add(tf.summary.image('gt'+label_postfix+'/%s' % 'not_ignore_mask', tf.gather(tf.cast(summary_mask_float*255., tf.uint8), gather_list)))
+
+          mask_rescaled_float = graph.get_tensor_by_name(pattern%'mask_rescaled_float')
+
+          summary_image = graph.get_tensor_by_name(pattern%common.IMAGE)
+          summaries.add(tf.summary.image('gt'+label_postfix+'/%s' % common.IMAGE, tf.gather(summary_image, gather_list)))
+
+          summary_image_name = graph.get_tensor_by_name(pattern%common.IMAGE_NAME)
+          summaries.add(tf.summary.text('gt'+label_postfix+'/%s' % common.IMAGE_NAME, tf.gather(summary_image_name, gather_list)))
+
+          summary_image_name = graph.get_tensor_by_name(pattern_train%common.IMAGE_NAME)
+          summaries.add(tf.summary.text('gt'+label_postfix+'/%s_train' % common.IMAGE_NAME, tf.gather(summary_image_name, gather_list)))
+
+          summary_vis = graph.get_tensor_by_name(pattern%'vis')
+          summaries.add(tf.summary.image('gt'+label_postfix+'/%s' % 'vis', tf.gather(summary_vis, gather_list)))
+
+          def scale_to_255(tensor, pixel_scaling=None):
+              tensor = tf.to_float(tensor)
+              if pixel_scaling == None:
+                  offset_to_zero = tf.reduce_min(tf.reduce_min(tf.reduce_min(tensor, axis=3, keepdims=True), axis=2, keepdims=True), axis=1, keepdims=True)
+                  scale_to_255 = tf.div(255., tf.reduce_max(tf.reduce_max(tf.reduce_max(
+                      tensor - offset_to_zero, axis=3, keepdims=True), axis=2, keepdims=True), axis=1, keepdims=True))
+                  # offset_to_zero = tf.reduce_min(tensor)
+                  # scale_to_255 = tf.div(255., tf.reduce_max(tensor - offset_to_zero))
+              else:
+                  offset_to_zero, scale_to_255 = pixel_scaling
+              summary_tensor_float = tensor - offset_to_zero
+              summary_tensor_float = summary_tensor_float * scale_to_255
+              # print tensor.get_shape(), offset_to_zero.get_shape(), scale_to_255.get_shape(), summary_tensor_float.get_shape()
+              summary_tensor_float = tf.clip_by_value(summary_tensor_float, 0., 255.)
+              summary_tensor_uint8 = tf.cast(summary_tensor_float, tf.uint8)
+              return summary_tensor_uint8, (offset_to_zero, scale_to_255)
+
+
+          summary_rot_diffs = graph.get_tensor_by_name(pattern%'rot_error_map')
+          summary_rot_diffs = tf.where(summary_mask, summary_rot_diffs, tf.zeros_like(summary_rot_diffs))
+          summary_rot_diffs_uint8, _ = scale_to_255(summary_rot_diffs)
+          summaries.add(tf.summary.image('metrics_map'+label_postfix+'/%s' % 'rot_diffs', tf.gather(summary_rot_diffs_uint8, gather_list)))
+
+          summary_trans_diffs = graph.get_tensor_by_name(pattern%'trans_error_map')
+          summary_trans_diffs = tf.where(summary_mask, summary_trans_diffs, tf.zeros_like(summary_trans_diffs))
+          summary_trans_diffs_uint8, _ = scale_to_255(summary_trans_diffs)
+          summaries.add(tf.summary.image('metrics_map'+label_postfix+'/%s' % 'trans_diffs', tf.gather(summary_trans_diffs, gather_list)))
+
+          if FLAGS.if_summary_shape_metrics:
+              shape_id_sim_map_train = graph.get_tensor_by_name(pattern_train%'shape_id_sim_map')
+              shape_id_sim_map_uint8_train, _ = scale_to_255(shape_id_sim_map_train, pixel_scaling=(0., 255.))
+              summaries.add(tf.summary.image('metrics_map/shape_id_sim_map-trainInv', tf.gather(shape_id_sim_map_uint8_train, gather_list)))
+
+              shape_id_sim_map = graph.get_tensor_by_name(pattern%'shape_id_sim_map')
+              shape_id_sim_map_uint8, _ = scale_to_255(shape_id_sim_map, pixel_scaling=(0., 255.))
+              summaries.add(tf.summary.image('metrics_map/shape_id_sim_map-valInv', tf.gather(shape_id_sim_map_uint8, gather_list)))
+
           label_outputs = graph.get_tensor_by_name(pattern%'label_pose_shape_map')
+          seg_outputs = graph.get_tensor_by_name(pattern%'seg')
           # label_id_outputs = graph.get_tensor_by_name(pattern%'pose_shape_label_id_map')
           logit_outputs = graph.get_tensor_by_name(pattern%'prob_logits_pose_shape_map')
           # seg_one_hots_outputs = graph.get_tensor_by_name(pattern%'seg_one_hots')
@@ -425,6 +427,12 @@ def main(unused_argv):
               summary_logit_output_uint8, _ = scale_to_255(summary_logit_output, pixel_scaling)
               summaries.add(tf.summary.image(
                   'output'+label_postfix+'/%s_logit' % output, tf.gather(summary_logit_output_uint8, gather_list)))
+
+              summary_seg_output = tf.gather(seg_outputs, [output_idx], axis=3)
+              summary_seg_output = tf.where(summary_mask, summary_seg_output, tf.zeros_like(summary_seg_output))
+              summary_seg_output_uint8, _ = scale_to_255(summary_seg_output)
+              summaries.add(tf.summary.image(
+                  'gt'+label_postfix+'/%s_seg' % output, tf.gather(summary_seg_output_uint8, gather_list)))
 
               summary_weights_output = outputs_to_weights[output]
               summary_weights_output = mask_rescaled_float * summary_weights_output

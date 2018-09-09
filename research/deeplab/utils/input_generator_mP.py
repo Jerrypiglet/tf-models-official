@@ -119,8 +119,8 @@ def _get_data(dataset, model_options, data_provider, dataset_split, codes_cons):
 
     # Getting inverse depth outof the posemap
     pose_map_depth = tf.gather(pose_map, [5], axis=2)
-    pose_map_invd = tf.clip_by_value(tf.multiply(1./pose_map_depth, mask_float), 0., 0.25) # 1/2
-    # pose_map_invd = tf.multiply(pose_map_depth, mask_float) # 2/2
+    # pose_map_invd = tf.clip_by_value(tf.multiply(1./pose_map_depth, mask_float), 0., 0.25) # 1/2
+    pose_map_invd = tf.multiply(pose_map_depth, mask_float) # 2/2
     pose_map_angles = tf.gather(pose_map, [0, 1, 2], axis=2)
     pose_map_quat = euler_angles_to_quaternions(pose_map_angles)
     pose_map = tf.concat([pose_map_quat, tf.gather(pose_map, [3, 4], axis=2), pose_map_invd], axis=2)
@@ -129,12 +129,14 @@ def _get_data(dataset, model_options, data_provider, dataset_split, codes_cons):
     pose_shape_map_masked = tf.concat([pose_map_masked, shape_map_masked], axis=2)
 
     # returning per-instance pose_dict and shape_dict, and segs
-    pose_dict_depth = tf.gather(pose_dict, [5], axis=1)
+    pose_dict_depth = tf.clip_by_value(tf.gather(pose_dict, [5], axis=1), 0., 300.)
     pose_dict_invd = tf.clip_by_value(tf.reciprocal(pose_dict_depth), 0., 0.25)
     pose_dict_angles = tf.gather(pose_dict, [0, 1, 2], axis=1)
     pose_dict_quat = euler_angles_to_quaternions(pose_dict_angles)
-    pose_dict_quat_invd = tf.concat([pose_dict_quat, tf.gather(pose_dict, [3, 4], axis=1), pose_dict_invd], axis=1) # 1/2
-    # pose_dict_quat_invd = tf.concat([pose_dict_quat, tf.gather(pose_dict, [3, 4], axis=1), pose_dict_depth], axis=1) # 2/2
+    pose_dict_x = tf.clip_by_value(tf.gather(pose_dict, [3], axis=1), -100., 100.)
+    pose_dict_y = tf.clip_by_value(tf.gather(pose_dict, [4], axis=1), 0., 50.)
+    # pose_dict_quat_invd = tf.concat([pose_dict_quat, pose_dict_x, pose_dict_y, pose_dict_invd], axis=1) # 1/2
+    pose_dict_quat_invd = tf.concat([pose_dict_quat, pose_dict_x, pose_dict_y, pose_dict_depth], axis=1) # 2/2
 
     pose_dict_quat_invd = tf.slice(pose_dict_quat_invd, [1, 0], [-1, -1]) # [N, D_p]
     shape_dict = tf.slice(shape_dict, [1, 0], [-1, -1]) # [N, D_s]
