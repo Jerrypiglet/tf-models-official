@@ -90,7 +90,7 @@ flags.DEFINE_integer('log_steps', 10,
 flags.DEFINE_boolean('if_val', False,
                      'If we VALIDATE the model.')
 
-flags.DEFINE_integer('val_interval_steps', 10,
+flags.DEFINE_integer('val_interval_steps', 30,
                      'How often, in steps, we VALIDATE the model.')
 
 flags.DEFINE_integer('save_interval_secs', 300,
@@ -105,7 +105,7 @@ flags.DEFINE_boolean('save_summaries_images', False,
 flags.DEFINE_boolean('if_print_tensors', False,
                      'If we print all the tensors and their names.')
 
-flags.DEFINE_boolean('if_summary_metrics', True,
+flags.DEFINE_boolean('if_summary_shape_metrics', True,
                      'Save image metrics to summary.')
 
 # Settings for training strategy.
@@ -327,7 +327,7 @@ def main(unused_argv):
     with tf.device('/device:GPU:%d'%(FLAGS.num_clones+1)):
         if FLAGS.if_val:
           ## Construct the validation graph; takes one GPU.
-          image_names, z_logits, outputs_to_weights, seg_one_hots_list, weights_normalized, car_nums, car_nums_list, idx_xys, pose_dict_N, prob_logits_pose = _build_deeplab(FLAGS, inputs_queue_val.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_vals, bin_range, dataset_val, codes, is_training=False)
+          image_names, z_logits, outputs_to_weights, seg_one_hots_list, weights_normalized, car_nums, car_nums_list, idx_xys, pose_dict_N, prob_logits_pose, masks_float = _build_deeplab(FLAGS, inputs_queue_val.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_vals, bin_range, dataset_val, codes, is_training=False)
           # test_tensor, test_tensor2, test_tensor3 = _build_deeplab(FLAGS, inputs_queue_val.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_vals, bin_range, dataset_val, codes, is_training=False, reuse=True)
 
     # Gather initial summaries.
@@ -368,23 +368,20 @@ def main(unused_argv):
       def scale_to_255(tensor, pixel_scaling=None):
           tensor = tf.to_float(tensor)
           if pixel_scaling == None:
-              # offset_to_zero = tf.reduce_min(tf.reduce_min(tf.reduce_min(tensor, axis=-1, keepdims=True), axis=-1, keepdims=True), axis=-1, keepdims=True)
-              # scale_to_255 = tf.div(255., tf.reduce_max(tf.reduce_max(tf.reduce_max(
-              #     tensor - offset_to_zero, axis=-1, keepdims=True), axis=-1, keepdims=True), axis=-1, keepdims=True))
-              offset_to_zero = tf.reduce_min(tensor)
-              scale_to_255 = tf.div(255., tf.reduce_max(tensor - offset_to_zero))
+              offset_to_zero = tf.reduce_min(tf.reduce_min(tf.reduce_min(tensor, axis=3, keepdims=True), axis=2, keepdims=True), axis=1, keepdims=True)
+              scale_to_255 = tf.div(255., tf.reduce_max(tf.reduce_max(tf.reduce_max(
+                  tensor - offset_to_zero, axis=3, keepdims=True), axis=2, keepdims=True), axis=1, keepdims=True))
+              # offset_to_zero = tf.reduce_min(tensor)
+              # scale_to_255 = tf.div(255., tf.reduce_max(tensor - offset_to_zero))
           else:
               offset_to_zero, scale_to_255 = pixel_scaling
           summary_tensor_float = tensor - offset_to_zero
           summary_tensor_float = summary_tensor_float * scale_to_255
+          # print tensor.get_shape(), offset_to_zero.get_shape(), scale_to_255.get_shape(), summary_tensor_float.get_shape()
           summary_tensor_float = tf.clip_by_value(summary_tensor_float, 0., 255.)
           summary_tensor_uint8 = tf.cast(summary_tensor_float, tf.uint8)
           return summary_tensor_uint8, (offset_to_zero, scale_to_255)
 
-      label_outputs = graph.get_tensor_by_name(pattern%'label_pose_shape_map')
-      # label_id_outputs = graph.get_tensor_by_name(pattern%'pose_shape_label_id_map')
-      logit_outputs = graph.get_tensor_by_name(pattern%'prob_logits_pose_shape_map')
-      # seg_one_hots_outputs = graph.get_tensor_by_name(pattern%'seg_one_hots')
 
       summary_rot_diffs = graph.get_tensor_by_name(pattern%'rot_error_map')
       summary_rot_diffs = tf.where(summary_mask, summary_rot_diffs, tf.zeros_like(summary_rot_diffs))
@@ -396,17 +393,7 @@ def main(unused_argv):
       summary_trans_diffs_uint8, _ = scale_to_255(summary_trans_diffs)
       summaries.add(tf.summary.image('metrics_map/%s' % 'trans_diffs', tf.gather(summary_trans_diffs, gather_list)))
 
-      # shape_id_outputs = graph.get_tensor_by_name(pattern%'shape_id_map')
-      # shape_id_outputs = tf.where(summary_mask, shape_id_outputs+1, tf.zeros_like(shape_id_outputs))
-      # summary_shape_id_output_uint8, _ = scale_to_255(shape_id_outputs)
-      # summaries.add(tf.summary.image('shape/shape_id_map', tf.gather(summary_shape_id_output_uint8, gather_list)))
-
-      if FLAGS.if_summary_metrics:
-          # shape_id_outputs = graph.get_tensor_by_name(pattern%'shape_id_map_predict')
-          # summary_shape_id_output = tf.where(summary_mask, shape_id_outputs, tf.zeros_like(shape_id_outputs))
-          # summary_shape_id_output_uint8, _ = scale_to_255(summary_shape_id_output)
-          # summaries.add(tf.summary.image('shape/shape_id_map_predict', tf.gather(summary_shape_id_output_uint8, gather_list)))
-
+      if FLAGS.if_summary_shape_metrics:
           shape_id_sim_map_train = graph.get_tensor_by_name(pattern_train%'shape_id_sim_map')
           shape_id_sim_map_uint8_train, _ = scale_to_255(shape_id_sim_map_train, pixel_scaling=(0., 255.))
           summaries.add(tf.summary.image('metrics_map/shape_id_sim_map-trainInv', tf.gather(shape_id_sim_map_uint8_train, gather_list)))
@@ -415,58 +402,66 @@ def main(unused_argv):
           shape_id_sim_map_uint8, _ = scale_to_255(shape_id_sim_map, pixel_scaling=(0., 255.))
           summaries.add(tf.summary.image('metrics_map/shape_id_sim_map-valInv', tf.gather(shape_id_sim_map_uint8, gather_list)))
 
-      for output_idx, output in enumerate(dataset.output_names):
-          # # Scale up summary image pixel values for better visualization.
-          summary_label_output = tf.gather(label_outputs, [output_idx], axis=3)
-          summary_label_output= tf.where(summary_mask, summary_label_output, tf.zeros_like(summary_label_output))
-          summary_label_output_uint8, pixel_scaling = scale_to_255(summary_label_output)
-          summaries.add(tf.summary.image('output/%s_label' % output, tf.gather(summary_label_output_uint8, gather_list)))
-
-          summary_logit_output = tf.gather(logit_outputs, [output_idx], axis=3)
-          summary_logit_output = tf.where(summary_mask, summary_logit_output, tf.zeros_like(summary_logit_output))
-          summary_logit_output_uint8, _ = scale_to_255(summary_logit_output, pixel_scaling)
-          summaries.add(tf.summary.image(
-              'output/%s_logit' % output, tf.gather(summary_logit_output_uint8, gather_list)))
-
-          summary_weights_output = outputs_to_weights[output]
-          summary_weights_output = mask_rescaled_float * summary_weights_output
-          summary_weights_output_uint8, _ = scale_to_255(summary_weights_output)
-          summaries.add(tf.summary.image(
-              'output/%s_weights' % output, tf.gather(summary_weights_output_uint8, gather_list)))
-
-          # summary_seg_one_hots_output = tf.gather(seg_one_hots_outputs, [output_idx], axis=3)
-          # summary_seg_one_hots_output_uint8, _ = scale_to_255(summary_seg_one_hots_output, pixel_scaling=(0., 255.))
-          # summaries.add(tf.summary.image('test/%s_one_hot' % output, tf.gather(summary_seg_one_hots_output_uint8, gather_list)))
-
-          # summary_label_id_output = tf.to_float(tf.gather(label_id_outputs, [output_idx], axis=3))
-          # summary_label_id_output = tf.where(summary_mask, summary_label_id_output+1, tf.zeros_like(summary_label_id_output))
-          # summary_label_id_output_uint8, _ = scale_to_255(summary_label_id_output)
-          # summary_label_id_output_uint8 = tf.identity(summary_label_id_output_uint8, 'tttt'+output)
-          # summaries.add(tf.summary.image(
-          #     'test/%s_label_id' % output, tf.gather(summary_label_id_output_uint8, gather_list)))
-
-          summary_diff = tf.abs(tf.to_float(summary_label_output_uint8) - tf.to_float(summary_logit_output_uint8))
-          summary_diff = tf.where(summary_mask, summary_diff, tf.zeros_like(summary_diff))
-          summaries.add(tf.summary.image('diff_map/%s_ldiff' % output, tf.gather(tf.cast(summary_diff, tf.uint8), gather_list)))
-
-          if output_idx < 7:
-              summary_loss = graph.get_tensor_by_name((pattern%'loss_slice_reg_').replace(':0', '')+output+':0')
-              summaries.add(tf.summary.scalar('slice_loss/'+(pattern%'reg_').replace(':0', '')+output, summary_loss))
-
-              summary_loss = graph.get_tensor_by_name((pattern%'loss_slice_cls_').replace(':0', '')+output+':0')
-              summaries.add(tf.summary.scalar('slice_loss/'+(pattern%'cls_').replace(':0', '')+output, summary_loss))
-
       for pattern in [pattern_train, pattern_val] if FLAGS.if_val else [pattern_train]:
-          add_metrics = ['loss_all_shape_id_cls_metric'] if FLAGS.if_summary_metrics else []
+          if pattern == pattern_train:
+              label_postfix = ''
+          else:
+              label_postfix = '_val'
+
+          label_outputs = graph.get_tensor_by_name(pattern%'label_pose_shape_map')
+          # label_id_outputs = graph.get_tensor_by_name(pattern%'pose_shape_label_id_map')
+          logit_outputs = graph.get_tensor_by_name(pattern%'prob_logits_pose_shape_map')
+          # seg_one_hots_outputs = graph.get_tensor_by_name(pattern%'seg_one_hots')
+
+          for output_idx, output in enumerate(dataset.output_names):
+              # # Scale up summary image pixel values for better visualization.
+              summary_label_output = tf.gather(label_outputs, [output_idx], axis=3)
+              summary_label_output= tf.where(summary_mask, summary_label_output, tf.zeros_like(summary_label_output))
+              summary_label_output_uint8, pixel_scaling = scale_to_255(summary_label_output)
+              summaries.add(tf.summary.image('output'+label_postfix+'/%s_label' % output, tf.gather(summary_label_output_uint8, gather_list)))
+
+              summary_logit_output = tf.gather(logit_outputs, [output_idx], axis=3)
+              summary_logit_output = tf.where(summary_mask, summary_logit_output, tf.zeros_like(summary_logit_output))
+              summary_logit_output_uint8, _ = scale_to_255(summary_logit_output, pixel_scaling)
+              summaries.add(tf.summary.image(
+                  'output'+label_postfix+'/%s_logit' % output, tf.gather(summary_logit_output_uint8, gather_list)))
+
+              summary_weights_output = outputs_to_weights[output]
+              summary_weights_output = mask_rescaled_float * summary_weights_output
+              summary_weights_output_uint8, _ = scale_to_255(summary_weights_output)
+              summaries.add(tf.summary.image(
+                  'output'+label_postfix+'/%s_weights' % output, tf.gather(summary_weights_output_uint8, gather_list)))
+
+              # summary_seg_one_hots_output = tf.gather(seg_one_hots_outputs, [output_idx], axis=3)
+              # summary_seg_one_hots_output_uint8, _ = scale_to_255(summary_seg_one_hots_output, pixel_scaling=(0., 255.))
+              # summaries.add(tf.summary.image('test/%s_one_hot' % output, tf.gather(summary_seg_one_hots_output_uint8, gather_list)))
+
+              # summary_label_id_output = tf.to_float(tf.gather(label_id_outputs, [output_idx], axis=3))
+              # summary_label_id_output = tf.where(summary_mask, summary_label_id_output+1, tf.zeros_like(summary_label_id_output))
+              # summary_label_id_output_uint8, _ = scale_to_255(summary_label_id_output)
+              # summary_label_id_output_uint8 = tf.identity(summary_label_id_output_uint8, 'tttt'+output)
+              # summaries.add(tf.summary.image(
+              #     'test/%s_label_id' % output, tf.gather(summary_label_id_output_uint8, gather_list)))
+
+              summary_diff = tf.abs(tf.to_float(summary_label_output_uint8) - tf.to_float(summary_logit_output_uint8))
+              summary_diff = tf.where(summary_mask, summary_diff, tf.zeros_like(summary_diff))
+              summaries.add(tf.summary.image('diff_map'+label_postfix+'/%s_ldiff' % output, tf.gather(tf.cast(summary_diff, tf.uint8), gather_list)))
+
+              if output_idx in [4, 5, 6]:
+                  summary_loss = graph.get_tensor_by_name((pattern%'loss_slice_reg_').replace(':0', '')+output+':0')
+                  summaries.add(tf.summary.scalar('slice_loss'+label_postfix+'/'+(pattern%'reg_').replace(':0', '')+output, summary_loss))
+
+                  summary_loss = graph.get_tensor_by_name((pattern%'loss_slice_cls_').replace(':0', '')+output+':0')
+                  summaries.add(tf.summary.scalar('slice_loss'+label_postfix+'/'+(pattern%'cls_').replace(':0', '')+output, summary_loss))
+
+          add_metrics = ['loss_all_shape_id_cls_metric', 'loss_reg_shape'] if FLAGS.if_summary_shape_metrics else []
           for loss_name in ['loss_reg_rot_quat_metric', 'loss_reg_rot_quat', 'loss_reg_trans_metric', 'loss_reg_Zdepth_metric', 'loss_reg_Zdepth_relative_metric',
-                  'loss_reg_trans', 'loss_cls_ALL', 'loss_reg_shape'] + add_metrics:
+                  'loss_reg_trans', 'loss_cls_ALL'] + add_metrics:
               if pattern == pattern_val:
                 summary_loss_avg = graph.get_tensor_by_name(pattern%loss_name)
-                # summary_loss_dict['val-'+loss_name] = summary_loss_avg
               else:
                 summary_loss_avg = train_utils.get_avg_tensor_from_scopes(FLAGS.num_clones, '%s:0', graph, config, loss_name)
-                # summary_loss_dict['train-'+loss_name] = summary_loss_avg
-              summaries.add(tf.summary.scalar(('total_loss/'+pattern%loss_name).replace(':0', ''), summary_loss_avg))
+              summaries.add(tf.summary.scalar(('total_loss%s/'%label_postfix+pattern%loss_name).replace(':0', ''), summary_loss_avg))
 
 
     # Build the optimizer based on the device specification.
@@ -492,10 +487,11 @@ def main(unused_argv):
       # Modify the gradients for biases and last layer variables.
       last_layers = model.get_extra_layer_scopes(
           FLAGS.last_layers_contain_logits_only)
+      last_layers = last_layers + ['decoder', 'decoder_weights', ]
       print '////last layers', last_layers
 
       # Filter trainable variables for last layers ONLY.
-      # grads_and_vars = train_utils.filter_gradients(last_layers, grads_and_vars)
+      grads_and_vars = train_utils.filter_gradients(last_layers, grads_and_vars)
 
       # weight_scopes = [output_name+'_weights' for output_name in dataset.output_names] + ['decoder_weights']
       # grads_and_vars = train_utils.filter_gradients(weight_scopes, grads_and_vars)
@@ -575,12 +571,13 @@ def main(unused_argv):
             # #         ('%s/%s:0' % (first_clone_scope, 'not_ignore_mask_in_loss')).strip('/'))
 
             mask_rescaled_float = graph.get_tensor_by_name('val-%s:0'%'mask_rescaled_float')
-            _, test_out, test_out2, test_out3, test_out4, test_out5, test_out6, test_out7, test_out8, test_out9, test_out10 = sess.run([summary_op, image_names, z_logits, outputs_to_weights['z'], mask_rescaled_float, weights_normalized, prob_logits_pose, pose_dict_N, car_nums, car_nums_list, idx_xys])
+            _, test_out, test_out2, test_out3, test_out4, test_out5, test_out6, test_out7, test_out8, test_out9, test_out10, test_out11 = sess.run([summary_op, image_names, z_logits, outputs_to_weights['z'], mask_rescaled_float, weights_normalized, prob_logits_pose, pose_dict_N, car_nums, car_nums_list, idx_xys, masks_float])
             print test_out
             print test_out2.shape
             test_out3 = test_out3[test_out4!=0.]
             print 'outputs_to_weights[z] masked: ', test_out3.shape, np.max(test_out3), np.min(test_out3), np.mean(test_out3), test_out3.dtype
-            print test_out5.T, test_out5.shape, np.sum(test_out5)
+            print 'areas: ', test_out5.T, test_out5.shape, np.sum(test_out5)
+            print 'masks: ', test_out11.T
 
             print '-- prob_logits_pose: ', test_out6.shape, np.max(test_out6), np.min(test_out6), np.mean(test_out6), test_out6.dtype
             print test_out6, test_out6.shape

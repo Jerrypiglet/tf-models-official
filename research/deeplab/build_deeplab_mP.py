@@ -40,7 +40,6 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
   samples['seg'] = tf.identity(samples['seg'], name=is_training_prefix+'seg')
   masks = tf.identity(samples['mask'], name=is_training_prefix+'not_ignore_mask_in_loss')
   masks_rescaled_float = tf.identity(samples['mask_rescaled_float'], name=is_training_prefix+'mask_rescaled_float')
-  count_valid = tf.reduce_sum(tf.to_float(masks))+1e-6
 
   if FLAGS.val_split != 'test':
     samples['vis'] = tf.identity(samples['vis'], name=is_training_prefix+'vis')
@@ -79,14 +78,13 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
     logits_cars_N_list = tf.split(logits_cars, samples['car_nums'])
     logits_samples_list = []
     for seg_one_hots_sample, logits_cars_sample in zip(seg_one_hots_flattened_list, logits_cars_N_list): # (272*680, ?) (?, 17)
-      # logits_cars_sample_bkg = tf.concat([tf.zeros([1, tf.shape(logits_cars_sample)[1]], dtype=logits_cars_sample.dtype), logits_cars_sample], axis=0) # padding zeros before cars as the background
       logits_sample = tf.matmul(seg_one_hots_sample, tf.cast(logits_cars_sample, seg_one_hots_sample.dtype))
       logits_sample  = tf.cast(logits_sample, logits_cars_sample.dtype)
       logits_samples_list.append(tf.reshape(logits_sample, [dataset.height, dataset.width, logits_cars_sample.get_shape()[1]]))
     logits_map = tf.stack(logits_samples_list, axis=0) # (3, 272, 680, 17)
     return logits_map
 
-  outputs_to_logits, outputs_to_weights_map, outputs_to_weights_N = model.single_scale_logits(
+  outputs_to_logits, outputs_to_weights_map, outputs_to_areas_N = model.single_scale_logits(
     samples[common.IMAGE],
     samples['seg_rescaled'],
     samples['car_nums'],
@@ -109,13 +107,13 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
   reg_logits_concat = tf.concat(reg_logits_list, axis=1) # [car_num_total, 17]
   reg_logits_concat = tf.where(tf.is_nan(reg_logits_concat), tf.zeros_like(reg_logits_concat)+1e-5, reg_logits_concat) # Hack to process NaN!!!!!!
   reg_logits_mask = tf.logical_not(tf.is_nan(tf.reduce_sum(reg_logits_concat, axis=1, keepdims=True)))
-  masks_float = tf.to_float(reg_logits_mask)
+  # for output in dataset.output_names: # should be identical for all outputt
+  areas_masked = outputs_to_areas_N[dataset.output_names[0]]
+  pixels_valid = tf.reduce_sum(areas_masked)+1e-10
+  masks_float = tf.to_float(tf.not_equal(areas_masked, 0.))
   count_valid = tf.reduce_sum(masks_float)+1e-10
-  # for output in dataset.output_names: # should be identical for all outputs
-  weights_masked = tf.multiply(outputs_to_weights_N[dataset.output_names[0]], masks_float)
-  pixels_valid = tf.reduce_sum(weights_masked)+1e-10
   # weights_normalized = tf.to_float(tf.shape(weights_masked)[0]) * weights_masked / tf.reduce_sum(weights_masked) # [N, 1]. sum should be N in for N cars in the batch
-  weights_normalized = weights_masked # weights equals area; will be divided bu num of all pixels later
+  weights_normalized = areas_masked # weights equals area; will be divided by num of all pixels later
 
   # if FLAGS.val_split == 'test':
   #     scaled_prob_logits_pose = train_utils.scale_for_l1_loss(
@@ -128,7 +126,7 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
 
   ## Regression loss for pose
   balance_rot_reg_loss = 1.
-  balance_trans_reg_loss = 100.
+  balance_trans_reg_loss = 1.
   pose_dict_N = tf.gather_nd(samples['pose_dict'], idx_xys) # [N, 7]
   pose_dict_N = tf.identity(pose_dict_N, is_training_prefix+'pose_dict_N')
 
@@ -143,9 +141,8 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
           name=is_training_prefix + 'loss_reg',
           loss_collection=tf.GraphKeys.LOSSES if is_training else None)
   prob_logits_pose = tf.identity(tf.gather(reg_logits_concat, [0, 1, 2, 3, 4, 5, 6], axis=1), name=is_training_prefix+'prob_logits_pose')
-  if FLAGS.save_summaries_images:
-    rot_q_error_map = tf.identity(logits_cars_to_map(rot_q_error_cars), name=is_training_prefix+'rot_error_map')
-    trans_error_map = tf.identity(logits_cars_to_map(trans_error_cars), name=is_training_prefix+'trans_error_map')
+  rot_q_error_map = tf.identity(logits_cars_to_map(rot_q_error_cars), name=is_training_prefix+'rot_error_map')
+  trans_error_map = tf.identity(logits_cars_to_map(trans_error_cars), name=is_training_prefix+'trans_error_map')
 
   ## Regression loss for shape
   balance_shape_loss = 1.
@@ -166,14 +163,15 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
   pose_shape_dict_N = tf.concat([pose_dict_N, shape_dict_N], axis=1)
 
   if FLAGS.save_summaries_images:
-    # print '++++++', prob_logits_pose_shape.get_shape()
     prob_logits_pose_shape_map = logits_cars_to_map(prob_logits_pose_shape)
     prob_logits_pose_shape_map = tf.identity(prob_logits_pose_shape_map, name=is_training_prefix+'prob_logits_pose_shape_map')
   label_pose_shape_map = tf.identity(samples['label_pose_shape_map'], name=is_training_prefix+'label_pose_shape_map')
 
   label_id_list = []
   loss_slice_crossentropy_list = []
-  for idx_output, output in enumerate(dataset.output_names[:7]):
+  for idx_output, output in enumerate(dataset.output_names):
+    if idx_output not in [4, 5, 6]:
+        continue
     # Get label_id slice
     label_slice = tf.gather(pose_shape_dict_N, [idx_output], axis=1)
     bin_vals_output = bin_range[idx_output]
@@ -184,7 +182,8 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
 
     # Add losses for each output names for logging
     prob_logits_slice = tf.gather(prob_logits_pose_shape, [idx_output], axis=1)
-    loss_slice_reg = tf.losses.huber_loss(label_slice, prob_logits_slice, tf.ones_like(label_slice), delta=1.0, loss_collection=None)
+    print '... adding cls loss and reg lossing for: ', idx_output, output
+    loss_slice_reg = tf.reduce_sum(tf.abs(label_slice - prob_logits_slice)) / count_valid # [N, 1]; L1 error
     loss_slice_reg = tf.identity(loss_slice_reg, name=is_training_prefix+'loss_slice_reg_'+output)
 
     ## Cross-entropy loss for each output http://icode.baidu.com/repos/baidu/personal-code/video_seg_transfer/blob/with_db:Networks/mx_losses.py (L89)
@@ -203,7 +202,7 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
   # label_id_map = logits_cars_to_map(label_id)
   # label_id_map = tf.identity(label_id_map, name=is_training_prefix+'pose_shape_label_id_map')
 
-  if FLAGS.if_summary_metrics:
+  if FLAGS.if_summary_shape_metrics:
       shape_sim_mat = np.loadtxt('./deeplab/dataset-api/car_instance/sim_mat.txt')
       assert shape_sim_mat.shape[0] == shape_sim_mat.shape[1]
       num_cads = shape_sim_mat.shape[0]
@@ -223,4 +222,4 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
       shape_cls_metric_loss_check = tf.reduce_mean(shape_cls_metric_error_map)
       shape_cls_metric_loss_check = tf.identity(shape_cls_metric_loss_check, name=is_training_prefix+'loss_all_shape_id_cls_metric')
 
-  return samples[common.IMAGE_NAME], outputs_to_logits['z'], outputs_to_weights_map, seg_one_hots_list, weights_normalized, samples['car_nums'], car_nums_list, idx_xys, pose_dict_N, prob_logits_pose
+  return samples[common.IMAGE_NAME], outputs_to_logits['z'], outputs_to_weights_map, seg_one_hots_list, weights_normalized, samples['car_nums'], car_nums_list, idx_xys, pose_dict_N, prob_logits_pose, masks_float
