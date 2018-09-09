@@ -360,6 +360,12 @@ def main(unused_argv):
 
           mask_rescaled_float = graph.get_tensor_by_name(pattern%'mask_rescaled_float')
 
+          seg_outputs = graph.get_tensor_by_name(pattern%'seg')
+          summary_seg_output = tf.where(summary_mask, seg_outputs, tf.zeros_like(seg_outputs))
+          summary_seg_output_uint8, _ = scale_to_255(summary_seg_output)
+          summaries.add(tf.summary.image(
+              'gt'+label_postfix+'/seg', tf.gather(summary_seg_output_uint8, gather_list)))
+
           summary_image = graph.get_tensor_by_name(pattern%common.IMAGE)
           summaries.add(tf.summary.image('gt'+label_postfix+'/%s' % common.IMAGE, tf.gather(summary_image, gather_list)))
 
@@ -410,7 +416,6 @@ def main(unused_argv):
               summaries.add(tf.summary.image('metrics_map/shape_id_sim_map-valInv', tf.gather(shape_id_sim_map_uint8, gather_list)))
 
           label_outputs = graph.get_tensor_by_name(pattern%'label_pose_shape_map')
-          seg_outputs = graph.get_tensor_by_name(pattern%'seg')
           # label_id_outputs = graph.get_tensor_by_name(pattern%'pose_shape_label_id_map')
           logit_outputs = graph.get_tensor_by_name(pattern%'prob_logits_pose_shape_map')
           # seg_one_hots_outputs = graph.get_tensor_by_name(pattern%'seg_one_hots')
@@ -428,11 +433,6 @@ def main(unused_argv):
               summaries.add(tf.summary.image(
                   'output'+label_postfix+'/%s_logit' % output, tf.gather(summary_logit_output_uint8, gather_list)))
 
-              summary_seg_output = tf.gather(seg_outputs, [output_idx], axis=3)
-              summary_seg_output = tf.where(summary_mask, summary_seg_output, tf.zeros_like(summary_seg_output))
-              summary_seg_output_uint8, _ = scale_to_255(summary_seg_output)
-              summaries.add(tf.summary.image(
-                  'gt'+label_postfix+'/%s_seg' % output, tf.gather(summary_seg_output_uint8, gather_list)))
 
               summary_weights_output = outputs_to_weights[output]
               summary_weights_output = mask_rescaled_float * summary_weights_output
