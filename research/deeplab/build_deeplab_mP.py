@@ -165,7 +165,9 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
   if FLAGS.save_summaries_images:
     prob_logits_pose_shape_map = logits_cars_to_map(prob_logits_pose_shape)
     prob_logits_pose_shape_map = tf.identity(prob_logits_pose_shape_map, name=is_training_prefix+'prob_logits_pose_shape_map')
-  label_pose_shape_map = tf.identity(samples['label_pose_shape_map'], name=is_training_prefix+'label_pose_shape_map')
+    # label_pose_shape_map = tf.identity(samples['label_pose_shape_map'], name=is_training_prefix+'label_pose_shape_map')
+    label_pose_shape_map = logits_cars_to_map(pose_shape_dict_N)
+    label_pose_shape_map = tf.identity(label_pose_shape_map, name=is_training_prefix+'label_pose_shape_map')
 
   label_id_list = []
   loss_slice_crossentropy_list = []

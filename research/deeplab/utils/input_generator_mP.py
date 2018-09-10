@@ -97,36 +97,36 @@ def _get_data(dataset, model_options, data_provider, dataset_split, codes_cons):
   if dataset_split != common.TEST_SET:
     pose_dict = tf.reshape(pose_dict, [-1, 6])
     pose_dict = tf.identity(pose_dict, name='pose_dict_ori')
-    seg_one_hot_posemap = tf.one_hot(tf.reshape(seg, [-1]), depth=tf.shape(pose_dict)[0])
-    pose_map = tf.matmul(seg_one_hot_posemap, pose_dict)
-    pose_map = tf.reshape(pose_map, [dataset.height, dataset.width, 6])
+    # seg_one_hot_posemap = tf.one_hot(tf.reshape(seg, [-1]), depth=tf.shape(pose_dict)[0])
+    # pose_map = tf.matmul(seg_one_hot_posemap, pose_dict)
+    # pose_map = tf.reshape(pose_map, [dataset.height, dataset.width, 6])
 
     shape_id_dict = tf.cast(tf.reshape(shape_id_dict, [-1]), tf.int32)
     shape_id_dict = tf.identity(shape_id_dict, name='shape_id_dict')
     shape_dict = tf.gather(codes_cons, tf.clip_by_value(shape_id_dict, 0, 78))
-    # seg_one_hot_shapemap = tf.one_hot(tf.reshape(seg, [-1]), depth=tf.shape(shape_dict)[0])
-    # shape_map = tf.matmul(seg_one_hot_shapemap, shape_dict)
-    shape_map = tf.gather(shape_dict, seg_flatten)
-    shape_map = tf.reshape(shape_map, [dataset.height, dataset.width, dataset.SHAPE_DIMS])
-    # shape_map_masked = tf.where(tf.tile(mask, [1, 1, dataset.SHAPE_DIMS]), shape_map, tf.zeros_like(shape_map))
-    shape_map_masked = tf.multiply(shape_map, mask_float)
+    # # seg_one_hot_shapemap = tf.one_hot(tf.reshape(seg, [-1]), depth=tf.shape(shape_dict)[0])
+    # # shape_map = tf.matmul(seg_one_hot_shapemap, shape_dict)
+    # shape_map = tf.gather(shape_dict, seg_flatten)
+    # shape_map = tf.reshape(shape_map, [dataset.height, dataset.width, dataset.SHAPE_DIMS])
+    # # shape_map_masked = tf.where(tf.tile(mask, [1, 1, dataset.SHAPE_DIMS]), shape_map, tf.zeros_like(shape_map))
+    # shape_map_masked = tf.multiply(shape_map, mask_float)
 
-    # shape_id_map = tf.matmul(seg_one_hot_shapemap, tf.reshape(shape_id_dict, [-1, 1]))
-    shape_id_map = tf.gather(tf.reshape(shape_id_dict, [-1, 1]), seg_flatten)
-    shape_id_map = tf.reshape(shape_id_map, [dataset.height, dataset.width, 1])
-    # shape_id_map_masked = tf.where(tf.tile(mask, [1, 1, tf.shape(shape_id_map)[2]]), shape_id_map, tf.zeros_like(shape_id_map))
-    shape_id_map_masked = tf.multiply(shape_id_map, mask_int32)
+    # # shape_id_map = tf.matmul(seg_one_hot_shapemap, tf.reshape(shape_id_dict, [-1, 1]))
+    # shape_id_map = tf.gather(tf.reshape(shape_id_dict, [-1, 1]), seg_flatten)
+    # shape_id_map = tf.reshape(shape_id_map, [dataset.height, dataset.width, 1])
+    # # shape_id_map_masked = tf.where(tf.tile(mask, [1, 1, tf.shape(shape_id_map)[2]]), shape_id_map, tf.zeros_like(shape_id_map))
+    # shape_id_map_masked = tf.multiply(shape_id_map, mask_int32)
 
-    # Getting inverse depth outof the posemap
-    pose_map_depth = tf.gather(pose_map, [5], axis=2)
-    # pose_map_invd = tf.clip_by_value(tf.multiply(1./pose_map_depth, mask_float), 0., 0.25) # 1/2
-    pose_map_invd = tf.multiply(pose_map_depth, mask_float) # 2/2
-    pose_map_angles = tf.gather(pose_map, [0, 1, 2], axis=2)
-    pose_map_quat = euler_angles_to_quaternions(pose_map_angles)
-    pose_map = tf.concat([pose_map_quat, tf.gather(pose_map, [3, 4], axis=2), pose_map_invd], axis=2)
-    pose_map_masked = tf.multiply(pose_map, mask_float)
+    # # Getting inverse depth outof the posemap
+    # pose_map_depth = tf.gather(pose_map, [5], axis=2)
+    # # pose_map_invd = tf.clip_by_value(tf.multiply(1./pose_map_depth, mask_float), 0., 0.25) # 1/2
+    # pose_map_invd = tf.multiply(pose_map_depth, mask_float) # 2/2
+    # pose_map_angles = tf.gather(pose_map, [0, 1, 2], axis=2)
+    # pose_map_quat = euler_angles_to_quaternions(pose_map_angles)
+    # pose_map = tf.concat([pose_map_quat, tf.gather(pose_map, [3, 4], axis=2), pose_map_invd], axis=2)
+    # pose_map_masked = tf.multiply(pose_map, mask_float)
 
-    pose_shape_map_masked = tf.concat([pose_map_masked, shape_map_masked], axis=2)
+    # pose_shape_map_masked = tf.concat([pose_map_masked, shape_map_masked], axis=2)
 
     # returning per-instance pose_dict and shape_dict, and segs
     pose_dict_depth = tf.clip_by_value(tf.gather(pose_dict, [5], axis=1), 0., 300.)
@@ -141,12 +141,13 @@ def _get_data(dataset, model_options, data_provider, dataset_split, codes_cons):
     pose_dict_quat_invd = tf.slice(pose_dict_quat_invd, [1, 0], [-1, -1]) # [N, D_p]
     shape_dict = tf.slice(shape_dict, [1, 0], [-1, -1]) # [N, D_s]
     shape_id_dict = tf.cast(tf.slice(tf.expand_dims(shape_id_dict, -1), [1, 0], [-1, -1]), tf.int64) # [N, 1]
-    seg_one_hots_flattened = tf.transpose(tf.one_hot(tf.squeeze(seg_rescaled_flatten), depth=tf.shape(shape_dict)[0])) # [N+1, H*W]
-    seg_one_hots_flattened = tf.cast(tf.slice(seg_one_hots_flattened, [1, 0], [-1, -1]), tf.int32) # [N, H*W]
+    # seg_one_hots_flattened = tf.transpose(tf.one_hot(tf.squeeze(seg_rescaled_flatten), depth=tf.shape(shape_dict)[0])) # [N+1, H*W]
+    # seg_one_hots_flattened = tf.cast(tf.slice(seg_one_hots_flattened, [1, 0], [-1, -1]), tf.int32) # [N, H*W]
 
     idxs = tf.expand_dims(tf.range(tf.shape(shape_dict)[0]), -1) # [N, 1]
 
-    return image, vis, pose_map_masked, shape_map_masked, pose_shape_map_masked, shape_id_map_masked, image_name, height, width, seg_rescaled_float, seg_float, mask, mask_rescaled_float, pose_dict_quat_invd, shape_dict, shape_id_dict, seg_one_hots_flattened, idxs
+    return image, vis, image_name, height, width, seg_rescaled_float, seg_float, mask, mask_rescaled_float, pose_dict_quat_invd, shape_dict, shape_id_dict, idxs
+    # return image, vis, pose_map_masked, shape_map_masked, pose_shape_map_masked, shape_id_map_masked, image_name, height, width, seg_rescaled_float, seg_float, mask, mask_rescaled_float, pose_dict_quat_invd, shape_dict, shape_id_dict, seg_one_hots_flattened, idxs
   else:
     return image, image_name, height, width, seg_float, mask
 
@@ -210,7 +211,8 @@ def get(dataset,
       shuffle=is_training)
   codes_cons = tf.constant(np.transpose(codes), dtype=tf.float32)
   if dataset_split != common.TEST_SET:
-    image, vis, pose_map_masked, shape_map_masked, pose_shape_map_masked, shape_id_map, image_name, height, width, seg_rescaled, seg, mask, mask_rescaled_float, pose_dict, shape_dict, shape_id_dict, seg_one_hots_flattened, idxs = _get_data(dataset, model_options, data_provider, dataset_split, codes_cons)
+    image, vis, image_name, height, width, seg_rescaled, seg, mask, mask_rescaled_float, pose_dict, shape_dict, shape_id_dict, idxs = _get_data(dataset, model_options, data_provider, dataset_split, codes_cons)
+    # image, vis, pose_map_masked, shape_map_masked, pose_shape_map_masked, shape_id_map, image_name, height, width, seg_rescaled, seg, mask, mask_rescaled_float, pose_dict, shape_dict, shape_id_dict, seg_one_hots_flattened, idxs = _get_data(dataset, model_options, data_provider, dataset_split, codes_cons)
   else:
     image, image_name, height, width, seg, mask = _get_data(dataset, model_options, data_provider, dataset_split, codes_cons)
 
@@ -224,10 +226,10 @@ def get(dataset,
       common.IMAGE_NAME: image_name,
       common.HEIGHT: height,
       common.WIDTH: width,
-      'pose_map': pose_map_masked,
-      'shape_map': shape_map_masked,
-      'label_pose_shape_map': pose_shape_map_masked,
-      'shape_id_map': shape_id_map,
+      # 'pose_map': pose_map_masked,
+      # 'shape_map': shape_map_masked,
+      # 'label_pose_shape_map': pose_shape_map_masked,
+      # 'shape_id_map': shape_id_map,
       'seg': seg, # float
       'seg_rescaled': seg_rescaled, # float
       'mask': mask,
@@ -235,7 +237,7 @@ def get(dataset,
       'pose_dict': pose_dict,
       'shape_dict': shape_dict,
       'shape_id_dict': shape_id_dict,
-      'seg_one_hots_flattened': seg_one_hots_flattened, # int32
+      # 'seg_one_hots_flattened': seg_one_hots_flattened, # int32
       'idxs': idxs,
       'car_nums': tf.shape(pose_dict)[0]}
   else:
