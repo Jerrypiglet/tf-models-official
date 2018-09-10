@@ -90,6 +90,9 @@ flags.DEFINE_integer('log_steps', 10,
 flags.DEFINE_boolean('if_val', False,
                      'If we VALIDATE the model.')
 
+flags.DEFINE_boolean('if_debug', False,
+                     'If in debug mode.')
+
 flags.DEFINE_integer('val_interval_steps', 10,
                      'How often, in steps, we VALIDATE the model.')
 
@@ -230,10 +233,14 @@ def main(unused_argv):
       tf.gfile.MakeDirs(FLAGS.train_logdir)
   if len(os.listdir(FLAGS.train_logdir)) != 0:
       if not(FLAGS.if_restore):
-          if_delete_all = raw_input('#### The log folder %s exists and non-empty; delete all logs? [y/n] '%FLAGS.train_logdir)
-          if if_delete_all == 'y':
+          if FLAGS.if_debug:
               shutil.rmtree(FLAGS.train_logdir)
               print '==== Log folder %s emptied: '%FLAGS.train_logdir + 'rm -rf %s/*'%FLAGS.train_logdir
+          else:
+              if_delete_all = raw_input('#### The log folder %s exists and non-empty; delete all logs? [y/n] '%FLAGS.train_logdir)
+              if if_delete_all == 'y':
+                  shutil.rmtree(FLAGS.train_logdir)
+                  print '==== Log folder %s emptied: '%FLAGS.train_logdir + 'rm -rf %s/*'%FLAGS.train_logdir
       else:
           print '==== Log folder exists; not emptying it because we need to restore from it.'
   tf.logging.info('==== Logging in dir:%s; Training on %s set', FLAGS.train_logdir, FLAGS.train_split)
@@ -327,8 +334,8 @@ def main(unused_argv):
     with tf.device('/device:GPU:%d'%(FLAGS.num_clones+1)):
         if FLAGS.if_val:
           ## Construct the validation graph; takes one GPU.
-          image_names, z_logits, outputs_to_weights, seg_one_hots_list, weights_normalized, car_nums, car_nums_list, idx_xys, pose_dict_N, prob_logits_pose = _build_deeplab(FLAGS, inputs_queue_val.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_vals, bin_range, dataset_val, codes, is_training=False)
-          # test_tensor, test_tensor2, test_tensor3 = _build_deeplab(FLAGS, inputs_queue_val.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_vals, bin_range, dataset_val, codes, is_training=False, reuse=True)
+          # image_names, z_logits, outputs_to_weights, seg_one_hots_list, weights_normalized, car_nums, car_nums_list, idx_xys, pose_dict_N, prob_logits_pose, rotuvd_dict_N = _build_deeplab(FLAGS, inputs_queue_val.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_vals, bin_range, dataset_val, codes, is_training=False)
+          pose_dict_N, rotuvd_dict_N = _build_deeplab(FLAGS, inputs_queue_val.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_vals, bin_range, dataset_val, codes, is_training=False)
 
     # Gather initial summaries.
     summaries = set(tf.get_collection(tf.GraphKeys.SUMMARIES))
@@ -543,9 +550,9 @@ def main(unused_argv):
         # print 'test: ', test.shape, np.max(test), np.min(test), np.mean(test), test.dtype
 
         # mask_rescaled_float = graph.get_tensor_by_name('%s:0'%'mask_rescaled_float')
-        # _, test_out, test_out2, test_out3, test_out4 = sess.run([summary_op, image_names, z_logits, outputs_to_weights['z'], mask_rescaled_float])
-        # print test_out
-        # print test_out2.shape
+        test_out, test_out2 = sess.run([pose_dict_N, rotuvd_dict_N])
+        print test_out
+        print test_out2
         # test_out3 = test_out3[test_out4!=0.]
         # print test_out3
         # print 'outputs_to_weights[z] masked: ', test_out3.shape, np.max(test_out3), np.min(test_out3), np.mean(test_out3), test_out3.dtype
@@ -575,7 +582,7 @@ def main(unused_argv):
             # #         ('%s/%s:0' % (first_clone_scope, 'not_ignore_mask_in_loss')).strip('/'))
 
             mask_rescaled_float = graph.get_tensor_by_name('val-%s:0'%'mask_rescaled_float')
-            _, test_out, test_out2, test_out3, test_out4, test_out5, test_out6, test_out7, test_out8, test_out9, test_out10 = sess.run([summary_op, image_names, z_logits, outputs_to_weights['z'], mask_rescaled_float, weights_normalized, prob_logits_pose, pose_dict_N, car_nums, car_nums_list, idx_xys])
+            _, test_out, test_out2, test_out3, test_out4, test_out5, test_out6, test_out7, test_out8, test_out9, test_out10, test_out11 = sess.run([summary_op, image_names, z_logits, outputs_to_weights['z'], mask_rescaled_float, weights_normalized, prob_logits_pose, pose_dict_N, car_nums, car_nums_list, idx_xys, rotuvd_dict_N])
             print test_out
             print test_out2.shape
             test_out3 = test_out3[test_out4!=0.]
@@ -586,6 +593,8 @@ def main(unused_argv):
             print test_out6, test_out6.shape
             print '-- pose_dict_N: ', test_out7.shape, np.max(test_out7), np.min(test_out7), np.mean(test_out7), test_out7.dtype
             print test_out7, test_out7.shape
+            print '-- rotuvd_dict_N: ', test_out11.shape, np.max(test_out11), np.min(test_out11), np.mean(test_out11), test_out11.dtype
+            print test_out11, test_out11.shape
             print '-- car_nums: ', test_out8, test_out9, test_out10.T
 
             # # Vlen(test_out), test_out[0].shape

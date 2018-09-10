@@ -49,7 +49,8 @@ if FLAGS.if_test:
 else:
     dataset_subfolders = ['', '/train', '/train']
 dataset_folder_index = 2
-dataset_folder = dataset_folders[dataset_folder_index] + dataset_subfolders[dataset_folder_index]
+# dataset_folder = dataset_folders[dataset_folder_index] + dataset_subfolders[dataset_folder_index]
+dataset_folder = dataset_folders[dataset_folder_index]
 print '===== dataset_folder: ', dataset_folder
 
 tf.app.flags.DEFINE_string('apolloscape_root',
@@ -68,12 +69,14 @@ _NUM_SHARDS = 5
 
 # A map from data type to folder name that saves the data.
 _FOLDERS_MAP = {
-    'image': 'pose_maps_02',
-    'seg': 'pose_maps_02',
-    'shape_id_map': 'pose_maps_02',
-    'vis': 'pose_maps_02',
-    'pose_dict': 'pose_maps_02',
-    'shape_id_dict': 'pose_maps_02',
+    'image': 'pose_maps_02_2',
+    'seg': 'pose_maps_02_2',
+    'shape_id_map': 'pose_maps_02_2',
+    'vis': 'pose_maps_02_2',
+    'pose_dict': 'pose_maps_02_2',
+    'rotuvd_dict': 'pose_maps_02_2',
+    'bbox_dict': 'pose_maps_02_2',
+    'shape_id_dict': 'pose_maps_02_2',
 }
 
 # A map from data type to filename postfix.
@@ -86,6 +89,8 @@ _POSTFIX_MAP = {
     # 'seg': '_seg',
     # 'vis': '_vis',
     'pose_dict': '_posedict',
+    'rotuvd_dict': '_rotuvddict',
+    'bbox_dict': '_bboxdict',
     'shape_id_dict': '_shapeiddict'
 }
 
@@ -96,6 +101,8 @@ _DATA_FORMAT_MAP = {
     'seg': 'png',
     'shape_id_map': 'png',
     'pose_dict': 'npy',
+    'rotuvd_dict': 'npy',
+    'bbox_dict': 'npy',
     'shape_id_dict': 'npy'
 }
 
@@ -143,6 +150,8 @@ def _convert_dataset(dataset_split):
       vis_files = _get_files('vis', dataset_split)
       shape_id_map_files = _get_files('shape_id_map', dataset_split)
       pose_dict_files = _get_files('pose_dict', dataset_split)
+      rotuvd_dict_files = _get_files('rotuvd_dict', dataset_split)
+      bbox_dict_files = _get_files('bbox_dict', dataset_split)
       shape_id_dict_files = _get_files('shape_id_dict', dataset_split)
 
   num_images = len(image_files)
@@ -150,7 +159,7 @@ def _convert_dataset(dataset_split):
   print len(image_files), len(seg_files)
   if dataset_split != 'test':
       print len(vis_files), len(pose_dict_files), len(shape_id_dict_files), len(shape_id_map_files), 'Three list lengths.'
-      assert len(image_files) == len(vis_files) == len(seg_files) == len(pose_dict_files) == len(shape_id_dict_files) == len(shape_id_map_files), 'Three list lengths not equal!'
+      assert len(image_files) == len(vis_files) == len(seg_files) == len(pose_dict_files) == len(rotuvd_dict_files) == len(bbox_dict_files) == len(shape_id_dict_files) == len(shape_id_map_files), 'Three list lengths not equal!'
       print 'num_images, num_segs, num_pose_dicts, num_per_shard: ', num_images, len(seg_files), len(pose_dict_files), num_per_shard
   import random
   indices = range(num_images)
@@ -161,6 +170,8 @@ def _convert_dataset(dataset_split):
       vis_files = [vis_files[indice] for indice in indices]
       shape_id_map_files = [shape_id_map_files[indice] for indice in indices]
       pose_dict_files = [pose_dict_files[indice] for indice in indices]
+      rotuvd_dict_files = [rotuvd_dict_files[indice] for indice in indices]
+      bbox_dict_files = [bbox_dict_files[indice] for indice in indices]
       shape_id_dict_files = [shape_id_dict_files[indice] for indice in indices]
 
   image_reader = build_data.ImageReader('png', channels=3)
@@ -193,7 +204,7 @@ def _convert_dataset(dataset_split):
         sys.stdout.flush()
         # Read the image.
         if dataset_split != 'test':
-            assert return_id(image_files[i]) == return_id(vis_files[i]) == return_id(seg_files[i]) == return_id(pose_dict_files[i]), 'File name mismatch!'
+            assert return_id(image_files[i]) == return_id(vis_files[i]) == return_id(seg_files[i]) == return_id(pose_dict_files[i]) == return_id(rotuvd_dict_files[i]) == return_id(bbox_dict_files[i]), 'File name mismatch!'
         else:
             assert return_id(image_files[i]) == return_id(seg_files[i]), 'File name mismatch!'
 
@@ -206,6 +217,8 @@ def _convert_dataset(dataset_split):
             # Read the semantic segmentation annotation.
             vis_data = tf.gfile.FastGFile(vis_files[i], 'rb').read()
             pose_dict_data = np.load(pose_dict_files[i])
+            rotuvd_dict_data = np.load(rotuvd_dict_files[i])
+            bbox_dict_data = np.load(bbox_dict_files[i])
             shape_id_dict_data = np.load(shape_id_dict_files[i])
             shape_id_map_data = tf.gfile.FastGFile(shape_id_map_files[i], 'rb').read()
             for instance in pose_dict_data:
@@ -243,7 +256,7 @@ def _convert_dataset(dataset_split):
         if dataset_split != 'test':
             example = build_data.image_posedict_to_tfexample(True,
                     image_data, vis_data, seg_data, shape_id_map_data, filename,
-                    height, width, pose_dict_data, shape_id_dict_data)
+                    height, width, pose_dict_data, rotuvd_dict_data, bbox_dict_data, shape_id_dict_data)
         else:
             example = build_data.image_posedict_to_tfexample(False,
                     image_data, None, seg_data, None, filename,

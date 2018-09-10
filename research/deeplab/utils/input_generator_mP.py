@@ -66,7 +66,7 @@ def _get_data(dataset, model_options, data_provider, dataset_split, codes_cons):
   """
 
   if dataset_split != common.TEST_SET:
-    image, image_name, vis, height, width, seg, shape_id_map_gt, pose_dict, shape_id_dict = data_provider.get([common.IMAGE, common.IMAGE_NAME, 'vis', common.HEIGHT, common.WIDTH, 'seg', 'shape_id_map', 'pose_dict', 'shape_id_dict'])
+    image, image_name, vis, height, width, seg, shape_id_map_gt, pose_dict, rotuvd_dict, bbox_dict, shape_id_dict = data_provider.get([common.IMAGE, common.IMAGE_NAME, 'vis', common.HEIGHT, common.WIDTH, 'seg', 'shape_id_map', 'pose_dict', 'rotuvd_dict', 'bbox_dict', 'shape_id_dict'])
     vis = tf.reshape(vis, [dataset.height, dataset.width, 3])
   else:
     image, image_name, height, width, seg = data_provider.get([common.IMAGE, common.IMAGE_NAME, common.HEIGHT, common.WIDTH, 'seg'])
@@ -144,7 +144,17 @@ def _get_data(dataset, model_options, data_provider, dataset_split, codes_cons):
 
     idxs = tf.expand_dims(tf.range(tf.shape(shape_dict)[0]), -1) # [N, 1]
 
-    return image, vis, pose_map_masked, shape_map_masked, pose_shape_map_masked, shape_id_map_masked, image_name, height, width, seg_rescaled_float, seg_float, mask, mask_rescaled_float, pose_dict_quat_invd, shape_dict, shape_id_dict, seg_one_hots_flattened, idxs
+    rotuvd_dict = tf.reshape(rotuvd_dict, [-1, 6])
+    rotuvd_dict = tf.identity(rotuvd_dict, name='rotuvd_dict_ori')
+    rotuvd_dict_depth = tf.gather(rotuvd_dict, [5], axis=1)
+    rotuvd_dict_invd = tf.clip_by_value(tf.reciprocal(rotuvd_dict_depth), 0., 0.25)
+    rotuvd_dict_angles = tf.gather(rotuvd_dict, [0, 1, 2], axis=1)
+    rotuvd_dict_quat = euler_angles_to_quaternions(rotuvd_dict_angles)
+    rotuvd_dict_quat_invd = tf.concat([rotuvd_dict_quat, tf.gather(rotuvd_dict, [3, 4], axis=1), rotuvd_dict_invd], axis=1) # 1/2
+    bbox_dict = tf.reshape(bbox_dict, [-1, 4])
+    bbox_dict = tf.identity(bbox_dict, name='bbox_dict')
+
+    return image, vis, pose_map_masked, shape_map_masked, pose_shape_map_masked, shape_id_map_masked, image_name, height, width, seg_rescaled_float, seg_float, mask, mask_rescaled_float, pose_dict_quat_invd, rotuvd_dict_quat_invd, bbox_dict, shape_dict, shape_id_dict, seg_one_hots_flattened, idxs
   else:
     return image, image_name, height, width, seg_float, mask
 
@@ -208,7 +218,7 @@ def get(dataset,
       shuffle=is_training)
   codes_cons = tf.constant(np.transpose(codes), dtype=tf.float32)
   if dataset_split != common.TEST_SET:
-    image, vis, pose_map_masked, shape_map_masked, pose_shape_map_masked, shape_id_map, image_name, height, width, seg_rescaled, seg, mask, mask_rescaled_float, pose_dict, shape_dict, shape_id_dict, seg_one_hots_flattened, idxs = _get_data(dataset, model_options, data_provider, dataset_split, codes_cons)
+    image, vis, pose_map_masked, shape_map_masked, pose_shape_map_masked, shape_id_map, image_name, height, width, seg_rescaled, seg, mask, mask_rescaled_float, pose_dict,  rotuvd_dict, bbox_dict, shape_dict, shape_id_dict, seg_one_hots_flattened, idxs = _get_data(dataset, model_options, data_provider, dataset_split, codes_cons)
   else:
     image, image_name, height, width, seg, mask = _get_data(dataset, model_options, data_provider, dataset_split, codes_cons)
 
@@ -231,6 +241,8 @@ def get(dataset,
       'mask': mask,
       'mask_rescaled_float': mask_rescaled_float,
       'pose_dict': pose_dict,
+      'rotuvd_dict': rotuvd_dict,
+      'bbox_dict': bbox_dict,
       'shape_dict': shape_dict,
       'shape_id_dict': shape_id_dict,
       'seg_one_hots_flattened': seg_one_hots_flattened, # int32

@@ -47,6 +47,8 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
     # samples['pose_map'] = tf.identity(samples['pose_map'], name=is_training_prefix+'pose_map')
     # samples['shape_map'] = tf.identity(samples['shape_map'], name=is_training_prefix+'shape_map')
     samples['pose_dict'] = tf.identity(samples['pose_dict'], name=is_training_prefix+'pose_dict')
+    samples['rotuvd_dict'] = tf.identity(samples['rotuvd_dict'], name=is_training_prefix+'rotuvd_dict')
+    samples['bbox_dict'] = tf.identity(samples['bbox_dict'], name=is_training_prefix+'bbox_dict')
     samples['shape_dict'] = tf.identity(samples['shape_dict'], name=is_training_prefix+'shape_dict')
 
     car_nums_list = tf.split(samples['car_nums'], samples['car_nums'].get_shape()[0], axis=0)
@@ -131,6 +133,10 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
   balance_trans_reg_loss = 100.
   pose_dict_N = tf.gather_nd(samples['pose_dict'], idx_xys) # [N, 7]
   pose_dict_N = tf.identity(pose_dict_N, is_training_prefix+'pose_dict_N')
+  rotuvd_dict_N = tf.gather_nd(samples['rotuvd_dict'], idx_xys) # [N, 6]
+  rotuvd_dict_N = tf.identity(rotuvd_dict_N, is_training_prefix+'rotuvd_dict_N')
+
+  return pose_dict_N, rotuvd_dict_N
 
   _, prob_logits_pose, rot_q_error_cars, trans_error_cars = train_utils.add_my_pose_loss_cars(
           tf.gather(reg_logits_concat, [0, 1, 2, 3, 4, 5, 6], axis=1),
@@ -223,4 +229,4 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
       shape_cls_metric_loss_check = tf.reduce_mean(shape_cls_metric_error_map)
       shape_cls_metric_loss_check = tf.identity(shape_cls_metric_loss_check, name=is_training_prefix+'loss_all_shape_id_cls_metric')
 
-  return samples[common.IMAGE_NAME], outputs_to_logits['z'], outputs_to_weights_map, seg_one_hots_list, weights_normalized, samples['car_nums'], car_nums_list, idx_xys, pose_dict_N, prob_logits_pose
+  return samples[common.IMAGE_NAME], outputs_to_logits['z'], outputs_to_weights_map, seg_one_hots_list, weights_normalized, samples['car_nums'], car_nums_list, idx_xys, pose_dict_N, prob_logits_pose, rotuvd_dict_N

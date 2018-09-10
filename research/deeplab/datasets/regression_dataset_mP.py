@@ -183,6 +183,8 @@ def get_dataset(dataset_name, split_name, dataset_dir):
               (), tf.int64, default_value=0),
           # 'image/posemap/class/encoded': tf.VarLenFeature(dtype=tf.float32),
           'posedict/encoded': tf.VarLenFeature(dtype=tf.float32),
+          'rotuvddict/encoded': tf.VarLenFeature(dtype=tf.float32),
+          'bboxdict/encoded': tf.VarLenFeature(dtype=tf.float32),
           'shapeiddict/encoded': tf.VarLenFeature(dtype=tf.float32),
           'vis/encoded': tf.FixedLenFeature(
               (), tf.string, default_value=''),
@@ -215,6 +217,8 @@ def get_dataset(dataset_name, split_name, dataset_dir):
           'width': tfexample_decoder.Tensor('image/width'),
           # 'labels_class': tfexample_decoder.Tensor('image/posemap/class/encoded')
           'pose_dict': tfexample_decoder.Tensor('posedict/encoded'),
+          'rotuvd_dict': tfexample_decoder.Tensor('rotuvddict/encoded'),
+          'bbox_dict': tfexample_decoder.Tensor('bboxdict/encoded'),
           'shape_id_dict': tfexample_decoder.Tensor('shapeiddict/encoded'),
           'shape_id_map': tfexample_decoder.Image(
               image_key='shape_id_map/encoded',
