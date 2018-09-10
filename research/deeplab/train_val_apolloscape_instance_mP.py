@@ -266,9 +266,6 @@ def main(unused_argv):
       codes_min = np.amin(codes, axis=1).reshape((-1, 1))
       shape_range = np.hstack((codes_max + (codes_max - codes_min)/(dataset.SHAPE_BINS-1.), codes_min - (codes_max - codes_min)/(dataset.SHAPE_BINS-1.)))
       bin_range = [np.linspace(r[0], r[1], num=b).tolist() for r, b in zip(np.vstack((dataset.pose_range, shape_range)), dataset.bin_nums)]
-      # print np.vstack((dataset.pose_range, shape_range))
-      # print bin_range[0]
-      # print bin_range[-1]
       outputs_to_num_classes = {}
       outputs_to_indices = {}
       for output, bin_num, idx in zip(dataset.output_names, dataset.bin_nums,range(len(dataset.output_names))):
@@ -297,7 +294,7 @@ def main(unused_argv):
           is_training=True,
           model_variant=FLAGS.model_variant)
       inputs_queue = prefetch_queue.prefetch_queue(
-          samples, capacity=128 * config.num_clones, dynamic_pad=True)
+          samples, capacity=64 * config.num_clones, dynamic_pad=True)
 
       samples_val = input_generator.get(
           dataset_val,
@@ -308,7 +305,7 @@ def main(unused_argv):
           is_training=False,
           model_variant=FLAGS.model_variant)
       inputs_queue_val = prefetch_queue.prefetch_queue(
-          samples_val, capacity=128, dynamic_pad=True)
+          samples_val, capacity=64, dynamic_pad=True)
 
     # Create the global step on the device storing the variables.
     with tf.device(config.variables_device()):
@@ -328,7 +325,7 @@ def main(unused_argv):
         if FLAGS.if_val:
           ## Construct the validation graph; takes one GPU.
           image_names, z_logits, outputs_to_weights, seg_one_hots_list, weights_normalized, car_nums, car_nums_list, idx_xys, pose_dict_N, prob_logits_pose, masks_float = _build_deeplab(FLAGS, inputs_queue_val.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_vals, bin_range, dataset_val, codes, is_training=False)
-          # test_tensor, test_tensor2, test_tensor3 = _build_deeplab(FLAGS, inputs_queue_val.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_vals, bin_range, dataset_val, codes, is_training=False, reuse=True)
+          # test_tensor, test_tensor2, test_tensor3 = _build_deeplab(FLAGS, inputs_queue_val.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_vals, bin_range, dataset_val, codes, is_training=False)
 
     # Gather initial summaries.
     summaries = set(tf.get_collection(tf.GraphKeys.SUMMARIES))
@@ -453,7 +450,7 @@ def main(unused_argv):
               summary_diff = tf.where(summary_mask, summary_diff, tf.zeros_like(summary_diff))
               summaries.add(tf.summary.image('diff_map'+label_postfix+'/%s_ldiff' % output, tf.gather(tf.cast(summary_diff, tf.uint8), gather_list)))
 
-              if output_idx in [4, 5, 6]:
+              if output_idx in [6]:
                   summary_loss = graph.get_tensor_by_name((pattern%'loss_slice_reg_').replace(':0', '')+output+':0')
                   summaries.add(tf.summary.scalar('slice_loss'+label_postfix+'/'+(pattern%'reg_').replace(':0', '')+output, summary_loss))
 
@@ -496,18 +493,16 @@ def main(unused_argv):
       last_layers = last_layers + ['decoder', 'decoder_weights', ]
       print '////last layers', last_layers
 
-      # Filter trainable variables for last layers ONLY.
-      grads_and_vars = train_utils.filter_gradients(last_layers, grads_and_vars)
-
+      # Keep trainable variables for last layers ONLY.
       # weight_scopes = [output_name+'_weights' for output_name in dataset.output_names] + ['decoder_weights']
       # grads_and_vars = train_utils.filter_gradients(weight_scopes, grads_and_vars)
       print '==== variables_to_train: ', [grad_and_var[1].op.name for grad_and_var in grads_and_vars]
 
-      # grad_mult = train_utils.get_model_gradient_multipliers(
-      #     last_layers, FLAGS.last_layer_gradient_multiplier)
-      # if grad_mult:
-      #   grads_and_vars = slim.learning.multiply_gradients(
-      #       grads_and_vars, grad_mult)
+      grad_mult = train_utils.get_model_gradient_multipliers(
+          last_layers, FLAGS.last_layer_gradient_multiplier)
+      if grad_mult:
+        grads_and_vars = slim.learning.multiply_gradients(
+            grads_and_vars, grad_mult)
 
       # Create gradient update op.
       grad_updates = optimizer.apply_gradients(

@@ -172,7 +172,7 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
   label_id_list = []
   loss_slice_crossentropy_list = []
   for idx_output, output in enumerate(dataset.output_names):
-    if idx_output not in [4, 5, 6]:
+    if idx_output not in [6]:
         continue
     # Get label_id slice
     label_slice = tf.gather(pose_shape_dict_N, [idx_output], axis=1)
