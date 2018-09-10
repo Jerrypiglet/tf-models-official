@@ -347,6 +347,22 @@ def main(unused_argv):
       gather_list = range(min(3, int(FLAGS.train_batch_size/FLAGS.num_clones)))
       print gather_list
 
+      def scale_to_255(tensor, pixel_scaling=None):
+          tensor = tf.to_float(tensor)
+          if pixel_scaling == None:
+              offset_to_zero = tf.reduce_min(tf.reduce_min(tf.reduce_min(tensor, axis=3, keepdims=True), axis=2, keepdims=True), axis=1, keepdims=True)
+              scale_to_255 = tf.div(255., tf.reduce_max(tf.reduce_max(tf.reduce_max(
+                  tensor - offset_to_zero, axis=3, keepdims=True), axis=2, keepdims=True), axis=1, keepdims=True))
+              # offset_to_zero = tf.reduce_min(tensor)
+              # scale_to_255 = tf.div(255., tf.reduce_max(tensor - offset_to_zero))
+          else:
+              offset_to_zero, scale_to_255 = pixel_scaling
+          summary_tensor_float = tensor - offset_to_zero
+          summary_tensor_float = summary_tensor_float * scale_to_255
+          summary_tensor_float = tf.clip_by_value(summary_tensor_float, 0., 255.)
+          summary_tensor_uint8 = tf.cast(summary_tensor_float, tf.uint8)
+          return summary_tensor_uint8, (offset_to_zero, scale_to_255)
+
       for pattern in [pattern_train, pattern_val] if FLAGS.if_val else [pattern_train]:
           if pattern == pattern_train:
               label_postfix = ''
@@ -377,24 +393,6 @@ def main(unused_argv):
 
           summary_vis = graph.get_tensor_by_name(pattern%'vis')
           summaries.add(tf.summary.image('gt'+label_postfix+'/%s' % 'vis', tf.gather(summary_vis, gather_list)))
-
-          def scale_to_255(tensor, pixel_scaling=None):
-              tensor = tf.to_float(tensor)
-              if pixel_scaling == None:
-                  offset_to_zero = tf.reduce_min(tf.reduce_min(tf.reduce_min(tensor, axis=3, keepdims=True), axis=2, keepdims=True), axis=1, keepdims=True)
-                  scale_to_255 = tf.div(255., tf.reduce_max(tf.reduce_max(tf.reduce_max(
-                      tensor - offset_to_zero, axis=3, keepdims=True), axis=2, keepdims=True), axis=1, keepdims=True))
-                  # offset_to_zero = tf.reduce_min(tensor)
-                  # scale_to_255 = tf.div(255., tf.reduce_max(tensor - offset_to_zero))
-              else:
-                  offset_to_zero, scale_to_255 = pixel_scaling
-              summary_tensor_float = tensor - offset_to_zero
-              summary_tensor_float = summary_tensor_float * scale_to_255
-              # print tensor.get_shape(), offset_to_zero.get_shape(), scale_to_255.get_shape(), summary_tensor_float.get_shape()
-              summary_tensor_float = tf.clip_by_value(summary_tensor_float, 0., 255.)
-              summary_tensor_uint8 = tf.cast(summary_tensor_float, tf.uint8)
-              return summary_tensor_uint8, (offset_to_zero, scale_to_255)
-
 
           summary_rot_diffs = graph.get_tensor_by_name(pattern%'rot_error_map')
           summary_rot_diffs = tf.where(summary_mask, summary_rot_diffs, tf.zeros_like(summary_rot_diffs))

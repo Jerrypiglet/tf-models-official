@@ -251,6 +251,6 @@ def get(dataset,
       sample,
       batch_size=batch_size,
       num_threads=num_threads,
-      capacity=60 if num_epochs==None else batch_size,
+      capacity=30 if num_epochs==None else batch_size,
       allow_smaller_final_batch=False,
       dynamic_pad=True)
