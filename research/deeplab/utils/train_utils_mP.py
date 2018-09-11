@@ -104,29 +104,42 @@ def add_my_pose_loss_cars(prob_logits, labels, masks_float, weights_normalized, 
     rot, trans = slice_pose(prob_logits)
     rot_gt, trans_gt = slice_pose(labels)
 
-    trans_dim_weights = 1./ tf.constant([[200., 50., 0.3]], dtype=tf.float32)
-    # trans_dim_weights = tf.ones([1, 3], dtype=tf.float32)
-    trans_loss = smooth_l1_loss(tf.multiply(trans_dim_weights, trans), tf.multiply(trans_dim_weights, trans_gt),
-            weights_normalized, '', loss_collection=None, reduction=tf.losses.Reduction.SUM) / pixels_valid * balance_trans
+    # trans_dim_weights = 1./ tf.constant([[200., 50., 0.3]], dtype=tf.float32)
+    # trans_dim_weights = tf.constant([[0., 0., 1.]], dtype=tf.float32)
+    trans_dim_weights = tf.ones([1, 3], dtype=tf.float32)
+    # trans_dim_weights = tf.constant([[1./100., 1./50., 4.]], dtype=tf.float32)
+    # trans_loss = smooth_l1_loss(tf.multiply(trans_dim_weights, trans), tf.multiply(trans_dim_weights, trans_gt),
+            # weights_normalized, '', loss_collection=None, reduction=tf.losses.Reduction.SUM) / pixels_valid * balance_trans
+    # trans_loss = tf.reduce_sum(
+    #         tf.multiply(tf.square(tf.multiply(trans - trans_gt, tf.square(trans_dim_weights))) / 2., weights_normalized)
+    #         ) / pixels_valid * balance_trans # L2
+    trans_loss = tf.reduce_sum(
+            tf.multiply(tf.abs(tf.multiply(trans - trans_gt, trans_dim_weights)) / 2., weights_normalized)
+            ) / pixels_valid * balance_trans # L1
     trans_loss = tf.identity(trans_loss, name=name+'_trans')
     tf.losses.add_loss(trans_loss, loss_collection=loss_collection)
 
     trans_metric = tf.concat([tf.gather(trans, [0, 1], axis=1), 1./tf.gather(trans, [2], axis=1)], axis=1)
     trans_gt_metric = tf.concat([tf.gather(trans_gt, [0, 1], axis=1), 1./tf.gather(trans_gt, [2], axis=1)], axis=1)
-    trans_diff_metric = tf.multiply(trans_metric - trans_gt_metric, masks_float) # 1/2
-    # trans_diff_metric = tf.multiply(trans - trans_gt, masks_float) # 2/2
-    trans_error_cars = tf.reduce_sum(tf.square(trans_diff_metric), axis=1, keepdims=True)
-    trans_loss_metric_loss = tf.reduce_sum(tf.sqrt(trans_error_cars)) / count_valid
-    trans_loss_metric_loss = tf.identity(trans_loss_metric_loss, name=name+'_trans_metric')
-    depth_diff = 1./tf.gather(trans, [2], axis=1) - 1./tf.gather(trans_gt, [2], axis=1) # 1/2
+    # trans_diff_metric = tf.multiply(trans_metric - trans_gt_metric, masks_float) # 1/2: reg ind
+    trans_diff_metric = tf.multiply(trans - trans_gt, masks_float) # 2/2: reg depth
+    trans_metric_l2 = tf.reduce_sum(tf.square(trans_diff_metric), axis=1, keepdims=True)
+    trans_metric = tf.reduce_sum(tf.sqrt(trans_metric_l2)) / count_valid
+    trans_metric = tf.identity(trans_metric, name=name+'_trans_metric')
+
+   # trans_loss = tf.identity(tf.reduce_sum(tf.multiply(weights_normalized, tf.sqrt(trans_metric_l2))) / pixels_valid, name=name+'_trans')
+   #  tf.losses.add_loss(trans_loss, loss_collection=loss_collection) # L2; metric as loss; reweight by area or not
+
+    # depth_diff = 1./tf.gather(trans, [2], axis=1) - 1./tf.gather(trans_gt, [2], axis=1) # 1/2: reg invd
+    depth_diff = tf.gather(trans, [2], axis=1) -tf.gather(trans_gt, [2], axis=1) # 2/2: reg depth
     depth_metric = tf.reduce_sum(tf.multiply(tf.abs(depth_diff), masks_float)) / count_valid
     depth_metric = tf.identity(depth_metric, name=name+'_Zdepth_metric')
-    depth_relative_metric = tf.reduce_sum(tf.multiply(tf.abs(depth_diff) * tf.gather(trans_gt, [2], axis=1) , masks_float)) / count_valid
+    depth_relative_metric = tf.reduce_sum(tf.multiply(tf.abs(depth_diff) / tf.gather(trans_gt, [2], axis=1) , masks_float)) / count_valid
     depth_relative_metric = tf.identity(depth_relative_metric, name=name+'_Zdepth_relative_metric')
 
-    rot_q_loss = tf.reduce_sum(tf.multiply(tf.reduce_sum(tf.square(rot - rot_gt), axis=1) / 2.0, weights_normalized)) / pixels_valid
-    rot_q_loss = rot_q_loss * balance_rot
-    tf.losses.add_loss(tf.identity(rot_q_loss, name=name+'_rot_quat'), loss_collection=loss_collection)
+    rot_q_loss = tf.reduce_sum(tf.multiply(tf.norm(rot - rot_gt, axis=1), weights_normalized)) / pixels_valid * balance_rot
+    # tf.losses.add_loss(tf.identity(rot_q_loss, name=name+'_rot_quat'), loss_collection=loss_collection)
+    tf.losses.add_loss(tf.identity(rot_q_loss, name=name+'_rot_quat'), loss_collection=None)
     total_loss = rot_q_loss + trans_loss
 
     rot_q_unit = tf.nn.l2_normalize(rot, axis=1)
@@ -137,7 +150,7 @@ def add_my_pose_loss_cars(prob_logits, labels, masks_float, weights_normalized, 
     dis_rot_metric_loss = tf.identity(dis_rot_metric_loss, name=name+'_rot_quat_metric')
 
     total_loss = tf.identity(total_loss, name=name)
-    return total_loss, prob_logits, rot_q_error_cars, trans_error_cars
+    return total_loss, prob_logits, rot_q_error_cars, trans_metric_l2
 
 
 def logits_cls_to_logits_probReg(logits, bin_vals):
