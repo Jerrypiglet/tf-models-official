@@ -331,8 +331,8 @@ def main(unused_argv):
     with tf.device('/device:GPU:%d'%(FLAGS.num_clones+1)):
         if FLAGS.if_val:
           ## Construct the validation graph; takes one GPU.
-          # image_names, z_logits, outputs_to_weights, seg_one_hots_list, weights_normalized, car_nums, car_nums_list, idx_xys, pose_dict_N, prob_logits_pose, rotuvd_dict_N = _build_deeplab(FLAGS, inputs_queue_val.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_vals, bin_range, dataset_val, codes, is_training=False)
-          pose_dict_N, rotuvd_dict_N = _build_deeplab(FLAGS, inputs_queue_val.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_vals, bin_range, dataset_val, codes, is_training=False)
+          image_names, z_logits, outputs_to_weights, seg_one_hots_list, weights_normalized, car_nums, car_nums_list, idx_xys, pose_dict_N, prob_logits_pose, rotuvd_dict_N, masks_float = _build_deeplab(FLAGS, inputs_queue_val.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_vals, bin_range, dataset_val, codes, is_training=False)
+          # pose_dict_N, rotuvd_dict_N = _build_deeplab(FLAGS, inputs_queue_val.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_vals, bin_range, dataset_val, codes, is_training=False)
 
     # Gather initial summaries.
     summaries = set(tf.get_collection(tf.GraphKeys.SUMMARIES))
@@ -398,15 +398,15 @@ def main(unused_argv):
           summary_vis = graph.get_tensor_by_name(pattern%'vis')
           summaries.add(tf.summary.image('gt'+label_postfix+'/%s' % 'vis', tf.gather(summary_vis, gather_list)))
 
-          summary_rot_diffs = graph.get_tensor_by_name(pattern%'rot_error_map')
-          summary_rot_diffs = tf.where(summary_mask, summary_rot_diffs, tf.zeros_like(summary_rot_diffs))
-          summary_rot_diffs_uint8, _ = scale_to_255(summary_rot_diffs)
-          summaries.add(tf.summary.image('metrics_map'+label_postfix+'/%s' % 'rot_diffs', tf.gather(summary_rot_diffs_uint8, gather_list)))
+          # summary_rot_diffs = graph.get_tensor_by_name(pattern%'rot_error_map')
+          # summary_rot_diffs = tf.where(summary_mask, summary_rot_diffs, tf.zeros_like(summary_rot_diffs))
+          # summary_rot_diffs_uint8, _ = scale_to_255(summary_rot_diffs)
+          # summaries.add(tf.summary.image('metrics_map'+label_postfix+'/%s' % 'rot_diffs', tf.gather(summary_rot_diffs_uint8, gather_list)))
 
-          summary_trans_diffs = graph.get_tensor_by_name(pattern%'trans_error_map')
-          summary_trans_diffs = tf.where(summary_mask, summary_trans_diffs, tf.zeros_like(summary_trans_diffs))
-          summary_trans_diffs_uint8, _ = scale_to_255(summary_trans_diffs)
-          summaries.add(tf.summary.image('metrics_map'+label_postfix+'/%s' % 'trans_diffs', tf.gather(summary_trans_diffs, gather_list)))
+          # summary_trans_diffs = graph.get_tensor_by_name(pattern%'trans_error_map')
+          # summary_trans_diffs = tf.where(summary_mask, summary_trans_diffs, tf.zeros_like(summary_trans_diffs))
+          # summary_trans_diffs_uint8, _ = scale_to_255(summary_trans_diffs)
+          # summaries.add(tf.summary.image('metrics_map'+label_postfix+'/%s' % 'trans_diffs', tf.gather(summary_trans_diffs, gather_list)))
 
           if FLAGS.if_summary_shape_metrics:
               shape_id_sim_map_train = graph.get_tensor_by_name(pattern_train%'shape_id_sim_map')
@@ -457,7 +457,7 @@ def main(unused_argv):
               summary_diff = tf.where(summary_mask, summary_diff, tf.zeros_like(summary_diff))
               summaries.add(tf.summary.image('diff_map'+label_postfix+'/%s_ldiff' % output, tf.gather(tf.cast(summary_diff, tf.uint8), gather_list)))
 
-              if output_idx in [6]:
+              if output_idx in [4,5,6]:
                   summary_loss = graph.get_tensor_by_name((pattern%'loss_slice_reg_').replace(':0', '')+output+':0')
                   summaries.add(tf.summary.scalar('slice_loss'+label_postfix+'/'+(pattern%'reg_').replace(':0', '')+output, summary_loss))
 
@@ -547,9 +547,9 @@ def main(unused_argv):
         # print 'test: ', test.shape, np.max(test), np.min(test), np.mean(test), test.dtype
 
         # mask_rescaled_float = graph.get_tensor_by_name('%s:0'%'mask_rescaled_float')
-        test_out, test_out2 = sess.run([pose_dict_N, rotuvd_dict_N])
-        print test_out
-        print test_out2
+        # test_out, test_out2 = sess.run([pose_dict_N, rotuvd_dict_N])
+        # print test_out
+        # print test_out2
         # test_out3 = test_out3[test_out4!=0.]
         # print test_out3
         # print 'outputs_to_weights[z] masked: ', test_out3.shape, np.max(test_out3), np.min(test_out3), np.mean(test_out3), test_out3.dtype

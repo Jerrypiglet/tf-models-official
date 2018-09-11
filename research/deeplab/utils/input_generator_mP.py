@@ -220,7 +220,7 @@ def get(dataset,
       shuffle=is_training)
   codes_cons = tf.constant(np.transpose(codes), dtype=tf.float32)
   if dataset_split != common.TEST_SET:
-    image, vis, image_name, height, width, seg_rescaled, seg, mask, mask_rescaled_float, pose_dict,  rotuvd_dict, bbox_dict, shape_dict, shape_id_dict, idxs = _get_data(dataset, model_options, data_provider, dataset_split, codes_cons)
+    image, vis, image_name, height, width, seg_rescaled, seg, mask, mask_rescaled_float, pose_dict, rotuvd_dict, bbox_dict, shape_dict, shape_id_dict, idxs = _get_data(dataset, model_options, data_provider, dataset_split, codes_cons)
   else:
     image, image_name, height, width, seg, mask = _get_data(dataset, model_options, data_provider, dataset_split, codes_cons)
 
@@ -258,6 +258,8 @@ def get(dataset,
       common.WIDTH: width,
       'seg': seg,
       'mask': mask}
+
+    print rotuvd_dict.get_shape(),'llllllll'
 
   return tf.train.batch(
       sample,

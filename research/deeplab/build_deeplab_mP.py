@@ -134,7 +134,7 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
   rotuvd_dict_N = tf.gather_nd(samples['rotuvd_dict'], idx_xys) # [N, 6]
   rotuvd_dict_N = tf.identity(rotuvd_dict_N, is_training_prefix+'rotuvd_dict_N')
 
-  return pose_dict_N, rotuvd_dict_N
+  # return pose_dict_N, rotuvd_dict_N
 
   _, prob_logits_pose, rot_q_error_cars, trans_error_cars = train_utils.add_my_pose_loss_cars(
           tf.gather(reg_logits_concat, [0, 1, 2, 3, 4, 5, 6], axis=1),
@@ -168,17 +168,19 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
   prob_logits_pose_shape = tf.identity(prob_logits_pose_shape, name=is_training_prefix+'prob_logits_pose_shape_cars')
   pose_shape_dict_N = tf.concat([pose_dict_N, shape_dict_N], axis=1)
 
+  print FLAGS.save_summaries_images
   if FLAGS.save_summaries_images:
     prob_logits_pose_shape_map = logits_cars_to_map(prob_logits_pose_shape)
     prob_logits_pose_shape_map = tf.identity(prob_logits_pose_shape_map, name=is_training_prefix+'prob_logits_pose_shape_map')
     # label_pose_shape_map = tf.identity(samples['label_pose_shape_map'], name=is_training_prefix+'label_pose_shape_map')
     label_pose_shape_map = logits_cars_to_map(pose_shape_dict_N)
     label_pose_shape_map = tf.identity(label_pose_shape_map, name=is_training_prefix+'label_pose_shape_map')
+    print '++++++++++++++++++'
 
   label_id_list = []
   loss_slice_crossentropy_list = []
   for idx_output, output in enumerate(dataset.output_names):
-    if idx_output not in [6]:
+    if idx_output not in [4,5,6]:
         continue
     # Get label_id slice
     label_slice = tf.gather(pose_shape_dict_N, [idx_output], axis=1)

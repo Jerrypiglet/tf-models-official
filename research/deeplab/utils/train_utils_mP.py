@@ -131,7 +131,7 @@ def add_my_pose_loss_cars(prob_logits, labels, masks_float, weights_normalized, 
    #  tf.losses.add_loss(trans_loss, loss_collection=loss_collection) # L2; metric as loss; reweight by area or not
 
     # depth_diff = 1./tf.gather(trans, [2], axis=1) - 1./tf.gather(trans_gt, [2], axis=1) # 1/2: reg invd
-    depth_diff = tf.gather(trans, [2], axis=1) -tf.gather(trans_gt, [2], axis=1) # 2/2: reg depth
+    depth_diff = tf.gather(trans, [2], axis=1) - tf.gather(trans_gt, [2], axis=1) # 2/2: reg depth
     depth_metric = tf.reduce_sum(tf.multiply(tf.abs(depth_diff), masks_float)) / count_valid
     depth_metric = tf.identity(depth_metric, name=name+'_Zdepth_metric')
     depth_relative_metric = tf.reduce_sum(tf.multiply(tf.abs(depth_diff) / tf.gather(trans_gt, [2], axis=1) , masks_float)) / count_valid
