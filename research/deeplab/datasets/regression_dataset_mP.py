@@ -119,8 +119,8 @@ _APOLLOSCAPE_INFORMATION = DatasetDescriptor(
         [-1., 1.],
         [-100., 100.],
         [0., 50],
-        [0., 300]],
-        # [0., 0.25]],
+        # [0., 300]],
+        [0., 0.25]],
     bin_nums = [POSE_BINS]*7 + [SHAPE_BINS]*SHAPE_DIMS,
     output_names = ['q1', 'q2', 'q3', 'q4', 'x', 'y', 'z'] + ['shape_%d'%dim for dim in range(SHAPE_DIMS)],
 )
@@ -132,7 +132,7 @@ _DATASETS_INFORMATION = {
 # Default file pattern of TFRecord of TensorFlow Example.
 _FILE_PATTERN = '%s-*'
 
-def get_dataset(dataset_name, split_name, dataset_dir):
+def get_dataset(FLAGS, dataset_name, split_name, dataset_dir):
   """Gets an instance of slim Dataset.
 
   Args:
@@ -275,4 +275,5 @@ def get_dataset(dataset_name, split_name, dataset_dir):
       name=dataset_name,
       height=height,
       width=width,
-      multi_label=True)
+      multi_label=True,
+      if_depth=FLAGS.if_depth)

@@ -145,7 +145,8 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
           balance_trans=balance_trans_reg_loss,
           upsample_logits=FLAGS.upsample_logits,
           name=is_training_prefix + 'loss_reg',
-          loss_collection=tf.GraphKeys.LOSSES if is_training else None)
+          loss_collection=tf.GraphKeys.LOSSES if is_training else None,
+          if_depth=FLAGS.if_depth)
   prob_logits_pose = tf.identity(tf.gather(reg_logits_concat, [0, 1, 2, 3, 4, 5, 6], axis=1), name=is_training_prefix+'prob_logits_pose')
   rot_q_error_map = tf.identity(logits_cars_to_map(rot_q_error_cars), name=is_training_prefix+'rot_error_map')
   trans_error_map = tf.identity(logits_cars_to_map(trans_error_cars), name=is_training_prefix+'trans_error_map')
@@ -161,8 +162,8 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
           balance=balance_shape_loss,
           upsample_logits=FLAGS.upsample_logits,
           name=is_training_prefix + 'loss_reg_shape',
-          # loss_collection=tf.GraphKeys.LOSSES if is_training else None
-          loss_collection=None
+          loss_collection=tf.GraphKeys.LOSSES if is_training else None
+          # loss_collection=None
           )
   prob_logits_pose_shape = tf.concat([prob_logits_pose, prob_logits_shape], axis=1)
   prob_logits_pose_shape = tf.identity(prob_logits_pose_shape, name=is_training_prefix+'prob_logits_pose_shape_cars')
@@ -180,8 +181,8 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
   label_id_list = []
   loss_slice_crossentropy_list = []
   for idx_output, output in enumerate(dataset.output_names):
-    if idx_output not in [4,5,6]:
-        continue
+    # if idx_output not in [0, 1, 2, 3, 4,5,6]:
+    #     continue
     # Get label_id slice
     label_slice = tf.gather(pose_shape_dict_N, [idx_output], axis=1)
     bin_vals_output = bin_range[idx_output]
@@ -197,7 +198,7 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
     loss_slice_reg = tf.identity(loss_slice_reg, name=is_training_prefix+'loss_slice_reg_'+output)
 
     ## Cross-entropy loss for each output http://icode.baidu.com/repos/baidu/personal-code/video_seg_transfer/blob/with_db:Networks/mx_losses.py (L89)
-    balance_cls_loss = 1e-1
+    balance_cls_loss = 1.
     neg_log = -1. * tf.nn.log_softmax(outputs_to_logits[output])
     gt_idx = tf.one_hot(tf.squeeze(label_id_slice), depth=dataset.bin_nums[idx_output], axis=-1)
     loss_slice_crossentropy = tf.reduce_sum(tf.multiply(gt_idx, neg_log), axis=1, keepdims=True)

@@ -135,8 +135,10 @@ def _get_data(dataset, model_options, data_provider, dataset_split, codes_cons):
     pose_dict_quat = euler_angles_to_quaternions(pose_dict_angles)
     pose_dict_x = tf.clip_by_value(tf.gather(pose_dict, [3], axis=1), -100., 100.)
     pose_dict_y = tf.clip_by_value(tf.gather(pose_dict, [4], axis=1), 0., 50.)
-    # pose_dict_quat_invd = tf.concat([pose_dict_quat, pose_dict_x, pose_dict_y, pose_dict_invd], axis=1) # 1/2: reg invd
-    pose_dict_quat_invd = tf.concat([pose_dict_quat, pose_dict_x, pose_dict_y, pose_dict_depth], axis=1) # 2/2: reg depth
+    if not(dataset.if_depth):
+        pose_dict_quat_invd = tf.concat([pose_dict_quat, pose_dict_x, pose_dict_y, pose_dict_invd], axis=1) # 1/2: reg invd
+    else:
+        pose_dict_quat_invd = tf.concat([pose_dict_quat, pose_dict_x, pose_dict_y, pose_dict_depth], axis=1) # 2/2: reg depth
 
     pose_dict_quat_invd = tf.slice(pose_dict_quat_invd, [1, 0], [-1, -1]) # [N, D_p]
     shape_dict = tf.slice(shape_dict, [1, 0], [-1, -1]) # [N, D_s]

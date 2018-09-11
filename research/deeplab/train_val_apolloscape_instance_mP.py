@@ -111,6 +111,7 @@ flags.DEFINE_boolean('if_print_tensors', False,
 flags.DEFINE_boolean('if_summary_shape_metrics', True,
                      'Save image metrics to summary.')
 
+
 # Settings for training strategy.
 
 flags.DEFINE_enum('learning_policy', 'poly', ['poly', 'step'],
@@ -206,6 +207,9 @@ flags.DEFINE_multi_integer('atrous_rates', None,
 flags.DEFINE_integer('output_stride', 16,
                      'The ratio of input to output spatial resolution.')
 
+flags.DEFINE_boolean('if_depth', False,
+        'True: regression to depth; False: regression to invd.')
+
 # Dataset settings.
 flags.DEFINE_string('dataset', 'apolloscape',
                     'Name of the segmentation dataset.')
@@ -259,9 +263,9 @@ def main(unused_argv):
   clone_batch_size = FLAGS.train_batch_size // config.num_clones
 
   # Get dataset-dependent information.
-  dataset = regression_dataset.get_dataset(
+  dataset = regression_dataset.get_dataset(FLAGS,
       FLAGS.dataset, FLAGS.train_split, dataset_dir=FLAGS.dataset_dir)
-  dataset_val = regression_dataset.get_dataset(
+  dataset_val = regression_dataset.get_dataset(FLAGS,
       FLAGS.dataset, FLAGS.val_split, dataset_dir=FLAGS.dataset_dir)
   print '#### The data has size:', dataset.num_samples, dataset_val.num_samples
 
@@ -457,7 +461,7 @@ def main(unused_argv):
               summary_diff = tf.where(summary_mask, summary_diff, tf.zeros_like(summary_diff))
               summaries.add(tf.summary.image('diff_map'+label_postfix+'/%s_ldiff' % output, tf.gather(tf.cast(summary_diff, tf.uint8), gather_list)))
 
-              if output_idx in [4,5,6]:
+              if output_idx in [0, 1, 2, 3, 4,5,6]:
                   summary_loss = graph.get_tensor_by_name((pattern%'loss_slice_reg_').replace(':0', '')+output+':0')
                   summaries.add(tf.summary.scalar('slice_loss'+label_postfix+'/'+(pattern%'reg_').replace(':0', '')+output, summary_loss))
 

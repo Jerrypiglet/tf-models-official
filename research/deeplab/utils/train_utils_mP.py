@@ -87,7 +87,7 @@ def smooth_l1_loss(predictions, labels, weights, name='', loss_collection=tf.Gra
     # return loss_sum / (tf.reduce_sum(tf.to_float(masks))+1.)
     return loss_sum
 
-def add_my_pose_loss_cars(prob_logits, labels, masks_float, weights_normalized, balance_rot=1., balance_trans=1., upsample_logits=True, name=None, loss_collection=None):
+def add_my_pose_loss_cars(prob_logits, labels, masks_float, weights_normalized, balance_rot=1., balance_trans=1., upsample_logits=True, name=None, loss_collection=None, if_depth=False):
     """ Loss for discrete pose from Peng Wang (http://icode.baidu.com/repos/baidu/personal-code/video_seg_transfer/blob/with_db:Networks/mx_losses.py)
     prob_logits, labels: [car_num, D]"""
 
@@ -121,8 +121,10 @@ def add_my_pose_loss_cars(prob_logits, labels, masks_float, weights_normalized, 
 
     trans_metric = tf.concat([tf.gather(trans, [0, 1], axis=1), 1./tf.gather(trans, [2], axis=1)], axis=1)
     trans_gt_metric = tf.concat([tf.gather(trans_gt, [0, 1], axis=1), 1./tf.gather(trans_gt, [2], axis=1)], axis=1)
-    # trans_diff_metric = tf.multiply(trans_metric - trans_gt_metric, masks_float) # 1/2: reg ind
-    trans_diff_metric = tf.multiply(trans - trans_gt, masks_float) # 2/2: reg depth
+    if not(if_depth):
+        trans_diff_metric = tf.multiply(trans_metric - trans_gt_metric, masks_float) # 1/2: reg ind
+    else:
+        trans_diff_metric = tf.multiply(trans - trans_gt, masks_float) # 2/2: reg depth
     trans_metric_l2 = tf.reduce_sum(tf.square(trans_diff_metric), axis=1, keepdims=True)
     trans_metric = tf.reduce_sum(tf.sqrt(trans_metric_l2)) / count_valid
     trans_metric = tf.identity(trans_metric, name=name+'_trans_metric')
@@ -130,21 +132,26 @@ def add_my_pose_loss_cars(prob_logits, labels, masks_float, weights_normalized, 
    # trans_loss = tf.identity(tf.reduce_sum(tf.multiply(weights_normalized, tf.sqrt(trans_metric_l2))) / pixels_valid, name=name+'_trans')
    #  tf.losses.add_loss(trans_loss, loss_collection=loss_collection) # L2; metric as loss; reweight by area or not
 
-    # depth_diff = 1./tf.gather(trans, [2], axis=1) - 1./tf.gather(trans_gt, [2], axis=1) # 1/2: reg invd
-    depth_diff = tf.gather(trans, [2], axis=1) - tf.gather(trans_gt, [2], axis=1) # 2/2: reg depth
+    if not(if_depth):
+        depth_diff = 1./tf.gather(trans, [2], axis=1) - 1./tf.gather(trans_gt, [2], axis=1) # 1/2: reg invd
+    else:
+        depth_diff = tf.gather(trans, [2], axis=1) - tf.gather(trans_gt, [2], axis=1) # 2/2: reg depth
     depth_metric = tf.reduce_sum(tf.multiply(tf.abs(depth_diff), masks_float)) / count_valid
     depth_metric = tf.identity(depth_metric, name=name+'_Zdepth_metric')
-    depth_relative_metric = tf.reduce_sum(tf.multiply(tf.abs(depth_diff) / tf.gather(trans_gt, [2], axis=1) , masks_float)) / count_valid
+    if not(if_depth):
+        depth_relative_metric = tf.reduce_sum(tf.multiply(tf.abs(depth_diff) * tf.gather(trans_gt, [2], axis=1) , masks_float)) / count_valid # 1/2 reg invd
+    else:
+        depth_relative_metric = tf.reduce_sum(tf.multiply(tf.abs(depth_diff) / tf.gather(trans_gt, [2], axis=1) , masks_float)) / count_valid # 2/2 reg depth
     depth_relative_metric = tf.identity(depth_relative_metric, name=name+'_Zdepth_relative_metric')
 
     rot_q_loss = tf.reduce_sum(tf.multiply(tf.norm(rot - rot_gt, axis=1), weights_normalized)) / pixels_valid * balance_rot
     # tf.losses.add_loss(tf.identity(rot_q_loss, name=name+'_rot_quat'), loss_collection=loss_collection)
-    tf.losses.add_loss(tf.identity(rot_q_loss, name=name+'_rot_quat'), loss_collection=None)
+    tf.losses.add_loss(tf.identity(rot_q_loss, name=name+'_rot_quat'), loss_collection=loss_collection)
     total_loss = rot_q_loss + trans_loss
 
     rot_q_unit = tf.nn.l2_normalize(rot, axis=1)
     rot_q_gt_unit = tf.nn.l2_normalize(rot_gt, axis=1)
-    # [1/2 Peng] rotation matric following https://github.com/ApolloScapeAuto/dataset-api/blob/master/self_localization/eval_pose.py#L122a
+    # rotation matric following https://github.com/ApolloScapeAuto/dataset-api/blob/master/self_localization/eval_pose.py#L122a
     rot_q_error_cars = tf.acos(tf.abs(1. - tf.reduce_sum(tf.square(rot_q_unit - rot_q_gt_unit) / 2., axis=1, keepdims=True))) * 2 * 180 / np.pi
     dis_rot_metric_loss = tf.reduce_sum(tf.multiply(masks_float, rot_q_error_cars)) / count_valid # per-car angle error
     dis_rot_metric_loss = tf.identity(dis_rot_metric_loss, name=name+'_rot_quat_metric')
