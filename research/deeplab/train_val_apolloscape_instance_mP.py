@@ -335,8 +335,8 @@ def main(unused_argv):
     with tf.device('/device:GPU:%d'%(FLAGS.num_clones+1)):
         if FLAGS.if_val:
           ## Construct the validation graph; takes one GPU.
-          image_names, z_logits, outputs_to_weights, seg_one_hots_list, weights_normalized, car_nums, car_nums_list, idx_xys, pose_dict_N, prob_logits_pose, rotuvd_dict_N, masks_float = _build_deeplab(FLAGS, inputs_queue_val.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_vals, bin_range, dataset_val, codes, is_training=False)
-          # pose_dict_N, rotuvd_dict_N = _build_deeplab(FLAGS, inputs_queue_val.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_vals, bin_range, dataset_val, codes, is_training=False)
+          image_names, z_logits, outputs_to_weights, seg_one_hots_list, weights_normalized, car_nums, car_nums_list, idx_xys, reg_logits_pose_in_metric, pose_dict_N, prob_logits_pose, quat_deltauv_dinvd_dict_N, masks_float = _build_deeplab(FLAGS, inputs_queue_val.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_vals, bin_range, dataset_val, codes, is_training=False)
+          # pose_dict_N, rotuvd_dict_N, xyz, quat_deltauv_dinvd_dict_N = _build_deeplab(FLAGS, inputs_queue_val.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_vals, bin_range, dataset_val, codes, is_training=False)
 
     # Gather initial summaries.
     summaries = set(tf.get_collection(tf.GraphKeys.SUMMARIES))
@@ -551,9 +551,11 @@ def main(unused_argv):
         # print 'test: ', test.shape, np.max(test), np.min(test), np.mean(test), test.dtype
 
         # mask_rescaled_float = graph.get_tensor_by_name('%s:0'%'mask_rescaled_float')
-        # test_out, test_out2 = sess.run([pose_dict_N, rotuvd_dict_N])
+        # test_out, test_out2, test_out3, test_out4 = sess.run([pose_dict_N, rotuvd_dict_N, xyz, quat_deltauv_dinvd_dict_N])
         # print test_out
         # print test_out2
+        # print test_out3
+        # print test_out4
         # test_out3 = test_out3[test_out4!=0.]
         # print test_out3
         # print 'outputs_to_weights[z] masked: ', test_out3.shape, np.max(test_out3), np.min(test_out3), np.mean(test_out3), test_out3.dtype
@@ -583,19 +585,21 @@ def main(unused_argv):
             # #         ('%s/%s:0' % (first_clone_scope, 'not_ignore_mask_in_loss')).strip('/'))
 
             mask_rescaled_float = graph.get_tensor_by_name('val-%s:0'%'mask_rescaled_float')
-            _, test_out, test_out2, test_out3, test_out4, test_out5, test_out6, test_out7, test_out8, test_out9, test_out10, test_out11, test_out12 = sess.run([summary_op, image_names, z_logits, outputs_to_weights['z'], mask_rescaled_float, weights_normalized, prob_logits_pose, pose_dict_N, car_nums, car_nums_list, idx_xys, rotuvd_dict_N, masks_float])
+            _, test_out, test_out2, test_out3, test_out4, test_out5, test_out6, test_out7, test_out8, test_out9, test_out10, test_out11, test_out12, test_out13 = sess.run([summary_op, image_names, z_logits, outputs_to_weights['z'], mask_rescaled_float, weights_normalized, prob_logits_pose, pose_dict_N, car_nums, car_nums_list, idx_xys, quat_deltauv_dinvd_dict_N, masks_float, reg_logits_pose_in_metric])
             print test_out
             print test_out2.shape
             test_out3 = test_out3[test_out4!=0.]
             print 'outputs_to_weights[z] masked: ', test_out3.shape, np.max(test_out3), np.min(test_out3), np.mean(test_out3), test_out3.dtype
             print 'areas: ', test_out5.T, test_out5.shape, np.sum(test_out5)
-            print 'masks: ', test_out11.T
+            print 'masks: ', test_out12.T
 
-            print '-- prob_logits_pose: ', test_out6.shape, np.max(test_out6), np.min(test_out6), np.mean(test_out6), test_out6.dtype
-            print test_out6, test_out6.shape
+            print '-- reg_logits_pose_in_metric: ', test_out13.shape, np.max(test_out13), np.min(test_out13), np.mean(test_out13), test_out13.dtype
+            print test_out13, test_out13.shape
             print '-- pose_dict_N: ', test_out7.shape, np.max(test_out7), np.min(test_out7), np.mean(test_out7), test_out7.dtype
             print test_out7, test_out7.shape
-            print '-- rotuvd_dict_N: ', test_out11.shape, np.max(test_out11), np.min(test_out11), np.mean(test_out11), test_out11.dtype
+            print '-- prob_logits_pose: ', test_out6.shape, np.max(test_out6), np.min(test_out6), np.mean(test_out6), test_out6.dtype
+            print test_out6, test_out6.shape
+            print '-- quat_deltauv_dinvd_dict_N: ', test_out11.shape, np.max(test_out11), np.min(test_out11), np.mean(test_out11), test_out11.dtype
             print test_out11, test_out11.shape
             print '-- car_nums: ', test_out8, test_out9, test_out10.T
 

@@ -87,7 +87,7 @@ def smooth_l1_loss(predictions, labels, weights, name='', loss_collection=tf.Gra
     # return loss_sum / (tf.reduce_sum(tf.to_float(masks))+1.)
     return loss_sum
 
-def add_my_pose_loss_cars(prob_logits, labels, masks_float, weights_normalized, balance_rot=1., balance_trans=1., upsample_logits=True, name=None, loss_collection=None, if_depth=False):
+def add_my_pose_loss_cars(prob_logits, labels, prob_logits_in_metric, labels_in_metric, masks_float, weights_normalized, balance_rot=1., balance_trans=1., upsample_logits=True, name=None, loss_collection=None, if_depth=False):
     """ Loss for discrete pose from Peng Wang (http://icode.baidu.com/repos/baidu/personal-code/video_seg_transfer/blob/with_db:Networks/mx_losses.py)
     prob_logits, labels: [car_num, D]"""
 
@@ -102,7 +102,9 @@ def add_my_pose_loss_cars(prob_logits, labels, masks_float, weights_normalized, 
     reduction = tf.losses.Reduction.SUM_OVER_NONZERO_WEIGHTS
 
     rot, trans = slice_pose(prob_logits)
+    rot_in_metric, trans_in_metric = slice_pose(prob_logits_in_metric)
     rot_gt, trans_gt = slice_pose(labels)
+    rot_gt_in_metric, trans_gt_in_metric = slice_pose(labels_in_metric)
 
     # trans_dim_weights = 1./ tf.constant([[200., 50., 0.3]], dtype=tf.float32)
     # trans_dim_weights = tf.constant([[0., 0., 1.]], dtype=tf.float32)
@@ -119,12 +121,12 @@ def add_my_pose_loss_cars(prob_logits, labels, masks_float, weights_normalized, 
     trans_loss = tf.identity(trans_loss, name=name+'_trans')
     tf.losses.add_loss(trans_loss, loss_collection=loss_collection)
 
-    trans_metric = tf.concat([tf.gather(trans, [0, 1], axis=1), 1./tf.gather(trans, [2], axis=1)], axis=1)
-    trans_gt_metric = tf.concat([tf.gather(trans_gt, [0, 1], axis=1), 1./tf.gather(trans_gt, [2], axis=1)], axis=1)
     if not(if_depth):
-        trans_diff_metric = tf.multiply(trans_metric - trans_gt_metric, masks_float) # 1/2: reg ind
+        trans_in_metric_with_depth = tf.concat([tf.gather(trans_in_metric, [0, 1], axis=1), 1./tf.gather(trans_in_metric, [2], axis=1)], axis=1)
+        trans_gt_in_metric_with_depth = tf.concat([tf.gather(trans_gt_in_metric, [0, 1], axis=1), 1./tf.gather(trans_gt_in_metric, [2], axis=1)], axis=1)
+        trans_diff_metric = tf.multiply(trans_in_metric_with_depth - trans_gt_in_metric_with_depth, masks_float) # 1/2: reg ind
     else:
-        trans_diff_metric = tf.multiply(trans - trans_gt, masks_float) # 2/2: reg depth
+        trans_diff_metric = tf.multiply(trans_in_metric - trans_gt_in_metric, masks_float) # 2/2: reg depth
     trans_metric_l2 = tf.reduce_sum(tf.square(trans_diff_metric), axis=1, keepdims=True)
     trans_metric = tf.reduce_sum(tf.sqrt(trans_metric_l2)) / count_valid
     trans_metric = tf.identity(trans_metric, name=name+'_trans_metric')
@@ -133,15 +135,15 @@ def add_my_pose_loss_cars(prob_logits, labels, masks_float, weights_normalized, 
    #  tf.losses.add_loss(trans_loss, loss_collection=loss_collection) # L2; metric as loss; reweight by area or not
 
     if not(if_depth):
-        depth_diff = 1./tf.gather(trans, [2], axis=1) - 1./tf.gather(trans_gt, [2], axis=1) # 1/2: reg invd
+        depth_diff = 1./tf.gather(trans_in_metric, [2], axis=1) - 1./tf.gather(trans_gt_in_metric, [2], axis=1) # 1/2: reg invd
     else:
-        depth_diff = tf.gather(trans, [2], axis=1) - tf.gather(trans_gt, [2], axis=1) # 2/2: reg depth
+        depth_diff = tf.gather(trans_in_metric, [2], axis=1) - tf.gather(trans_gt_in_metric, [2], axis=1) # 2/2: reg depth
     depth_metric = tf.reduce_sum(tf.multiply(tf.abs(depth_diff), masks_float)) / count_valid
     depth_metric = tf.identity(depth_metric, name=name+'_Zdepth_metric')
     if not(if_depth):
-        depth_relative_metric = tf.reduce_sum(tf.multiply(tf.abs(depth_diff) * tf.gather(trans_gt, [2], axis=1) , masks_float)) / count_valid # 1/2 reg invd
+        depth_relative_metric = tf.reduce_sum(tf.multiply(tf.abs(depth_diff) * tf.gather(trans_gt_in_metric, [2], axis=1) , masks_float)) / count_valid # 1/2 reg invd
     else:
-        depth_relative_metric = tf.reduce_sum(tf.multiply(tf.abs(depth_diff) / tf.gather(trans_gt, [2], axis=1) , masks_float)) / count_valid # 2/2 reg depth
+        depth_relative_metric = tf.reduce_sum(tf.multiply(tf.abs(depth_diff) / tf.gather(trans_gt_in_metric, [2], axis=1) , masks_float)) / count_valid # 2/2 reg depth
     depth_relative_metric = tf.identity(depth_relative_metric, name=name+'_Zdepth_relative_metric')
 
     rot_q_loss = tf.reduce_sum(tf.multiply(tf.norm(rot - rot_gt, axis=1), weights_normalized)) / pixels_valid * balance_rot

@@ -113,7 +113,6 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
   areas_masked = outputs_to_areas_N[dataset.output_names[0]]
   pixels_valid = tf.reduce_sum(areas_masked)+1e-10
   masks_float = tf.to_float(tf.not_equal(areas_masked, 0.))
-  count_valid = tf.reduce_sum(masks_float)+1e-10
   # weights_normalized = tf.to_float(tf.shape(weights_masked)[0]) * weights_masked / tf.reduce_sum(weights_masked) # [N, 1]. sum should be N in for N cars in the batch
   weights_normalized = areas_masked # weights equals area; will be divided by num of all pixels later
 
@@ -131,13 +130,59 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
   balance_trans_reg_loss = 1.
   pose_dict_N = tf.gather_nd(samples['pose_dict'], idx_xys) # [N, 7]
   pose_dict_N = tf.identity(pose_dict_N, is_training_prefix+'pose_dict_N')
-  rotuvd_dict_N = tf.gather_nd(samples['rotuvd_dict'], idx_xys) # [N, 6]
+  rotuvd_dict_N = tf.gather_nd(samples['rotuvd_dict'], idx_xys) # [N, 7]
   rotuvd_dict_N = tf.identity(rotuvd_dict_N, is_training_prefix+'rotuvd_dict_N')
+  def within_frame(W, H, u, v):
+      within_mask = tf.concat([tf.greater_equal(u, 0), tf.greater_equal(v, 0),
+          tf.less_equal(u, W), tf.less_equal(v, H)], axis=1)
+      return tf.reduce_all(within_mask, axis=1, keepdims=True)
+  def within_range(x, min_clip, max_clip):
+      within_mask = tf.logical_and(tf.greater_equal(x, min_clip), tf.less_equal(x, max_clip))
+      return within_mask
+  rotuvd_dict_N_within = tf.to_float(within_frame(680, 544, tf.gather(rotuvd_dict_N, [4], axis=1), tf.gather(rotuvd_dict_N, [5], axis=1)))
+  bbox_dict_N = tf.gather_nd(samples['bbox_dict'], idx_xys) # [N, 4], [x_min, x_max, y_min, y_max]
+  bbox_dict_N = tf.identity(bbox_dict_N, is_training_prefix+'bbox_dict_N')
+  # bbox_c_dict_N2 = tf.concat([0.5*(tf.gather(bbox_dict_N, [0], axis=1)+tf.gather(bbox_dict_N, [1], axis=1)),
+      # 0.5*(tf.gather(bbox_dict_N, [2], axis=1)+tf.gather(bbox_dict_N, [3], axis=1))], axis=1)
+  bbox_c_dict_N = tf.gather_nd(samples['bbox_c_dict'], idx_xys) # [N, 2]
+  bbox_c_dict_N = tf.identity(bbox_c_dict_N, is_training_prefix+'bbox_c_dict_N')
+  bbox_c_dict_N_within = tf.to_float(within_frame(680, 544,
+      tf.gather(bbox_c_dict_N, [0], axis=1), tf.gather(bbox_c_dict_N, [1], axis=1)))
+  quat_deltauv_dinvd_dict_N = tf.gather_nd(samples['quat_deltauv_dinvd_dict'], idx_xys) # [N, 7]; NEW GT with offsets
+  quat_deltauv_dinvd_dict_N = tf.identity(quat_deltauv_dinvd_dict_N, is_training_prefix+'quat_deltauv_dinvd_dict_N')
+  quat_deltauv_dinvd_dict_N_within = tf.to_float(tf.logical_and(
+      within_range(tf.gather(quat_deltauv_dinvd_dict_N, [4], axis=1), -30., 30.),
+      within_range(tf.gather(quat_deltauv_dinvd_dict_N, [5], axis=1), -20., 5.)
+      ))
+  masks_float = masks_float * rotuvd_dict_N_within * bbox_c_dict_N_within * quat_deltauv_dinvd_dict_N_within
+  print '+++++++++', masks_float.get_shape()
 
-  # return pose_dict_N, rotuvd_dict_N
+  def quat_deltauv_dinvd_dict_N_2_quat_xy_dinvd_dict_N(quat_deltauv_dinvd_dict_N_input):
+      u = tf.gather(quat_deltauv_dinvd_dict_N_input, [4], axis=1) + tf.gather(bbox_c_dict_N, [0], axis=1)
+      v = tf.gather(quat_deltauv_dinvd_dict_N_input, [5], axis=1) + tf.gather(bbox_c_dict_N, [1], axis=1)
+      d = tf.gather(quat_deltauv_dinvd_dict_N_input, [6], axis=1)
+      F1 = 463.08880615234375
+      W = 338.8421325683594
+      F2 = 462.87689208984375
+      H = 271.9969482421875
+      K_T = tf.constant([[1./F1, 0., -W/F1], [0, 1./F2, -H/F2], [0., 0., 1.]])
+      if FLAGS.if_depth:
+        uvd = tf.concat([u*d, v*d, d], axis=1)
+      else:
+        uvd = tf.concat([u/d, v/d, 1/d], axis=1)
+      xyz = tf.transpose(tf.matmul(K_T, tf.transpose(uvd))) # x, y, depth; [N, 3]
+      quat_xy_dinvd_dict_N = tf.concat([tf.gather(quat_deltauv_dinvd_dict_N_input, [0,1,2,3], axis=1), tf.gather(xyz, [0,1], axis=1), d], axis=1)
+      return quat_xy_dinvd_dict_N
 
+  # return pose_dict_N, rotuvd_dict_N, quat_deltauv_dinvd_dict_N, quat_deltauv_dinvd_dict_N_2_quat_xy_dinvd_dict_N(quat_deltauv_dinvd_dict_N)
+
+  count_valid = tf.reduce_sum(masks_float)+1e-10
+  reg_logits_pose = tf.gather(reg_logits_concat, [0, 1, 2, 3, 4, 5, 6], axis=1)
+  reg_logits_pose_in_metric = quat_deltauv_dinvd_dict_N_2_quat_xy_dinvd_dict_N(reg_logits_pose)
   _, prob_logits_pose, rot_q_error_cars, trans_error_cars = train_utils.add_my_pose_loss_cars(
-          tf.gather(reg_logits_concat, [0, 1, 2, 3, 4, 5, 6], axis=1),
+          reg_logits_pose,
+          quat_deltauv_dinvd_dict_N,
+          reg_logits_pose_in_metric,
           pose_dict_N,
           masks_float,
           weights_normalized,
@@ -167,16 +212,15 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
           )
   prob_logits_pose_shape = tf.concat([prob_logits_pose, prob_logits_shape], axis=1)
   prob_logits_pose_shape = tf.identity(prob_logits_pose_shape, name=is_training_prefix+'prob_logits_pose_shape_cars')
-  pose_shape_dict_N = tf.concat([pose_dict_N, shape_dict_N], axis=1)
+  pose_shape_dict_N = tf.concat([quat_deltauv_dinvd_dict_N, shape_dict_N], axis=1)
 
   print FLAGS.save_summaries_images
   if FLAGS.save_summaries_images:
     prob_logits_pose_shape_map = logits_cars_to_map(prob_logits_pose_shape)
     prob_logits_pose_shape_map = tf.identity(prob_logits_pose_shape_map, name=is_training_prefix+'prob_logits_pose_shape_map')
     # label_pose_shape_map = tf.identity(samples['label_pose_shape_map'], name=is_training_prefix+'label_pose_shape_map')
-    label_pose_shape_map = logits_cars_to_map(pose_shape_dict_N)
+    label_pose_shape_map = logits_cars_to_map(tf.multiply(pose_shape_dict_N, masks_float))
     label_pose_shape_map = tf.identity(label_pose_shape_map, name=is_training_prefix+'label_pose_shape_map')
-    print '++++++++++++++++++'
 
   label_id_list = []
   loss_slice_crossentropy_list = []
@@ -184,7 +228,7 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
     # if idx_output not in [0, 1, 2, 3, 4,5,6]:
     #     continue
     # Get label_id slice
-    label_slice = tf.gather(pose_shape_dict_N, [idx_output], axis=1)
+    label_slice = tf.gather(quat_deltauv_dinvd_dict_N, [idx_output], axis=1)
     bin_vals_output = bin_range[idx_output]
     label_id_slice = tf.round((label_slice - bin_vals_output[0]) / (bin_vals_output[1] - bin_vals_output[0]))
     label_id_slice = tf.clip_by_value(label_id_slice, 0, dataset.bin_nums[idx_output]-1)
@@ -230,7 +274,7 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
       if FLAGS.save_summaries_images:
         shape_cls_metric_error_map = tf.identity(logits_cars_to_map(shape_cls_metric_error_cars), name=is_training_prefix+'shape_id_sim_map')
 
-      shape_cls_metric_loss_check = tf.reduce_mean(shape_cls_metric_error_map)
+      shape_cls_metric_loss_check = tf.reduce_sum(shape_cls_metric_error_map) / count_valid
       shape_cls_metric_loss_check = tf.identity(shape_cls_metric_loss_check, name=is_training_prefix+'loss_all_shape_id_cls_metric')
 
-  return samples[common.IMAGE_NAME], outputs_to_logits['z'], outputs_to_weights_map, seg_one_hots_list, weights_normalized, samples['car_nums'], car_nums_list, idx_xys, pose_dict_N, prob_logits_pose, rotuvd_dict_N, masks_float
+  return samples[common.IMAGE_NAME], outputs_to_logits['z'], outputs_to_weights_map, seg_one_hots_list, weights_normalized, samples['car_nums'], car_nums_list, idx_xys, reg_logits_pose_in_metric, pose_dict_N, prob_logits_pose, quat_deltauv_dinvd_dict_N, masks_float

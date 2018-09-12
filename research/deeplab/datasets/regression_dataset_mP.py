@@ -117,8 +117,10 @@ _APOLLOSCAPE_INFORMATION = DatasetDescriptor(
         [-1., 1.],
         [-1., 1.],
         [-1., 1.],
-        [-100., 100.],
-        [0., 50],
+        # [-100., 100.], # u
+        # [0., 50], # v
+        [-30., 30.], # delta u
+        [-20., 5], # delta v
         # [0., 300]],
         [0., 0.25]],
     bin_nums = [POSE_BINS]*7 + [SHAPE_BINS]*SHAPE_DIMS,

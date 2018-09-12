@@ -252,7 +252,7 @@ def _get_logits_mP(images,
     last_dim = model_options.outputs_to_num_classes[output]
 
     weights = (get_branch_logits(
-      features_concat,
+      features,
       1,
       model_options.atrous_rates,
       aspp_with_batch_norm=model_options.aspp_with_batch_norm,
@@ -301,7 +301,7 @@ def _get_logits_mP(images,
 
                 weight_car_normlized = tf.exp(weight_car_masked) / tf.reduce_sum(tf.exp(weight_car_masked))
 
-                logits_car_weighted = tf.multiply(logits_car_masked, weight_car_normlized) # [-1, 256]
+                logits_car_weighted = tf.multiply(logits_car_masked, weight_car_normlized_ones) # [-1, 256]
                 logits_car_aggre = tf.reduce_sum(logits_car_weighted, 0) # (256,)
                 return tf.cond(tf.rank(logits_car_masked)<2,
                         lambda: tf.zeros([tf.shape(logits)[-1]], dtype=tf.float32), lambda: logits_car_aggre)

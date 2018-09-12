@@ -135,12 +135,10 @@ def _get_data(dataset, model_options, data_provider, dataset_split, codes_cons):
     pose_dict_quat = euler_angles_to_quaternions(pose_dict_angles)
     pose_dict_x = tf.clip_by_value(tf.gather(pose_dict, [3], axis=1), -100., 100.)
     pose_dict_y = tf.clip_by_value(tf.gather(pose_dict, [4], axis=1), 0., 50.)
-    if not(dataset.if_depth):
-        pose_dict_quat_invd = tf.concat([pose_dict_quat, pose_dict_x, pose_dict_y, pose_dict_invd], axis=1) # 1/2: reg invd
-    else:
-        pose_dict_quat_invd = tf.concat([pose_dict_quat, pose_dict_x, pose_dict_y, pose_dict_depth], axis=1) # 2/2: reg depth
+    pose_dict_dinvd = pose_dict_invd if not(dataset.if_depth) else pose_dict_depth
+    pose_dict_quat_dinvd = tf.concat([pose_dict_quat, pose_dict_x, pose_dict_y, pose_dict_dinvd], axis=1) # 1/2: reg invd
 
-    pose_dict_quat_invd = tf.slice(pose_dict_quat_invd, [1, 0], [-1, -1]) # [N, D_p]
+    pose_dict_quat_dinvd = tf.slice(pose_dict_quat_dinvd, [1, 0], [-1, -1]) # [N, D_p]
     shape_dict = tf.slice(shape_dict, [1, 0], [-1, -1]) # [N, D_s]
     shape_id_dict = tf.cast(tf.slice(tf.expand_dims(shape_id_dict, -1), [1, 0], [-1, -1]), tf.int64) # [N, 1]
     # seg_one_hots_flattened = tf.transpose(tf.one_hot(tf.squeeze(seg_rescaled_flatten), depth=tf.shape(shape_dict)[0])) # [N+1, H*W]
@@ -148,17 +146,24 @@ def _get_data(dataset, model_options, data_provider, dataset_split, codes_cons):
 
     idxs = tf.expand_dims(tf.range(tf.shape(shape_dict)[0]), -1) # [N, 1]
 
-    rotuvd_dict = tf.reshape(rotuvd_dict, [-1, 6])
+    rotuvd_dict = tf.reshape(rotuvd_dict, [-1, 6]) # v in original frame; need to sub 272 for half frame
     rotuvd_dict = tf.identity(rotuvd_dict, name='rotuvd_dict_ori')
     rotuvd_dict_depth = tf.gather(rotuvd_dict, [5], axis=1)
     rotuvd_dict_invd = tf.clip_by_value(tf.reciprocal(rotuvd_dict_depth), 0., 0.25)
     rotuvd_dict_angles = tf.gather(rotuvd_dict, [0, 1, 2], axis=1)
     rotuvd_dict_quat = euler_angles_to_quaternions(rotuvd_dict_angles)
-    rotuvd_dict_quat_invd = tf.concat([rotuvd_dict_quat, tf.gather(rotuvd_dict, [3, 4], axis=1), rotuvd_dict_invd], axis=1) # 1/2
+    rotuvd_dict_dinvd = rotuvd_dict_invd if not(dataset.if_depth) else rotuvd_dict_depth
+    rotuvd_dict_quat_dinvd = tf.concat([rotuvd_dict_quat, tf.gather(rotuvd_dict, [3, 4], axis=1), rotuvd_dict_dinvd], axis=1) # 1/2: reg invd
     bbox_dict = tf.reshape(bbox_dict, [-1, 4])
     bbox_dict = tf.identity(bbox_dict, name='bbox_dict')
+    bbox_c_dict = tf.concat([0.5*(tf.gather(bbox_dict, [0], axis=1)+tf.gather(bbox_dict, [1], axis=1)),
+        0.5*(tf.gather(bbox_dict, [2], axis=1)+tf.gather(bbox_dict, [3], axis=1))], axis=1)
+    quat_deltauv_dinvd_dict = tf.concat([tf.gather(rotuvd_dict_quat_dinvd, [0, 1, 2, 3], axis=1),
+        tf.gather(rotuvd_dict_quat_dinvd, [4], axis=1) - tf.gather(bbox_c_dict, [0], axis=1),
+        tf.gather(rotuvd_dict_quat_dinvd, [5], axis=1) - tf.gather(bbox_c_dict, [1], axis=1),
+        tf.gather(rotuvd_dict_quat_dinvd, [6], axis=1)], axis=1)
 
-    return image, vis, image_name, height, width, seg_rescaled_float, seg_float, mask, mask_rescaled_float, pose_dict_quat_invd, rotuvd_dict_quat_invd, bbox_dict, shape_dict, shape_id_dict, idxs
+    return image, vis, image_name, height, width, seg_rescaled_float, seg_float, mask, mask_rescaled_float, pose_dict_quat_dinvd, rotuvd_dict_quat_dinvd, bbox_dict, bbox_c_dict, quat_deltauv_dinvd_dict, shape_dict, shape_id_dict, idxs
   else:
     return image, image_name, height, width, seg_float, mask
 
@@ -222,7 +227,7 @@ def get(dataset,
       shuffle=is_training)
   codes_cons = tf.constant(np.transpose(codes), dtype=tf.float32)
   if dataset_split != common.TEST_SET:
-    image, vis, image_name, height, width, seg_rescaled, seg, mask, mask_rescaled_float, pose_dict, rotuvd_dict, bbox_dict, shape_dict, shape_id_dict, idxs = _get_data(dataset, model_options, data_provider, dataset_split, codes_cons)
+    image, vis, image_name, height, width, seg_rescaled, seg, mask, mask_rescaled_float, pose_dict, rotuvd_dict, bbox_dict,  bbox_c_dict, quat_deltauv_dinvd_dict, shape_dict, shape_id_dict, idxs = _get_data(dataset, model_options, data_provider, dataset_split, codes_cons)
   else:
     image, image_name, height, width, seg, mask = _get_data(dataset, model_options, data_provider, dataset_split, codes_cons)
 
@@ -247,6 +252,8 @@ def get(dataset,
       'pose_dict': pose_dict,
       'rotuvd_dict': rotuvd_dict,
       'bbox_dict': bbox_dict,
+      'bbox_c_dict': bbox_c_dict,
+      'quat_deltauv_dinvd_dict': quat_deltauv_dinvd_dict,
       'shape_dict': shape_dict,
       'shape_id_dict': shape_id_dict,
       # 'seg_one_hots_flattened': seg_one_hots_flattened, # int32
@@ -261,7 +268,6 @@ def get(dataset,
       'seg': seg,
       'mask': mask}
 
-    print rotuvd_dict.get_shape(),'llllllll'
 
   return tf.train.batch(
       sample,
