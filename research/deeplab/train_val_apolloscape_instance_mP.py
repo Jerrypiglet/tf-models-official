@@ -21,6 +21,7 @@ warnings.filterwarnings("ignore")
 import six
 import os
 import shutil
+import scipy.io as sio
 import tensorflow as tf
 from tensorflow import logging
 import coloredlogs
@@ -445,7 +446,7 @@ def main(unused_argv):
               summary_logits_output_uint8, _ = scale_to_255(summary_logits_output, pixel_scaling)
               summaries.add(tf.summary.image('test'+label_postfix+'/%s_flow_logits' % output, tf.gather(summary_logits_output_uint8, gather_list)))
 
-          for trans_metrics in ['trans_l2', 'depth_diff_abs', 'depth_relative', 'x_l1', 'y_l1']:
+          for trans_metrics in ['trans_l2', 'depth_diff_abs', 'depth_relative', 'x_l1', 'y_l1', 'label_uv_flow_map', 'logits_uv_flow_map']:
               if pattern == pattern_val:
                 summary_trans = graph.get_tensor_by_name(pattern%trans_metrics)
               else:
@@ -629,6 +630,7 @@ def main(unused_argv):
             print '-- rotuvd_dict_N: ', test_out11.shape, np.max(test_out11), np.min(test_out11), np.mean(test_out11), test_out11.dtype
             print test_out11, test_out11.shape
             print '-- label_uv_flow_map: ', test_out14.shape, np.max(test_out14[:, :, :, 0]), np.min(test_out14[:, :, :, 0]), np.max(test_out14[:, :, :, 1]), np.min(test_out14[:, :, :, 1])
+            sio.savemat('/ssd2/public/zhurui/Documents/tf-models-official/research/deeplab/label_uv_flow_map.mat', {'a': test_out14})
             print '-- logits_uv_flow_map: ', test_out15.shape, np.max(test_out15[:, :, :, 0]), np.min(test_out14[:, :, :, 0]), np.max(test_out15[:, :, :, 0]), np.min(test_out15[:, :, :, 0])
             print '-- car_nums: ', test_out8, test_out9, test_out10.T
 

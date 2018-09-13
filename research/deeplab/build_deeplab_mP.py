@@ -260,11 +260,12 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
     features_Ys = tf.tile(tf.expand_dims(tf.expand_dims(tf.transpose(Vs + tf.shape(label_uv_map)[1]), -1), 0), [tf.shape(label_uv_map)[0], 1, 1, 1]) # Adding half height because of the crop!
     features_Xs = tf.tile(tf.expand_dims(tf.expand_dims(tf.transpose(Us), -1), 0), [tf.shape(label_uv_map)[0], 1, 1, 1])
     coords_UVs_concat = tf.to_float(tf.concat([features_Xs, features_Ys], axis=3))
-    label_uv_flow_map = label_uv_map - coords_UVs_concat
+    label_uv_flow_map = tf.multiply(masks_map_filtered, label_uv_map - coords_UVs_concat)
     label_uv_flow_map = tf.identity(label_uv_flow_map, name=is_training_prefix+'label_uv_flow_map')
 
-    logits_uv_flow_map = tf.identity(
-            tf.concat([outputs_to_logits_map['x'], outputs_to_logits_map['y']], axis=3), name=is_training_prefix+'logits_uv_flow_map')
+    logits_uv_flow_map = tf.concat([outputs_to_logits_map['x'], outputs_to_logits_map['y']], axis=3)
+    masks_map_filtered_rescaled = tf.image.resize_nearest_neighbor(masks_map_filtered, [tf.shape(logits_uv_flow_map)[1], tf.shape(logits_uv_flow_map)[2]], align_corners=True)
+    logits_uv_flow_map = tf.identity(tf.multiply(masks_map_filtered_rescaled, logits_uv_flow_map), name=is_training_prefix+'logits_uv_flow_map')
 
     # label_uv_map_rescaled = logits_cars_to_map(tf.gather(rotuvd_dict_N, [4, 5], axis=3) # (-1, 68, 170, 2)
     # v_coords_rescaled = tf.range(tf.shape(label_uv_map_rescaled)[1])
@@ -277,9 +278,8 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
     # label_uv_flow_map_rescaled = label_uv_map_rescaled - coords_UVs_concat_rescaled
     # label_uv_flow_map_rescaled = tf.identity(label_uv_flow_map_rescaled, name=is_training_prefix+'label_uv_flow_map_rescaled')
 
-    balance_uv_flow = 0.1
+    balance_uv_flow = 1.
     label_uv_flow_map_rescaled = tf.image.resize_nearest_neighbor(label_uv_flow_map, [tf.shape(logits_uv_flow_map)[1], tf.shape(logits_uv_flow_map)[2]], align_corners=True)
-    masks_map_filtered_rescaled = tf.image.resize_nearest_neighbor(masks_map_filtered, [tf.shape(logits_uv_flow_map)[1], tf.shape(logits_uv_flow_map)[2]], align_corners=True)
     pixels_valid_filtered = tf.reduce_sum(masks_map_filtered_rescaled)+1e-10
     uv_flow_map_diff = tf.multiply(tf.abs(logits_uv_flow_map - label_uv_flow_map_rescaled), masks_map_filtered_rescaled)
     loss_reg_uv_flow_map = tf.reduce_sum(uv_flow_map_diff) / pixels_valid_filtered * balance_uv_flow # L1 loss for uv flow
@@ -343,4 +343,4 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
       shape_cls_metric_loss_check = tf.reduce_sum(shape_cls_metric_error_cars) / count_valid
       shape_cls_metric_loss_check = tf.identity(shape_cls_metric_loss_check, name=is_training_prefix+'loss_all_shape_id_cls_metric')
 
-  return samples[common.IMAGE_NAME], outputs_to_logits['z'], outputs_to_weights_map, seg_one_hots_list, weights_normalized, samples['car_nums'], car_nums_list, idx_xys, prob_logits_pose_in_metric, pose_dict_N, prob_logits_pose, rotuvd_dict_N, masks_float, label_uv_flow_map, logits_uv_flow_map
+  return samples[common.IMAGE_NAME], outputs_to_logits['z'], outputs_to_weights_map, seg_one_hots_list, weights_normalized, samples['car_nums'], car_nums_list, idx_xys, prob_logits_pose_in_metric, pose_dict_N, prob_logits_pose, rotuvd_dict_N, masks_float, tf.multiply(masks_map_filtered, label_uv_flow_map), tf.multiply(masks_map_filtered_rescaled, logits_uv_flow_map)
