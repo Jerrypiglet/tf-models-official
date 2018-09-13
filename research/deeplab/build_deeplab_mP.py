@@ -86,11 +86,13 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
     logits_map = tf.stack(logits_samples_list, axis=0) # (3, 272, 680, 17)
     return logits_map
 
-  outputs_to_logits, outputs_to_weights_map, outputs_to_areas_N = model.single_scale_logits(
+  outputs_to_logits, outputs_to_logits_map, outputs_to_weights_map, outputs_to_areas_N = model.single_scale_logits(
     samples[common.IMAGE],
     samples['seg_rescaled'],
     samples['car_nums'],
     idx_xys,
+    bin_vals,
+    outputs_to_indices,
     model_options=model_options,
     weight_decay=FLAGS.weight_decay,
     is_training=is_training,
@@ -102,10 +104,14 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
   reg_logits_list = []
 
   for output in dataset.output_names:
-      prob_logits = train_utils.logits_cls_to_logits_probReg(
-          outputs_to_logits[output],
-          bin_vals[outputs_to_indices[output]]) # [car_num_total, 1]
-      reg_logits_list.append(prob_logits)
+      if output not in ['x', 'y']:
+          prob_logits = train_utils.logits_cls_to_logits_probReg(
+              outputs_to_logits[output],
+              bin_vals[outputs_to_indices[output]]) # [car_num_total, 1]
+          reg_logits_list.append(prob_logits)
+      else:
+          reg_logits_list.append(outputs_to_logits[output])
+      outputs_to_weights_map[output] = tf.identity(outputs_to_weights_map[output], name=is_training_prefix+'%s_weights_map'%output)
   reg_logits_concat = tf.concat(reg_logits_list, axis=1) # [car_num_total, 17]
   reg_logits_concat = tf.where(tf.is_nan(reg_logits_concat), tf.zeros_like(reg_logits_concat)+1e-5, reg_logits_concat) # Hack to process NaN!!!!!!
   reg_logits_mask = tf.logical_not(tf.is_nan(tf.reduce_sum(reg_logits_concat, axis=1, keepdims=True)))
@@ -140,27 +146,28 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
       within_mask = tf.logical_and(tf.greater_equal(x, min_clip), tf.less_equal(x, max_clip))
       return within_mask
   rotuvd_dict_N_within = tf.to_float(within_frame(680, 544, tf.gather(rotuvd_dict_N, [4], axis=1), tf.gather(rotuvd_dict_N, [5], axis=1)))
-  bbox_dict_N = tf.gather_nd(samples['bbox_dict'], idx_xys) # [N, 4], [x_min, x_max, y_min, y_max]
-  bbox_dict_N = tf.identity(bbox_dict_N, is_training_prefix+'bbox_dict_N')
-  # bbox_c_dict_N2 = tf.concat([0.5*(tf.gather(bbox_dict_N, [0], axis=1)+tf.gather(bbox_dict_N, [1], axis=1)),
-      # 0.5*(tf.gather(bbox_dict_N, [2], axis=1)+tf.gather(bbox_dict_N, [3], axis=1))], axis=1)
-  bbox_c_dict_N = tf.gather_nd(samples['bbox_c_dict'], idx_xys) # [N, 2]
-  bbox_c_dict_N = tf.identity(bbox_c_dict_N, is_training_prefix+'bbox_c_dict_N')
-  bbox_c_dict_N_within = tf.to_float(within_frame(680, 544,
-      tf.gather(bbox_c_dict_N, [0], axis=1), tf.gather(bbox_c_dict_N, [1], axis=1)))
-  quat_deltauv_dinvd_dict_N = tf.gather_nd(samples['quat_deltauv_dinvd_dict'], idx_xys) # [N, 7]; NEW GT with offsets
-  quat_deltauv_dinvd_dict_N = tf.identity(quat_deltauv_dinvd_dict_N, is_training_prefix+'quat_deltauv_dinvd_dict_N')
-  quat_deltauv_dinvd_dict_N_within = tf.to_float(tf.logical_and(
-      within_range(tf.gather(quat_deltauv_dinvd_dict_N, [4], axis=1), -30., 30.),
-      within_range(tf.gather(quat_deltauv_dinvd_dict_N, [5], axis=1), -20., 5.)
-      ))
-  masks_float = masks_float * rotuvd_dict_N_within * bbox_c_dict_N_within * quat_deltauv_dinvd_dict_N_within
+  # bbox_dict_N = tf.gather_nd(samples['bbox_dict'], idx_xys) # [N, 4], [x_min, x_max, y_min, y_max]
+  # bbox_dict_N = tf.identity(bbox_dict_N, is_training_prefix+'bbox_dict_N')
+  # # bbox_c_dict_N2 = tf.concat([0.5*(tf.gather(bbox_dict_N, [0], axis=1)+tf.gather(bbox_dict_N, [1], axis=1)),
+  #     # 0.5*(tf.gather(bbox_dict_N, [2], axis=1)+tf.gather(bbox_dict_N, [3], axis=1))], axis=1)
+  # bbox_c_dict_N = tf.gather_nd(samples['bbox_c_dict'], idx_xys) # [N, 2]
+  # bbox_c_dict_N = tf.identity(bbox_c_dict_N, is_training_prefix+'bbox_c_dict_N')
+  # bbox_c_dict_N_within = tf.to_float(within_frame(680, 544,
+  #     tf.gather(bbox_c_dict_N, [0], axis=1), tf.gather(bbox_c_dict_N, [1], axis=1)))
+  # quat_deltauv_dinvd_dict_N = tf.gather_nd(samples['quat_deltauv_dinvd_dict'], idx_xys) # [N, 7]; NEW GT with offsets
+  # quat_deltauv_dinvd_dict_N = tf.identity(quat_deltauv_dinvd_dict_N, is_training_prefix+'quat_deltauv_dinvd_dict_N')
+  # quat_deltauv_dinvd_dict_N_within = tf.to_float(tf.logical_and(
+  #     within_range(tf.gather(quat_deltauv_dinvd_dict_N, [4], axis=1), -30., 30.),
+  #     within_range(tf.gather(quat_deltauv_dinvd_dict_N, [5], axis=1), -20., 5.)
+  #     ))
+  # masks_float = masks_float * rotuvd_dict_N_within * bbox_c_dict_N_within * quat_deltauv_dinvd_dict_N_within
+  masks_float = masks_float * rotuvd_dict_N_within
   print '+++++++++', masks_float.get_shape()
 
-  def quat_deltauv_dinvd_dict_N_2_quat_xy_dinvd_dict_N(quat_deltauv_dinvd_dict_N_input):
-      u = tf.gather(quat_deltauv_dinvd_dict_N_input, [4], axis=1) + tf.gather(bbox_c_dict_N, [0], axis=1)
-      v = tf.gather(quat_deltauv_dinvd_dict_N_input, [5], axis=1) + tf.gather(bbox_c_dict_N, [1], axis=1)
-      d = tf.gather(quat_deltauv_dinvd_dict_N_input, [6], axis=1)
+  def rotuvd_dict_N_2_quat_xy_dinvd_dict_N(rotuvd_dict_N_input):
+      u = tf.gather(rotuvd_dict_N_input, [4], axis=1)
+      v = tf.gather(rotuvd_dict_N_input, [5], axis=1)
+      d = tf.gather(rotuvd_dict_N_input, [6], axis=1)
       F1 = 463.08880615234375
       W = 338.8421325683594
       F2 = 462.87689208984375
@@ -171,18 +178,38 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
       else:
         uvd = tf.concat([u/d, v/d, 1/d], axis=1)
       xyz = tf.transpose(tf.matmul(K_T, tf.transpose(uvd))) # x, y, depth; [N, 3]
-      quat_xy_dinvd_dict_N = tf.concat([tf.gather(quat_deltauv_dinvd_dict_N_input, [0,1,2,3], axis=1), tf.gather(xyz, [0,1], axis=1), d], axis=1)
-      return quat_xy_dinvd_dict_N
+      quat_xy_dinvd_dict_N_output = tf.concat([tf.gather(rotuvd_dict_N_input, [0,1,2,3], axis=1), tf.gather(xyz, [0,1], axis=1), d], axis=1)
+      return quat_xy_dinvd_dict_N_output
 
-  # return pose_dict_N, rotuvd_dict_N, quat_deltauv_dinvd_dict_N, quat_deltauv_dinvd_dict_N_2_quat_xy_dinvd_dict_N(quat_deltauv_dinvd_dict_N)
+  # def quat_deltauv_dinvd_dict_N_2_quat_xy_dinvd_dict_N(quat_deltauv_dinvd_dict_N_input):
+  #     u = tf.gather(quat_deltauv_dinvd_dict_N_input, [4], axis=1) + tf.gather(bbox_c_dict_N, [0], axis=1)
+  #     v = tf.gather(quat_deltauv_dinvd_dict_N_input, [5], axis=1) + tf.gather(bbox_c_dict_N, [1], axis=1)
+  #     d = tf.gather(quat_deltauv_dinvd_dict_N_input, [6], axis=1)
+  #     F1 = 463.08880615234375
+  #     W = 338.8421325683594
+  #     F2 = 462.87689208984375
+  #     H = 271.9969482421875
+  #     K_T = tf.constant([[1./F1, 0., -W/F1], [0, 1./F2, -H/F2], [0., 0., 1.]])
+  #     if FLAGS.if_depth:
+  #       uvd = tf.concat([u*d, v*d, d], axis=1)
+  #     else:
+  #       uvd = tf.concat([u/d, v/d, 1/d], axis=1)
+  #     xyz = tf.transpose(tf.matmul(K_T, tf.transpose(uvd))) # x, y, depth; [N, 3]
+  #     quat_xy_dinvd_dict_N = tf.concat([tf.gather(quat_deltauv_dinvd_dict_N_input, [0,1,2,3], axis=1), tf.gather(xyz, [0,1], axis=1), d], axis=1)
+  #     return quat_xy_dinvd_dict_N
+
 
   count_valid = tf.reduce_sum(masks_float)+1e-10
-  reg_logits_pose = tf.gather(reg_logits_concat, [0, 1, 2, 3, 4, 5, 6], axis=1)
-  reg_logits_pose_in_metric = quat_deltauv_dinvd_dict_N_2_quat_xy_dinvd_dict_N(reg_logits_pose)
-  _, prob_logits_pose, rot_q_error_cars, trans_error_cars = train_utils.add_my_pose_loss_cars(
-          reg_logits_pose,
-          quat_deltauv_dinvd_dict_N,
-          reg_logits_pose_in_metric,
+  prob_logits_pose = tf.gather(reg_logits_concat, [0, 1, 2, 3, 4, 5, 6], axis=1)
+  prob_logits_pose = tf.identity(prob_logits_pose, name=is_training_prefix+'prob_logits_pose')
+  prob_logits_pose_in_metric = rotuvd_dict_N_2_quat_xy_dinvd_dict_N(prob_logits_pose)
+  # return pose_dict_N, rotuvd_dict_N_2_quat_xy_dinvd_dict_N(rotuvd_dict_N)
+
+
+  _, prob_logits_pose, rot_q_error_cars, trans_l2, depth_diff_abs, depth_relative = train_utils.add_my_pose_loss_cars(
+          prob_logits_pose,
+          rotuvd_dict_N,
+          prob_logits_pose_in_metric,
           pose_dict_N,
           masks_float,
           weights_normalized,
@@ -192,9 +219,11 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
           name=is_training_prefix + 'loss_reg',
           loss_collection=tf.GraphKeys.LOSSES if is_training else None,
           if_depth=FLAGS.if_depth)
-  prob_logits_pose = tf.identity(tf.gather(reg_logits_concat, [0, 1, 2, 3, 4, 5, 6], axis=1), name=is_training_prefix+'prob_logits_pose')
-  rot_q_error_map = tf.identity(logits_cars_to_map(rot_q_error_cars), name=is_training_prefix+'rot_error_map')
-  trans_error_map = tf.identity(logits_cars_to_map(trans_error_cars), name=is_training_prefix+'trans_error_map')
+  # rot_q_error_map = tf.identity(logits_cars_to_map(rot_q_error_cars), name=is_training_prefix+'rot_error_map')
+  # trans_error_map = tf.identity(logits_cars_to_map(trans_error_cars), name=is_training_prefix+'trans_error_map')
+  trans_l2 = tf.identity(trans_l2, name=is_training_prefix+'trans_l2')
+  depth_diff_abs = tf.identity(depth_diff_abs, name=is_training_prefix+'depth_diff_abs')
+  depth_relative = tf.identity(depth_relative, name=is_training_prefix+'depth_relative')
 
   ## Regression loss for shape
   balance_shape_loss = 1.
@@ -212,15 +241,29 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
           )
   prob_logits_pose_shape = tf.concat([prob_logits_pose, prob_logits_shape], axis=1)
   prob_logits_pose_shape = tf.identity(prob_logits_pose_shape, name=is_training_prefix+'prob_logits_pose_shape_cars')
-  pose_shape_dict_N = tf.concat([quat_deltauv_dinvd_dict_N, shape_dict_N], axis=1)
+  pose_shape_dict_N = tf.concat([rotuvd_dict_N, shape_dict_N], axis=1)
 
   print FLAGS.save_summaries_images
   if FLAGS.save_summaries_images:
     prob_logits_pose_shape_map = logits_cars_to_map(prob_logits_pose_shape)
     prob_logits_pose_shape_map = tf.identity(prob_logits_pose_shape_map, name=is_training_prefix+'prob_logits_pose_shape_map')
     # label_pose_shape_map = tf.identity(samples['label_pose_shape_map'], name=is_training_prefix+'label_pose_shape_map')
-    label_pose_shape_map = logits_cars_to_map(tf.multiply(pose_shape_dict_N, masks_float))
+    label_pose_shape_map = logits_cars_to_map(pose_shape_dict_N)
+    print '++++++++', pose_shape_dict_N.get_shape(), masks_float.get_shape()
     label_pose_shape_map = tf.identity(label_pose_shape_map, name=is_training_prefix+'label_pose_shape_map')
+
+    label_uv_map = tf.gather(label_pose_shape_map, [4, 5], axis=3) # (-1, 272, 680, 2)
+    v_coords = tf.range(tf.shape(label_uv_map)[1])
+    u_coords = tf.range(tf.shape(label_uv_map)[2])
+    Vs, Us = tf.meshgrid(v_coords, u_coords)
+    features_Ys = tf.tile(tf.expand_dims(tf.expand_dims(tf.transpose(Vs + tf.shape(label_uv_map)[1]), -1), 0), [tf.shape(label_uv_map)[0], 1, 1, 1]) # Adding half height because of the crop!
+    features_Xs = tf.tile(tf.expand_dims(tf.expand_dims(tf.transpose(Us), -1), 0), [tf.shape(label_uv_map)[0], 1, 1, 1])
+    coords_UVs_concat = tf.to_float(tf.concat([features_Xs, features_Ys], axis=3))
+    label_uv_flow_map = label_uv_map - coords_UVs_concat
+    label_uv_flow_map = tf.identity(label_uv_flow_map, name=is_training_prefix+'label_uv_flow_map')
+
+    logits_uv_flow_map = tf.identity(
+            tf.concat([outputs_to_logits_map['x'], outputs_to_logits_map['y']], axis=3), name=is_training_prefix+'logits_uv_flow_map')
 
   label_id_list = []
   loss_slice_crossentropy_list = []
@@ -228,12 +271,7 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
     # if idx_output not in [0, 1, 2, 3, 4,5,6]:
     #     continue
     # Get label_id slice
-    label_slice = tf.gather(quat_deltauv_dinvd_dict_N, [idx_output], axis=1)
-    bin_vals_output = bin_range[idx_output]
-    label_id_slice = tf.round((label_slice - bin_vals_output[0]) / (bin_vals_output[1] - bin_vals_output[0]))
-    label_id_slice = tf.clip_by_value(label_id_slice, 0, dataset.bin_nums[idx_output]-1)
-    label_id_slice = tf.cast(label_id_slice, tf.uint8)
-    label_id_list.append(label_id_slice)
+    label_slice = tf.gather(pose_shape_dict_N, [idx_output], axis=1)
 
     # Add losses for each output names for logging
     prob_logits_slice = tf.gather(prob_logits_pose_shape, [idx_output], axis=1)
@@ -242,18 +280,24 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
     loss_slice_reg = tf.identity(loss_slice_reg, name=is_training_prefix+'loss_slice_reg_'+output)
 
     ## Cross-entropy loss for each output http://icode.baidu.com/repos/baidu/personal-code/video_seg_transfer/blob/with_db:Networks/mx_losses.py (L89)
-    balance_cls_loss = 1.
-    neg_log = -1. * tf.nn.log_softmax(outputs_to_logits[output])
-    gt_idx = tf.one_hot(tf.squeeze(label_id_slice), depth=dataset.bin_nums[idx_output], axis=-1)
-    loss_slice_crossentropy = tf.reduce_sum(tf.multiply(gt_idx, neg_log), axis=1, keepdims=True)
-    loss_slice_crossentropy= tf.reduce_sum(tf.multiply(weights_normalized, loss_slice_crossentropy)) / pixels_valid * balance_cls_loss
-    loss_slice_crossentropy = tf.identity(loss_slice_crossentropy, name=is_training_prefix+'loss_slice_cls_'+output)
-    loss_slice_crossentropy_list.append(loss_slice_crossentropy)
-    if is_training:
-        # tf.losses.add_loss(loss_slice_crossentropy, loss_collection=None)
-        tf.losses.add_loss(loss_slice_crossentropy, loss_collection=tf.GraphKeys.LOSSES)
+    balance_cls_loss = 1e-1
+    if output not in ['x', 'y']:
+        bin_vals_output = bin_range[idx_output]
+        label_id_slice = tf.round((label_slice - bin_vals_output[0]) / (bin_vals_output[1] - bin_vals_output[0]))
+        label_id_slice = tf.clip_by_value(label_id_slice, 0, dataset.bin_nums[idx_output]-1)
+        label_id_slice = tf.cast(label_id_slice, tf.uint8)
+        # label_id_list.append(label_id_slice)
+        neg_log = -1. * tf.nn.log_softmax(outputs_to_logits[output])
+        gt_idx = tf.one_hot(tf.squeeze(label_id_slice), depth=dataset.bin_nums[idx_output], axis=-1)
+        loss_slice_crossentropy = tf.reduce_sum(tf.multiply(gt_idx, neg_log), axis=1, keepdims=True)
+        loss_slice_crossentropy= tf.reduce_sum(tf.multiply(weights_normalized, loss_slice_crossentropy)) / pixels_valid * balance_cls_loss
+        loss_slice_crossentropy = tf.identity(loss_slice_crossentropy, name=is_training_prefix+'loss_slice_cls_'+output)
+        loss_slice_crossentropy_list.append(loss_slice_crossentropy)
+        if is_training:
+            # tf.losses.add_loss(loss_slice_crossentropy, loss_collection=None)
+            tf.losses.add_loss(loss_slice_crossentropy, loss_collection=tf.GraphKeys.LOSSES)
   loss_crossentropy = tf.identity(tf.add_n(loss_slice_crossentropy_list), name=is_training_prefix+'loss_cls_ALL')
-  label_id = tf.concat(label_id_list, axis=1)
+  # label_id = tf.concat(label_id_list, axis=1)
   # label_id_map = logits_cars_to_map(label_id)
   # label_id_map = tf.identity(label_id_map, name=is_training_prefix+'pose_shape_label_id_map')
 
@@ -277,4 +321,4 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
       shape_cls_metric_loss_check = tf.reduce_sum(shape_cls_metric_error_map) / count_valid
       shape_cls_metric_loss_check = tf.identity(shape_cls_metric_loss_check, name=is_training_prefix+'loss_all_shape_id_cls_metric')
 
-  return samples[common.IMAGE_NAME], outputs_to_logits['z'], outputs_to_weights_map, seg_one_hots_list, weights_normalized, samples['car_nums'], car_nums_list, idx_xys, reg_logits_pose_in_metric, pose_dict_N, prob_logits_pose, quat_deltauv_dinvd_dict_N, masks_float
+  return samples[common.IMAGE_NAME], outputs_to_logits['z'], outputs_to_weights_map, seg_one_hots_list, weights_normalized, samples['car_nums'], car_nums_list, idx_xys, prob_logits_pose_in_metric, pose_dict_N, prob_logits_pose, rotuvd_dict_N, masks_float, label_uv_flow_map, logits_uv_flow_map

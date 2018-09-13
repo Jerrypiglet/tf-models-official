@@ -123,7 +123,7 @@ _APOLLOSCAPE_INFORMATION = DatasetDescriptor(
         [-20., 5], # delta v
         # [0., 300]],
         [0., 0.25]],
-    bin_nums = [POSE_BINS]*7 + [SHAPE_BINS]*SHAPE_DIMS,
+    bin_nums = [POSE_BINS]*4 + [1, 1, POSE_BINS] + [SHAPE_BINS]*SHAPE_DIMS,
     output_names = ['q1', 'q2', 'q3', 'q4', 'x', 'y', 'z'] + ['shape_%d'%dim for dim in range(SHAPE_DIMS)],
 )
 

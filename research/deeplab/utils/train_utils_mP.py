@@ -22,7 +22,7 @@ from deeplab.core import preprocess_utils
 
 slim = tf.contrib.slim
 
-def get_avg_tensor_from_scopes(num_clones, pattern_train_postfix, graph, config, tensor_name):
+def get_avg_tensor_from_scopes(num_clones, pattern_train_postfix, graph, config, tensor_name, return_concat=False):
     tensor_list = []
     for clone_idx in range(num_clones):
       clone_scope = config.clone_scope(clone_idx) # clone_0
@@ -32,7 +32,10 @@ def get_avg_tensor_from_scopes(num_clones, pattern_train_postfix, graph, config,
           pattern_train = pattern_train_postfix
       summary_tensor = graph.get_tensor_by_name(pattern_train%tensor_name)
       tensor_list.append(summary_tensor)
-    return tf.add_n(tensor_list)/ num_clones
+    if return_concat:
+        return tf.concat(tensor_list, axis=0)
+    else:
+        return tf.add_n(tensor_list)/ num_clones
 
 def scale_logits_to_labels(logits, labels, upsample_logits):
     """ Scaled logits and labels to the same scale."""
@@ -127,8 +130,8 @@ def add_my_pose_loss_cars(prob_logits, labels, prob_logits_in_metric, labels_in_
         trans_diff_metric = tf.multiply(trans_in_metric_with_depth - trans_gt_in_metric_with_depth, masks_float) # 1/2: reg ind
     else:
         trans_diff_metric = tf.multiply(trans_in_metric - trans_gt_in_metric, masks_float) # 2/2: reg depth
-    trans_metric_l2 = tf.reduce_sum(tf.square(trans_diff_metric), axis=1, keepdims=True)
-    trans_metric = tf.reduce_sum(tf.sqrt(trans_metric_l2)) / count_valid
+    trans_l2 = tf.sqrt(tf.reduce_sum(tf.square(trans_diff_metric), axis=1, keepdims=True))
+    trans_metric = tf.reduce_sum(trans_l2) / count_valid
     trans_metric = tf.identity(trans_metric, name=name+'_trans_metric')
 
    # trans_loss = tf.identity(tf.reduce_sum(tf.multiply(weights_normalized, tf.sqrt(trans_metric_l2))) / pixels_valid, name=name+'_trans')
@@ -138,12 +141,14 @@ def add_my_pose_loss_cars(prob_logits, labels, prob_logits_in_metric, labels_in_
         depth_diff = 1./tf.gather(trans_in_metric, [2], axis=1) - 1./tf.gather(trans_gt_in_metric, [2], axis=1) # 1/2: reg invd
     else:
         depth_diff = tf.gather(trans_in_metric, [2], axis=1) - tf.gather(trans_gt_in_metric, [2], axis=1) # 2/2: reg depth
-    depth_metric = tf.reduce_sum(tf.multiply(tf.abs(depth_diff), masks_float)) / count_valid
+    depth_diff_abs = tf.abs(depth_diff)
+    depth_metric = tf.reduce_sum(tf.multiply(depth_diff_abs, masks_float)) / count_valid
     depth_metric = tf.identity(depth_metric, name=name+'_Zdepth_metric')
     if not(if_depth):
-        depth_relative_metric = tf.reduce_sum(tf.multiply(tf.abs(depth_diff) * tf.gather(trans_gt_in_metric, [2], axis=1) , masks_float)) / count_valid # 1/2 reg invd
+        depth_relative = depth_diff_abs * tf.gather(trans_gt_in_metric, [2], axis=1) # 1/2 reg invd
     else:
-        depth_relative_metric = tf.reduce_sum(tf.multiply(tf.abs(depth_diff) / tf.gather(trans_gt_in_metric, [2], axis=1) , masks_float)) / count_valid # 2/2 reg depth
+        depth_relative = depth_diff_abs / tf.gather(trans_gt_in_metric, [2], axis=1) # 2/2 reg depth
+    depth_relative_metric = tf.reduce_sum(tf.multiply(depth_relative , masks_float)) / count_valid
     depth_relative_metric = tf.identity(depth_relative_metric, name=name+'_Zdepth_relative_metric')
 
     rot_q_loss = tf.reduce_sum(tf.multiply(tf.norm(rot - rot_gt, axis=1), weights_normalized)) / pixels_valid * balance_rot
@@ -159,7 +164,7 @@ def add_my_pose_loss_cars(prob_logits, labels, prob_logits_in_metric, labels_in_
     dis_rot_metric_loss = tf.identity(dis_rot_metric_loss, name=name+'_rot_quat_metric')
 
     total_loss = tf.identity(total_loss, name=name)
-    return total_loss, prob_logits, rot_q_error_cars, trans_metric_l2
+    return total_loss, prob_logits, rot_q_error_cars, trans_l2, depth_diff_abs, depth_relative
 
 
 def logits_cls_to_logits_probReg(logits, bin_vals):
@@ -304,7 +309,7 @@ def model_init(restore_logdir,
             if ignore_name in variable.op.name:
               variables_to_restore_ignored.append(variable)
       variables_to_restore = list(set(variables_to_restore) - set(variables_to_restore_ignored))
-  print '==== variables_to_restore: ', [variable.op.name for variable in variables_to_restore]
+  # print '==== variables_to_restore: ', [variable.op.name for variable in variables_to_restore]
 
 
   init_assign_op, init_feed_dict = slim.assign_from_checkpoint(

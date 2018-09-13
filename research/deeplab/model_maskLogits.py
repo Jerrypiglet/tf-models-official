@@ -110,6 +110,8 @@ def single_scale_logits(images,
                        seg_map, # [batch_size, H, W, 1], tf.float32
                        car_nums,
                        idx_xys,
+                       bin_vals,
+                       outputs_to_indices,
                        model_options,
                        weight_decay=0.0001,
                        is_training=False,
@@ -158,11 +160,13 @@ def single_scale_logits(images,
       # [logits_height, logits_width], align_corners=True)
   # seg_one_hots_N_rescaled = tf.reshape(seg_one_hots_N_flattened, [-1, logits_height, logits_width, 1])
 
-  outputs_to_logits, outputs_to_weights_map, outputs_to_areas_N = _get_logits_mP( # Here we get the regression 'logits' from features!
+  outputs_to_logits, outputs_to_logits_map, outputs_to_weights_map, outputs_to_areas_N = _get_logits_mP( # Here we get the regression 'logits' from features!
         images,
         seg_map,
         car_nums,
         idx_xys,
+        bin_vals,
+        outputs_to_indices,
         model_options,
         weight_decay=weight_decay,
         reuse=tf.AUTO_REUSE, # support for auto-reuse if variable exists!
@@ -170,12 +174,14 @@ def single_scale_logits(images,
         fine_tune_batch_norm=fine_tune_batch_norm,
         fine_tune_feature_extractor=fine_tune_feature_extractor)
 
-  return outputs_to_logits, outputs_to_weights_map, outputs_to_areas_N
+  return outputs_to_logits, outputs_to_logits_map, outputs_to_weights_map, outputs_to_areas_N
 
 def _get_logits_mP(images,
                 seg_maps, # [batch_size, H, W, 1] float
                 car_nums,
                 idx_xys,
+                bin_vals,
+                outputs_to_indices,
                 model_options,
                 weight_decay=0.0001,
                 reuse=None,
@@ -221,12 +227,14 @@ def _get_logits_mP(images,
         reuse=reuse,
         is_training=is_training,
         fine_tune_batch_norm=fine_tune_batch_norm)
-    x_coords = tf.range(tf.shape(features)[1])
-    y_coords = tf.range(tf.shape(features)[2])
-    Xs, Ys = tf.meshgrid(x_coords, y_coords)
-    features_Xs = tf.tile(tf.expand_dims(tf.expand_dims(tf.transpose(Xs), -1), 0), [tf.shape(features)[0], 1, 1, 1])
-    features_Ys = tf.tile(tf.expand_dims(tf.expand_dims(tf.transpose(Ys), -1), 0), [tf.shape(features)[0], 1, 1, 1])
-    features_concat = tf.concat([features, tf.to_float(features_Xs), tf.to_float(features_Ys)], axis=3)
+    v_coords = tf.range(tf.shape(features)[1])
+    u_coords = tf.range(tf.shape(features)[2])
+    Vs, Us = tf.meshgrid(v_coords, u_coords)
+    features_Ys = tf.tile(tf.expand_dims(tf.expand_dims(tf.transpose(Vs + tf.shape(features)[1]), -1), 0), [tf.shape(features)[0], 1, 1, 1])
+    features_Xs = tf.tile(tf.expand_dims(tf.expand_dims(tf.transpose(Us), -1), 0), [tf.shape(features)[0], 1, 1, 1])
+    features_concat = tf.concat([features,
+        tf.to_float(features_Xs * model_options.decoder_output_stride),
+        tf.to_float(features_Ys) * model_options.decoder_output_stride], axis=3)
     print '== Features_aspp/backbone, features, features_concat:', features_aspp.get_shape(), features_backbone.get_shape(), features.get_shape(), features_concat.get_shape() # (3, 34, 85, 256) (3, 34, 85, 2048) (3, 68, 170, 256)
     features_weight = refine_by_decoder(
         features_aspp,
@@ -240,8 +248,10 @@ def _get_logits_mP(images,
         is_training=is_training,
         fine_tune_batch_norm=fine_tune_batch_norm,
         decoder_scope=WEIGHTS_DECODER_SCOPE)
+    features_weight_concat = tf.concat([features_weight, tf.to_float(features_Xs), tf.to_float(features_Ys)], axis=3)
 
-  outputs_to_logits = {}
+  outputs_to_logits_N = {}
+  outputs_to_logits_map = {}
   outputs_to_weights_map = {}
   outputs_to_areas_N = {}
 
@@ -252,7 +262,7 @@ def _get_logits_mP(images,
     last_dim = model_options.outputs_to_num_classes[output]
 
     weights = (get_branch_logits(
-      features,
+      features_weight_concat,
       1,
       model_options.atrous_rates,
       aspp_with_batch_norm=model_options.aspp_with_batch_norm,
@@ -265,7 +275,7 @@ def _get_logits_mP(images,
       + 1.) / 2. # (batch_size, 68, 170, 1)
 
     logits = get_branch_logits(
-        features_weight,
+        features_concat,
         model_options.outputs_to_num_classes[output],
         model_options.atrous_rates,
         aspp_with_batch_norm=model_options.aspp_with_batch_norm,
@@ -274,12 +284,20 @@ def _get_logits_mP(images,
         reuse=reuse,
         scope_suffix=output+'_logits')
 
+    outputs_to_logits_map[output] = logits
+
+    if output == 'x':
+        logits = logits + tf.to_float(features_Xs) * model_options.decoder_output_stride
+    if output == 'y':
+        logits = logits + tf.to_float(features_Ys) * model_options.decoder_output_stride
+
+
     # Working
     with tf.variable_scope('per_car_logits_aggre_2'):
         num_samples = tf.shape(logits)[0]
         init_array = tf.TensorArray(tf.float32, size=num_samples, infer_shape=False) # https://stackoverflow.com/questions/43270849/tensorflow-map-fn-tensorarray-has-inconsistent-shapes
         def loop_body_per_sample(i, ta):
-            logits_sample = tf.gather(logits, i) # (68, 170, 256)
+            logits_sample = tf.gather(logits, i) # (68, 170, 32)
             weight_sample = tf.gather(weights, i) # (68, 170, 1), in [0., 1.]
             seg_map_sample = tf.gather(seg_maps, i) # (68, 170, 1)
             car_num_sample = tf.gather(car_nums, i) # ()
@@ -301,7 +319,7 @@ def _get_logits_mP(images,
 
                 weight_car_normlized = tf.exp(weight_car_masked) / tf.reduce_sum(tf.exp(weight_car_masked))
 
-                logits_car_weighted = tf.multiply(logits_car_masked, weight_car_normlized_ones) # [-1, 256]
+                logits_car_weighted = tf.multiply(logits_car_masked, weight_car_normlized) # [-1, 256]
                 logits_car_aggre = tf.reduce_sum(logits_car_weighted, 0) # (256,)
                 return tf.cond(tf.rank(logits_car_masked)<2,
                         lambda: tf.zeros([tf.shape(logits)[-1]], dtype=tf.float32), lambda: logits_car_aggre)
@@ -318,10 +336,11 @@ def _get_logits_mP(images,
     logits_N = tf.slice(logits_areas_N, [0, 0], [-1, last_dim])
     areas_N = tf.slice(logits_areas_N, [0, last_dim], [-1, 1])
 
-    outputs_to_logits[output] = logits_N # [N, 32]
+    outputs_to_logits_N[output] = logits_N # [N, 32]
+    print logits.get_shape(), features_Xs.get_shape(), logits.get_shape(), outputs_to_logits_N[output].get_shape(), '+++++++++++++', output
     outputs_to_weights_map[output] = weights # [batch_size, H', W', 1]
     outputs_to_areas_N[output] = areas_N # [N, 1]
-  return outputs_to_logits, outputs_to_weights_map, outputs_to_areas_N
+  return outputs_to_logits_N, outputs_to_logits_map, outputs_to_weights_map, outputs_to_areas_N
 
 # def _get_logits(images,
 #                 seg_int,

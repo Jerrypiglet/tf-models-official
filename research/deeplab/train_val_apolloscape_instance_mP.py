@@ -281,14 +281,12 @@ def main(unused_argv):
       outputs_to_indices = {}
       for output, bin_num, idx in zip(dataset.output_names, dataset.bin_nums,range(len(dataset.output_names))):
           if FLAGS.if_discrete_loss:
-            outputs_to_num_classes[output] = bin_num
+              outputs_to_num_classes[output] = bin_num
           else:
-           outputs_to_num_classes[output] = 1
+              outputs_to_num_classes[output] = 1
           outputs_to_indices[output] = idx
       bin_vals = [tf.constant(value=[bin_range[i]], dtype=tf.float32, shape=[1, dataset.bin_nums[i]], name=name) \
               for i, name in enumerate(dataset.output_names)]
-      # print outputs_to_num_classes
-      # print spaces_to_indices
 
       model_options = common.ModelOptions(
         outputs_to_num_classes=outputs_to_num_classes,
@@ -335,8 +333,8 @@ def main(unused_argv):
     with tf.device('/device:GPU:%d'%(FLAGS.num_clones+1)):
         if FLAGS.if_val:
           ## Construct the validation graph; takes one GPU.
-          image_names, z_logits, outputs_to_weights, seg_one_hots_list, weights_normalized, car_nums, car_nums_list, idx_xys, reg_logits_pose_in_metric, pose_dict_N, prob_logits_pose, quat_deltauv_dinvd_dict_N, masks_float = _build_deeplab(FLAGS, inputs_queue_val.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_vals, bin_range, dataset_val, codes, is_training=False)
-          # pose_dict_N, rotuvd_dict_N, xyz, quat_deltauv_dinvd_dict_N = _build_deeplab(FLAGS, inputs_queue_val.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_vals, bin_range, dataset_val, codes, is_training=False)
+          image_names, z_logits, outputs_to_weights, seg_one_hots_list, weights_normalized, car_nums, car_nums_list, idx_xys, reg_logits_pose_in_metric, pose_dict_N, prob_logits_pose, rotuvd_dict_N, masks_float, label_uv_flow_map, logits_uv_flow_map = _build_deeplab(FLAGS, inputs_queue_val.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_vals, bin_range, dataset_val, codes, is_training=False)
+          # pose_dict_N, xyz = _build_deeplab(FLAGS, inputs_queue_val.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_vals, bin_range, dataset_val, codes, is_training=False)
 
     # Gather initial summaries.
     summaries = set(tf.get_collection(tf.GraphKeys.SUMMARIES))
@@ -349,8 +347,8 @@ def main(unused_argv):
       else:
           pattern_train = '%s:0'
       pattern_val = 'val-%s:0'
-      # pattern = pattern_val if FLAGS.if_val else pattern_train
-      pattern = pattern_train
+      pattern = pattern_val if FLAGS.if_val else pattern_train
+      # pattern = pattern_train
 
       gather_list = range(min(3, int(FLAGS.train_batch_size/FLAGS.num_clones)))
       print gather_list
@@ -370,6 +368,16 @@ def main(unused_argv):
           summary_tensor_float = tf.clip_by_value(summary_tensor_float, 0., 255.)
           summary_tensor_uint8 = tf.cast(summary_tensor_float, tf.uint8)
           return summary_tensor_uint8, (offset_to_zero, scale_to_255)
+      x_coords = tf.range(68)
+      y_coords = tf.range(170)
+      Xs, Ys = tf.meshgrid(x_coords, y_coords)
+      features_Ys = tf.tile(tf.expand_dims(tf.expand_dims(tf.transpose(Xs), -1), 0), [1, 1, 1, 1])
+      features_Xs = tf.tile(tf.expand_dims(tf.expand_dims(tf.transpose(Ys), -1), 0), [1, 1, 1, 1])
+
+      features_Xs_summary, _ = scale_to_255(features_Xs*4)
+      features_Ys_summary, _ = scale_to_255(features_Ys*4)
+      summaries.add(tf.summary.image('test/features_Xs', features_Xs_summary))
+      summaries.add(tf.summary.image('test/features_Ys', features_Ys_summary))
 
       for pattern in [pattern_train, pattern_val] if FLAGS.if_val else [pattern_train]:
           if pattern == pattern_train:
@@ -396,9 +404,6 @@ def main(unused_argv):
           summary_image_name = graph.get_tensor_by_name(pattern%common.IMAGE_NAME)
           summaries.add(tf.summary.text('gt'+label_postfix+'/%s' % common.IMAGE_NAME, tf.gather(summary_image_name, gather_list)))
 
-          summary_image_name = graph.get_tensor_by_name(pattern_train%common.IMAGE_NAME)
-          summaries.add(tf.summary.text('gt'+label_postfix+'/%s_train' % common.IMAGE_NAME, tf.gather(summary_image_name, gather_list)))
-
           summary_vis = graph.get_tensor_by_name(pattern%'vis')
           summaries.add(tf.summary.image('gt'+label_postfix+'/%s' % 'vis', tf.gather(summary_vis, gather_list)))
 
@@ -421,11 +426,28 @@ def main(unused_argv):
               shape_id_sim_map_uint8, _ = scale_to_255(shape_id_sim_map, pixel_scaling=(0., 255.))
               summaries.add(tf.summary.image('metrics_map/shape_id_sim_map-valInv', tf.gather(shape_id_sim_map_uint8, gather_list)))
 
+
+          label_uv_flow_map = graph.get_tensor_by_name(pattern%'label_uv_flow_map')
+          logits_uv_flow_map = graph.get_tensor_by_name(pattern%'logits_uv_flow_map')
+          for output_idx, output in enumerate(['u', 'v']):
+              summary_label_output = tf.gather(label_uv_flow_map, [output_idx], axis=3)
+              summary_label_output= tf.where(summary_mask, summary_label_output, tf.zeros_like(summary_label_output))
+              summary_label_output_uint8, pixel_scaling = scale_to_255(summary_label_output)
+              summaries.add(tf.summary.image('test'+label_postfix+'/%s_flow_label' % output, tf.gather(summary_label_output_uint8, gather_list)))
+
+              summary_logits_output = tf.gather(logits_uv_flow_map, [output_idx], axis=3)
+              summary_logits_output = mask_rescaled_float * summary_logits_output
+              summary_logits_output_uint8, _ = scale_to_255(summary_logits_output, pixel_scaling)
+              summaries.add(tf.summary.image('test'+label_postfix+'/%s_flow_logits' % output, tf.gather(summary_logits_output_uint8, gather_list)))
+
+          for trans_metrics in ['trans_l2', 'depth_diff_abs', 'depth_relative']:
+              summary_trans = train_utils.get_avg_tensor_from_scopes(FLAGS.num_clones, '%s:0', graph, config, trans_metrics, return_concat=True)
+              summaries.add(tf.summary.histogram('metrics_map'+label_postfix+'/%s' % trans_metrics, summary_trans))
+
           label_outputs = graph.get_tensor_by_name(pattern%'label_pose_shape_map')
           # label_id_outputs = graph.get_tensor_by_name(pattern%'pose_shape_label_id_map')
           logit_outputs = graph.get_tensor_by_name(pattern%'prob_logits_pose_shape_map')
           # seg_one_hots_outputs = graph.get_tensor_by_name(pattern%'seg_one_hots')
-
           for output_idx, output in enumerate(dataset.output_names):
               # # Scale up summary image pixel values for better visualization.
               summary_label_output = tf.gather(label_outputs, [output_idx], axis=3)
@@ -433,14 +455,13 @@ def main(unused_argv):
               summary_label_output_uint8, pixel_scaling = scale_to_255(summary_label_output)
               summaries.add(tf.summary.image('output'+label_postfix+'/%s_label' % output, tf.gather(summary_label_output_uint8, gather_list)))
 
-              summary_logit_output = tf.gather(logit_outputs, [output_idx], axis=3)
-              summary_logit_output = tf.where(summary_mask, summary_logit_output, tf.zeros_like(summary_logit_output))
-              summary_logit_output_uint8, _ = scale_to_255(summary_logit_output, pixel_scaling)
+              summary_logits_output = tf.gather(logit_outputs, [output_idx], axis=3)
+              summary_logits_output = tf.where(summary_mask, summary_logits_output, tf.zeros_like(summary_logits_output))
+              summary_logits_output_uint8, _ = scale_to_255(summary_logits_output, pixel_scaling)
               summaries.add(tf.summary.image(
-                  'output'+label_postfix+'/%s_logit' % output, tf.gather(summary_logit_output_uint8, gather_list)))
+                  'output'+label_postfix+'/%s_logit' % output, tf.gather(summary_logits_output_uint8, gather_list)))
 
-
-              summary_weights_output = outputs_to_weights[output]
+              summary_weights_output = graph.get_tensor_by_name(pattern%('%s_weights_map'%output))
               summary_weights_output = mask_rescaled_float * summary_weights_output
               summary_weights_output_uint8, _ = scale_to_255(summary_weights_output)
               summaries.add(tf.summary.image(
@@ -457,7 +478,7 @@ def main(unused_argv):
               # summaries.add(tf.summary.image(
               #     'test/%s_label_id' % output, tf.gather(summary_label_id_output_uint8, gather_list)))
 
-              summary_diff = tf.abs(tf.to_float(summary_label_output_uint8) - tf.to_float(summary_logit_output_uint8))
+              summary_diff = tf.abs(tf.to_float(summary_label_output_uint8) - tf.to_float(summary_logits_output_uint8))
               summary_diff = tf.where(summary_mask, summary_diff, tf.zeros_like(summary_diff))
               summaries.add(tf.summary.image('diff_map'+label_postfix+'/%s_ldiff' % output, tf.gather(tf.cast(summary_diff, tf.uint8), gather_list)))
 
@@ -465,8 +486,9 @@ def main(unused_argv):
                   summary_loss = graph.get_tensor_by_name((pattern%'loss_slice_reg_').replace(':0', '')+output+':0')
                   summaries.add(tf.summary.scalar('slice_loss'+label_postfix+'/'+(pattern%'reg_').replace(':0', '')+output, summary_loss))
 
-                  summary_loss = graph.get_tensor_by_name((pattern%'loss_slice_cls_').replace(':0', '')+output+':0')
-                  summaries.add(tf.summary.scalar('slice_loss'+label_postfix+'/'+(pattern%'cls_').replace(':0', '')+output, summary_loss))
+                  if output_idx in [0, 1, 2, 3, 6]:
+                      summary_loss = graph.get_tensor_by_name((pattern%'loss_slice_cls_').replace(':0', '')+output+':0')
+                      summaries.add(tf.summary.scalar('slice_loss'+label_postfix+'/'+(pattern%'cls_').replace(':0', '')+output, summary_loss))
 
           add_metrics = ['loss_all_shape_id_cls_metric', 'loss_reg_shape'] if FLAGS.if_summary_shape_metrics else []
           for loss_name in ['loss_reg_rot_quat_metric', 'loss_reg_rot_quat', 'loss_reg_trans_metric', 'loss_reg_Zdepth_metric', 'loss_reg_Zdepth_relative_metric',
@@ -507,7 +529,7 @@ def main(unused_argv):
       # Keep trainable variables for last layers ONLY.
       # weight_scopes = [output_name+'_weights' for output_name in dataset.output_names] + ['decoder_weights']
       # grads_and_vars = train_utils.filter_gradients(weight_scopes, grads_and_vars)
-      print '==== variables_to_train: ', [grad_and_var[1].op.name for grad_and_var in grads_and_vars]
+      # print '==== variables_to_train: ', [grad_and_var[1].op.name for grad_and_var in grads_and_vars]
 
       grad_mult = train_utils.get_model_gradient_multipliers(
           last_layers, FLAGS.last_layer_gradient_multiplier)
@@ -551,11 +573,9 @@ def main(unused_argv):
         # print 'test: ', test.shape, np.max(test), np.min(test), np.mean(test), test.dtype
 
         # mask_rescaled_float = graph.get_tensor_by_name('%s:0'%'mask_rescaled_float')
-        # test_out, test_out2, test_out3, test_out4 = sess.run([pose_dict_N, rotuvd_dict_N, xyz, quat_deltauv_dinvd_dict_N])
+        # test_out, test_out2 = sess.run([pose_dict_N, xyz])
         # print test_out
         # print test_out2
-        # print test_out3
-        # print test_out4
         # test_out3 = test_out3[test_out4!=0.]
         # print test_out3
         # print 'outputs_to_weights[z] masked: ', test_out3.shape, np.max(test_out3), np.min(test_out3), np.mean(test_out3), test_out3.dtype
@@ -585,7 +605,7 @@ def main(unused_argv):
             # #         ('%s/%s:0' % (first_clone_scope, 'not_ignore_mask_in_loss')).strip('/'))
 
             mask_rescaled_float = graph.get_tensor_by_name('val-%s:0'%'mask_rescaled_float')
-            _, test_out, test_out2, test_out3, test_out4, test_out5, test_out6, test_out7, test_out8, test_out9, test_out10, test_out11, test_out12, test_out13 = sess.run([summary_op, image_names, z_logits, outputs_to_weights['z'], mask_rescaled_float, weights_normalized, prob_logits_pose, pose_dict_N, car_nums, car_nums_list, idx_xys, quat_deltauv_dinvd_dict_N, masks_float, reg_logits_pose_in_metric])
+            _, test_out, test_out2, test_out3, test_out4, test_out5, test_out6, test_out7, test_out8, test_out9, test_out10, test_out11, test_out12, test_out13, test_out14, test_out15 = sess.run([summary_op, image_names, z_logits, outputs_to_weights['z'], mask_rescaled_float, weights_normalized, prob_logits_pose, pose_dict_N, car_nums, car_nums_list, idx_xys, rotuvd_dict_N, masks_float, reg_logits_pose_in_metric, label_uv_flow_map, logits_uv_flow_map])
             print test_out
             print test_out2.shape
             test_out3 = test_out3[test_out4!=0.]
@@ -599,8 +619,10 @@ def main(unused_argv):
             print test_out7, test_out7.shape
             print '-- prob_logits_pose: ', test_out6.shape, np.max(test_out6), np.min(test_out6), np.mean(test_out6), test_out6.dtype
             print test_out6, test_out6.shape
-            print '-- quat_deltauv_dinvd_dict_N: ', test_out11.shape, np.max(test_out11), np.min(test_out11), np.mean(test_out11), test_out11.dtype
+            print '-- rotuvd_dict_N: ', test_out11.shape, np.max(test_out11), np.min(test_out11), np.mean(test_out11), test_out11.dtype
             print test_out11, test_out11.shape
+            print '-- label_uv_flow_map: ', test_out14.shape, np.max(test_out14[:, :, :, 0]), np.min(test_out14[:, :, :, 0]), np.max(test_out14[:, :, :, 1]), np.min(test_out14[:, :, :, 1])
+            print '-- logits_uv_flow_map: ', test_out15.shape, np.max(test_out15[:, :, :, 0]), np.min(test_out14[:, :, :, 0]), np.max(test_out15[:, :, :, 0]), np.min(test_out15[:, :, :, 0])
             print '-- car_nums: ', test_out8, test_out9, test_out10.T
 
             # # Vlen(test_out), test_out[0].shape
