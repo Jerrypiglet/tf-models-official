@@ -244,7 +244,7 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
   prob_logits_pose_shape = tf.identity(prob_logits_pose_shape, name=is_training_prefix+'prob_logits_pose_shape_cars')
   pose_shape_dict_N = tf.concat([rotuvd_dict_N, shape_dict_N], axis=1)
 
-  print FLAGS.save_summaries_images
+  masks_map_filtered = tf.identity(logits_cars_to_map(masks_float), name=is_training_prefix+'masks_map_filtered')
   if FLAGS.save_summaries_images:
     prob_logits_pose_shape_map = logits_cars_to_map(prob_logits_pose_shape)
     prob_logits_pose_shape_map = tf.identity(prob_logits_pose_shape_map, name=is_training_prefix+'prob_logits_pose_shape_map')
@@ -265,6 +265,27 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
 
     logits_uv_flow_map = tf.identity(
             tf.concat([outputs_to_logits_map['x'], outputs_to_logits_map['y']], axis=3), name=is_training_prefix+'logits_uv_flow_map')
+
+    # label_uv_map_rescaled = logits_cars_to_map(tf.gather(rotuvd_dict_N, [4, 5], axis=3) # (-1, 68, 170, 2)
+    # v_coords_rescaled = tf.range(tf.shape(label_uv_map_rescaled)[1])
+    # u_coords_rescaled = tf.range(tf.shape(label_uv_map_rescaled)[2])
+    # Vs_rescaled, Us_rescaled = tf.meshgrid(v_coords_rescaled, u_coords_rescaled)
+    # features_Ys_rescaled = tf.tile(tf.expand_dims(tf.expand_dims(tf.transpose(Vs_rescaled + tf.shape(label_uv_map_rescaled)[1]), -1), 0), [tf.shape(label_uv_map_rescaled)[0], 1, 1, 1]) # Adding half height because of the crop!
+    # features_Xs_rescaled = tf.tile(tf.expand_dims(tf.expand_dims(tf.transpose(Us_rescaled), -1), 0), [tf.shape(label_uv_map_rescaled)[0], 1, 1, 1])
+    # coords_UVs_concat_rescaled = tf.to_float(tf.concat([features_Xs_rescaled * model_options.decoder_output_stride,
+    #     features_Ys_rescaled * model_options.decoder_output_stride], axis=3))
+    # label_uv_flow_map_rescaled = label_uv_map_rescaled - coords_UVs_concat_rescaled
+    # label_uv_flow_map_rescaled = tf.identity(label_uv_flow_map_rescaled, name=is_training_prefix+'label_uv_flow_map_rescaled')
+
+    balance_uv_flow = 0.1
+    label_uv_flow_map_rescaled = tf.image.resize_nearest_neighbor(label_uv_flow_map, [tf.shape(logits_uv_flow_map)[1], tf.shape(logits_uv_flow_map)[2]], align_corners=True)
+    masks_map_filtered_rescaled = tf.image.resize_nearest_neighbor(masks_map_filtered, [tf.shape(logits_uv_flow_map)[1], tf.shape(logits_uv_flow_map)[2]], align_corners=True)
+    pixels_valid_filtered = tf.reduce_sum(masks_map_filtered_rescaled)+1e-10
+    uv_flow_map_diff = tf.multiply(tf.abs(logits_uv_flow_map - label_uv_flow_map_rescaled), masks_map_filtered_rescaled)
+    loss_reg_uv_flow_map = tf.reduce_sum(uv_flow_map_diff) / pixels_valid_filtered * balance_uv_flow # L1 loss for uv flow
+    loss_reg_uv_flow_map = tf.identity(loss_reg_uv_flow_map, name=is_training_prefix+'loss_reg_uv_flow_map')
+    if is_training:
+        tf.losses.add_loss(loss_reg_uv_flow_map, loss_collection=tf.GraphKeys.LOSSES)
 
   label_id_list = []
   loss_slice_crossentropy_list = []

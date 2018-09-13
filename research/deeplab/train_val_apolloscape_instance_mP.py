@@ -390,6 +390,11 @@ def main(unused_argv):
           summary_mask_float = tf.to_float(summary_mask)
           summaries.add(tf.summary.image('gt'+label_postfix+'/%s' % 'not_ignore_mask', tf.gather(tf.cast(summary_mask_float*255., tf.uint8), gather_list)))
 
+          summary_mask_filtered = graph.get_tensor_by_name(pattern%'masks_map_filtered')
+          summary_mask_filtered = tf.reshape(summary_mask_filtered, [-1, dataset.height, dataset.width, 1])
+          summary_mask_float_filtered = tf.to_float(summary_mask_filtered)
+          summaries.add(tf.summary.image('gt'+label_postfix+'/%s' % 'masks_map_filtered', tf.gather(tf.cast(summary_mask_float_filtered*255., tf.uint8), gather_list)))
+
           mask_rescaled_float = graph.get_tensor_by_name(pattern%'mask_rescaled_float')
 
           seg_outputs = graph.get_tensor_by_name(pattern%'seg')
@@ -494,8 +499,7 @@ def main(unused_argv):
                       summaries.add(tf.summary.scalar('slice_loss'+label_postfix+'/'+(pattern%'cls_').replace(':0', '')+output, summary_loss))
 
           add_metrics = ['loss_all_shape_id_cls_metric', 'loss_reg_shape'] if FLAGS.if_summary_shape_metrics else []
-          for loss_name in ['loss_reg_rot_quat_metric', 'loss_reg_rot_quat', 'loss_reg_trans_metric', 'loss_reg_Zdepth_metric', 'loss_reg_Zdepth_relative_metric', 'loss_reg_x_metric', 'loss_reg_y_metric',
-                  'loss_reg_trans', 'loss_cls_ALL'] + add_metrics:
+          for loss_name in ['loss_reg_rot_quat_metric', 'loss_reg_rot_quat', 'loss_reg_trans_metric', 'loss_reg_Zdepth_metric', 'loss_reg_Zdepth_relative_metric', 'loss_reg_x_metric', 'loss_reg_y_metric', 'loss_reg_uv_flow_map', 'loss_reg_trans', 'loss_cls_ALL'] + add_metrics:
               if pattern == pattern_val:
                 summary_loss_avg = graph.get_tensor_by_name(pattern%loss_name)
               else:

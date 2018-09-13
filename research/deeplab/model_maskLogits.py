@@ -248,7 +248,9 @@ def _get_logits_mP(images,
         is_training=is_training,
         fine_tune_batch_norm=fine_tune_batch_norm,
         decoder_scope=WEIGHTS_DECODER_SCOPE)
-    features_weight_concat = tf.concat([features_weight, tf.to_float(features_Xs), tf.to_float(features_Ys)], axis=3)
+    features_weight_concat = tf.concat([features_weight,
+        tf.to_float(features_Xs) * model_options.decoder_output_stride,
+        tf.to_float(features_Ys) * model_options.decoder_output_stride], axis=3)
 
   outputs_to_logits_N = {}
   outputs_to_logits_map = {}
