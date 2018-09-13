@@ -217,6 +217,7 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
           balance_trans=balance_trans_reg_loss,
           upsample_logits=FLAGS.upsample_logits,
           name=is_training_prefix + 'loss_reg',
+          is_training_prefix = is_training_prefix,
           loss_collection=tf.GraphKeys.LOSSES if is_training else None,
           if_depth=FLAGS.if_depth)
   # rot_q_error_map = tf.identity(logits_cars_to_map(rot_q_error_cars), name=is_training_prefix+'rot_error_map')
@@ -318,7 +319,7 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
       if FLAGS.save_summaries_images:
         shape_cls_metric_error_map = tf.identity(logits_cars_to_map(shape_cls_metric_error_cars), name=is_training_prefix+'shape_id_sim_map')
 
-      shape_cls_metric_loss_check = tf.reduce_sum(shape_cls_metric_error_map) / count_valid
+      shape_cls_metric_loss_check = tf.reduce_sum(shape_cls_metric_error_cars) / count_valid
       shape_cls_metric_loss_check = tf.identity(shape_cls_metric_loss_check, name=is_training_prefix+'loss_all_shape_id_cls_metric')
 
   return samples[common.IMAGE_NAME], outputs_to_logits['z'], outputs_to_weights_map, seg_one_hots_list, weights_normalized, samples['car_nums'], car_nums_list, idx_xys, prob_logits_pose_in_metric, pose_dict_N, prob_logits_pose, rotuvd_dict_N, masks_float, label_uv_flow_map, logits_uv_flow_map

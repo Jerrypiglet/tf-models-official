@@ -288,8 +288,10 @@ def _get_logits_mP(images,
 
     if output == 'x':
         logits = logits + tf.to_float(features_Xs) * model_options.decoder_output_stride
+        print '++++, added grids to x'
     if output == 'y':
         logits = logits + tf.to_float(features_Ys) * model_options.decoder_output_stride
+        print '++++, added grids to y'
 
 
     # Working

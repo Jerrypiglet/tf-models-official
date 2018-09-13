@@ -440,8 +440,11 @@ def main(unused_argv):
               summary_logits_output_uint8, _ = scale_to_255(summary_logits_output, pixel_scaling)
               summaries.add(tf.summary.image('test'+label_postfix+'/%s_flow_logits' % output, tf.gather(summary_logits_output_uint8, gather_list)))
 
-          for trans_metrics in ['trans_l2', 'depth_diff_abs', 'depth_relative']:
-              summary_trans = train_utils.get_avg_tensor_from_scopes(FLAGS.num_clones, '%s:0', graph, config, trans_metrics, return_concat=True)
+          for trans_metrics in ['trans_l2', 'depth_diff_abs', 'depth_relative', 'x_l1', 'y_l1']:
+              if pattern == pattern_val:
+                summary_trans = graph.get_tensor_by_name(pattern%trans_metrics)
+              else:
+                summary_trans = train_utils.get_avg_tensor_from_scopes(FLAGS.num_clones, '%s:0', graph, config, trans_metrics, return_concat=True)
               summaries.add(tf.summary.histogram('metrics_map'+label_postfix+'/%s' % trans_metrics, summary_trans))
 
           label_outputs = graph.get_tensor_by_name(pattern%'label_pose_shape_map')
@@ -491,7 +494,7 @@ def main(unused_argv):
                       summaries.add(tf.summary.scalar('slice_loss'+label_postfix+'/'+(pattern%'cls_').replace(':0', '')+output, summary_loss))
 
           add_metrics = ['loss_all_shape_id_cls_metric', 'loss_reg_shape'] if FLAGS.if_summary_shape_metrics else []
-          for loss_name in ['loss_reg_rot_quat_metric', 'loss_reg_rot_quat', 'loss_reg_trans_metric', 'loss_reg_Zdepth_metric', 'loss_reg_Zdepth_relative_metric',
+          for loss_name in ['loss_reg_rot_quat_metric', 'loss_reg_rot_quat', 'loss_reg_trans_metric', 'loss_reg_Zdepth_metric', 'loss_reg_Zdepth_relative_metric', 'loss_reg_x_metric', 'loss_reg_y_metric',
                   'loss_reg_trans', 'loss_cls_ALL'] + add_metrics:
               if pattern == pattern_val:
                 summary_loss_avg = graph.get_tensor_by_name(pattern%loss_name)
