@@ -341,7 +341,7 @@ def main(unused_argv):
     with tf.device('/device:GPU:%d'%(FLAGS.num_clones+1)):
         if FLAGS.if_val:
           ## Construct the validation graph; takes one GPU.
-          image_names, z_logits, outputs_to_weights, seg_one_hots_list, weights_normalized, car_nums, car_nums_list, idx_xys, reg_logits_pose_xy_from_uv, pose_dict_N, prob_logits_pose, rotuvd_dict_N, masks_float, label_uv_flow_map, logits_uv_flow_map = _build_deeplab(FLAGS, inputs_queue_val.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_vals, bin_range, dataset_val, codes, is_training=False)
+          image_names, z_logits, outputs_to_weights, seg_one_hots_list, weights_normalized, car_nums, car_nums_list, idx_xys, reg_logits_pose_xy_from_uv, pose_dict_N, prob_logits_pose, rotuvd_dict_N, masks_float, label_uv_flow_map, logits_uv_flow_map, shape_cls_metric_error_cars, count_valid = _build_deeplab(FLAGS, inputs_queue_val.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_vals, bin_range, dataset_val, codes, is_training=False)
           # pose_dict_N, xyz = _build_deeplab(FLAGS, inputs_queue_val.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_vals, bin_range, dataset_val, codes, is_training=False)
 
     # Gather initial summaries.
@@ -613,7 +613,7 @@ def main(unused_argv):
         if FLAGS.if_val and train_step_fn.step % FLAGS.val_interval_steps == 0:
             # first_clone_test = graph.get_tensor_by_name('val-loss_all:0')
             # test = sess.run(first_clone_test)
-            print '-- Validating...'
+            print '-- Validating...' + FLAGS.task_name
             # first_clone_test = graph.get_tensor_by_name(
             #         ('%s/%s:0' % (first_clone_scope, 'z')).strip('/'))
             # # first_clone_test2 = graph.get_tensor_by_name(
@@ -622,7 +622,7 @@ def main(unused_argv):
             # #         ('%s/%s:0' % (first_clone_scope, 'not_ignore_mask_in_loss')).strip('/'))
 
             mask_rescaled_float = graph.get_tensor_by_name('val-%s:0'%'mask_rescaled_float')
-            _, test_out, test_out2, test_out3, test_out4, test_out5, test_out6, test_out7, test_out8, test_out9, test_out10, test_out11, test_out12, test_out13, test_out14, test_out15 = sess.run([summary_op, image_names, z_logits, outputs_to_weights['z'], mask_rescaled_float, weights_normalized, prob_logits_pose, pose_dict_N, car_nums, car_nums_list, idx_xys, rotuvd_dict_N, masks_float, reg_logits_pose_xy_from_uv, label_uv_flow_map, logits_uv_flow_map])
+            _, test_out, test_out2, test_out3, test_out4, test_out5, test_out6, test_out7, test_out8, test_out9, test_out10, test_out11, test_out12, test_out13, test_out14, test_out15, test_out16, test_out17 = sess.run([summary_op, image_names, z_logits, outputs_to_weights['z'], mask_rescaled_float, weights_normalized, prob_logits_pose, pose_dict_N, car_nums, car_nums_list, idx_xys, rotuvd_dict_N, masks_float, reg_logits_pose_xy_from_uv, label_uv_flow_map, logits_uv_flow_map, shape_cls_metric_error_cars, count_valid])
             print test_out
             print test_out2.shape
             test_out3 = test_out3[test_out4!=0.]
@@ -642,6 +642,7 @@ def main(unused_argv):
                 print '-- label_uv_flow_map: ', test_out14.shape, np.max(test_out14[:, :, :, 0]), np.min(test_out14[:, :, :, 0]), np.max(test_out14[:, :, :, 1]), np.min(test_out14[:, :, :, 1])
                 print '-- logits_uv_flow_map: ', test_out15.shape, np.max(test_out15[:, :, :, 0]), np.min(test_out14[:, :, :, 0]), np.max(test_out15[:, :, :, 0]), np.min(test_out15[:, :, :, 0])
             print '-- car_nums: ', test_out8, test_out9, test_out10.T
+            print test_out16.shape, test_out17
 
             # # Vlen(test_out), test_out[0].shape
             # # print test_out2.shape, test_out2

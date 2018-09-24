@@ -118,7 +118,7 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
   reg_logits_mask = tf.logical_not(tf.is_nan(tf.reduce_sum(reg_logits_concat, axis=1, keepdims=True)))
   # for output in dataset.output_names: # should be identical for all outputt
   areas_masked = outputs_to_areas_N[dataset.output_names[0]]
-  pixels_valid = tf.reduce_sum(areas_masked)+1e-10
+  # pixels_valid = tf.reduce_sum(areas_masked)+1e-10
   masks_float = tf.to_float(tf.not_equal(areas_masked, 0.))
   # weights_normalized = tf.to_float(tf.shape(weights_masked)[0]) * weights_masked / tf.reduce_sum(weights_masked) # [N, 1]. sum should be N in for N cars in the batch
   weights_normalized = areas_masked # weights equals area; will be divided by num of all pixels later
@@ -134,7 +134,7 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
 
   ## Regression loss for pose
   balance_rot_reg_loss = 1.
-  balance_trans_reg_loss = 1.
+  balance_trans_reg_loss = 10.
   pose_dict_N = tf.gather_nd(samples['pose_dict'], idx_xys) # [N, 7]
   pose_dict_N = tf.identity(pose_dict_N, is_training_prefix+'pose_dict_N')
   rotuvd_dict_N = tf.gather_nd(samples['rotuvd_dict'], idx_xys) # [N, 7]
@@ -162,7 +162,9 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
   #     within_range(tf.gather(quat_deltauv_dinvd_dict_N, [5], axis=1), -20., 5.)
   #     ))
   # masks_float = masks_float * rotuvd_dict_N_within * bbox_c_dict_N_within * quat_deltauv_dinvd_dict_N_within
-  masks_float = masks_float * rotuvd_dict_N_within
+  masks_float = masks_float * rotuvd_dict_N_within # [N, 1]
+  weights_normalized = masks_float * weights_normalized
+  count_valid = tf.reduce_sum(masks_float)+1e-10
 
   def rotuvd_dict_N_2_quat_xy_dinvd_dict_N(rotuvd_dict_N_input):
       u = tf.gather(rotuvd_dict_N_input, [4], axis=1)
@@ -199,7 +201,6 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
   #     return quat_xy_dinvd_dict_N
 
 
-  count_valid = tf.reduce_sum(masks_float)+1e-10
   prob_logits_pose = tf.gather(reg_logits_concat, [0, 1, 2, 3, 4, 5, 6], axis=1)
   prob_logits_pose = tf.identity(prob_logits_pose, name=is_training_prefix+'prob_logits_pose')
   if FLAGS.if_uvflow:
@@ -304,7 +305,7 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
     loss_slice_reg = tf.identity(loss_slice_reg, name=is_training_prefix+'loss_slice_reg_'+output)
 
     ## Cross-entropy loss for each output http://icode.baidu.com/repos/baidu/personal-code/video_seg_transfer/blob/with_db:Networks/mx_losses.py (L89)
-    balance_cls_loss = 1e-1
+    balance_cls_loss = 1e-3
     if output not in ['x', 'y'] or not(FLAGS.if_uvflow):
         print '... adding cls loss for: ', idx_output, output
         bin_vals_output = bin_range[idx_output]
@@ -315,7 +316,7 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
         neg_log = -1. * tf.nn.log_softmax(outputs_to_logits[output])
         gt_idx = tf.one_hot(tf.squeeze(label_id_slice), depth=dataset.bin_nums[idx_output], axis=-1)
         loss_slice_crossentropy = tf.reduce_sum(tf.multiply(gt_idx, neg_log), axis=1, keepdims=True)
-        loss_slice_crossentropy= tf.reduce_sum(tf.multiply(weights_normalized, loss_slice_crossentropy)) / pixels_valid * balance_cls_loss
+        loss_slice_crossentropy= tf.reduce_sum(tf.multiply(weights_normalized, loss_slice_crossentropy)) / count_valid * balance_cls_loss
         loss_slice_crossentropy = tf.identity(loss_slice_crossentropy, name=is_training_prefix+'loss_slice_cls_'+output)
         loss_slice_crossentropy_list.append(loss_slice_crossentropy)
         if is_training:
@@ -342,7 +343,7 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
       if FLAGS.save_summaries_images:
         shape_cls_metric_error_map = tf.identity(logits_cars_to_map(shape_cls_metric_error_cars), name=is_training_prefix+'shape_id_sim_map')
 
-      shape_cls_metric_loss_check = tf.reduce_sum(shape_cls_metric_error_cars) / count_valid
+      shape_cls_metric_loss_check = tf.reduce_sum(shape_cls_metric_error_cars * masks_float) / count_valid
       shape_cls_metric_loss_check = tf.identity(shape_cls_metric_loss_check, name=is_training_prefix+'loss_all_shape_id_cls_metric')
 
-  return samples[common.IMAGE_NAME], outputs_to_logits['z'], outputs_to_weights_map, seg_one_hots_list, weights_normalized, samples['car_nums'], car_nums_list, idx_xys, prob_logits_pose_xy_from_uv if FLAGS.if_uvflow else prob_logits_pose, pose_dict_N, prob_logits_pose, rotuvd_dict_N, masks_float, tf.multiply(masks_map_filtered, label_uv_flow_map) if FLAGS.if_uvflow else masks_map_filtered, tf.multiply(masks_map_filtered_rescaled, logits_uv_flow_map) if FLAGS.if_uvflow else masks_map_filtered
+  return samples[common.IMAGE_NAME], outputs_to_logits['z'], outputs_to_weights_map, seg_one_hots_list, weights_normalized, samples['car_nums'], car_nums_list, idx_xys, prob_logits_pose_xy_from_uv if FLAGS.if_uvflow else prob_logits_pose, pose_dict_N, prob_logits_pose, rotuvd_dict_N, masks_float, tf.multiply(masks_map_filtered, label_uv_flow_map) if FLAGS.if_uvflow else masks_map_filtered, tf.multiply(masks_map_filtered_rescaled, logits_uv_flow_map) if FLAGS.if_uvflow else masks_map_filtered, shape_cls_metric_error_cars, count_valid

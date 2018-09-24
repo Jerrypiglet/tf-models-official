@@ -123,8 +123,8 @@ _APOLLOSCAPE_INFORMATION = DatasetDescriptor(
         # [-0., 0.], # WHATEVER: no cls for v
         # [0., 300]],
         [0., 0.25]],
-    bin_nums = [POSE_BINS]*4 + [1, 1, POSE_BINS] + [SHAPE_BINS]*SHAPE_DIMS, # uv flow
-    # bin_nums = [POSE_BINS]*7 + [SHAPE_BINS]*SHAPE_DIMS, # xy
+    # bin_nums = [POSE_BINS]*4 + [1, 1, POSE_BINS] + [SHAPE_BINS]*SHAPE_DIMS, # uv flow
+    bin_nums = [POSE_BINS]*7 + [SHAPE_BINS]*SHAPE_DIMS, # xy
     output_names = ['q1', 'q2', 'q3', 'q4', 'x', 'y', 'z'] + ['shape_%d'%dim for dim in range(SHAPE_DIMS)],
 )
 
