@@ -106,7 +106,8 @@ def scale_dimension(dim, scale):
     return int((float(dim) - 1.0) * scale + 1.0)
 
 
-def single_scale_logits(images,
+def single_scale_logits(FLAGS,
+                       images,
                        seg_map, # [batch_size, H, W, 1], tf.float32
                        car_nums,
                        idx_xys,
@@ -161,6 +162,7 @@ def single_scale_logits(images,
   # seg_one_hots_N_rescaled = tf.reshape(seg_one_hots_N_flattened, [-1, logits_height, logits_width, 1])
 
   outputs_to_logits, outputs_to_logits_map, outputs_to_weights_map, outputs_to_areas_N = _get_logits_mP( # Here we get the regression 'logits' from features!
+        FLAGS,
         images,
         seg_map,
         car_nums,
@@ -176,7 +178,8 @@ def single_scale_logits(images,
 
   return outputs_to_logits, outputs_to_logits_map, outputs_to_weights_map, outputs_to_areas_N
 
-def _get_logits_mP(images,
+def _get_logits_mP(FLAGS,
+                images,
                 seg_maps, # [batch_size, H, W, 1] float
                 car_nums,
                 idx_xys,
@@ -288,10 +291,10 @@ def _get_logits_mP(images,
 
     outputs_to_logits_map[output] = logits
 
-    if output == 'x':
+    if output == 'x' and FLAGS.if_uvflow:
         logits = logits + tf.to_float(features_Xs) * model_options.decoder_output_stride
         print '++++, added grids to x'
-    if output == 'y':
+    if output == 'y' and FLAGS.if_uvflow:
         logits = logits + tf.to_float(features_Ys) * model_options.decoder_output_stride
         print '++++, added grids to y'
 
@@ -341,7 +344,7 @@ def _get_logits_mP(images,
     areas_N = tf.slice(logits_areas_N, [0, last_dim], [-1, 1])
 
     outputs_to_logits_N[output] = logits_N # [N, 32]
-    print logits.get_shape(), features_Xs.get_shape(), logits.get_shape(), outputs_to_logits_N[output].get_shape(), '+++++++++++++', output
+    # print logits.get_shape(), features_Xs.get_shape(), logits.get_shape(), outputs_to_logits_N[output].get_shape(), '+++++++++++++', output
     outputs_to_weights_map[output] = weights # [batch_size, H', W', 1]
     outputs_to_areas_N[output] = areas_N # [N, 1]
   return outputs_to_logits_N, outputs_to_logits_map, outputs_to_weights_map, outputs_to_areas_N
