@@ -110,8 +110,10 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
               outputs_to_logits[output],
               bin_vals[outputs_to_indices[output]]) # [car_num_total, 1]
           reg_logits_list.append(prob_logits)
+          print '||||||||CLS logits for '+output
       else:
           reg_logits_list.append(outputs_to_logits[output])
+          print '||||||||REG logits for '+output
       outputs_to_weights_map[output] = tf.identity(outputs_to_weights_map[output], name=is_training_prefix+'%s_weights_map'%output)
   reg_logits_concat = tf.concat(reg_logits_list, axis=1) # [car_num_total, 17]
   reg_logits_concat = tf.where(tf.is_nan(reg_logits_concat), tf.zeros_like(reg_logits_concat)+1e-5, reg_logits_concat) # Hack to process NaN!!!!!!
@@ -300,12 +302,12 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
 
     # Add losses for each output names for logging
     prob_logits_slice = tf.gather(prob_logits_pose_shape, [idx_output], axis=1)
-    print 'Logging reg error for: ', idx_output, output
+    # print 'Logging reg error for: ', idx_output, output
     loss_slice_reg = tf.reduce_sum(tf.abs(label_slice - prob_logits_slice)) / count_valid # [N, 1]; L1 error
     loss_slice_reg = tf.identity(loss_slice_reg, name=is_training_prefix+'loss_slice_reg_'+output)
 
     ## Cross-entropy loss for each output http://icode.baidu.com/repos/baidu/personal-code/video_seg_transfer/blob/with_db:Networks/mx_losses.py (L89)
-    balance_cls_loss = 1e-3
+    balance_cls_loss = 1.
     if output not in ['x', 'y'] or not(FLAGS.if_uvflow):
         print '... adding cls loss for: ', idx_output, output
         bin_vals_output = bin_range[idx_output]
@@ -316,7 +318,7 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
         neg_log = -1. * tf.nn.log_softmax(outputs_to_logits[output])
         gt_idx = tf.one_hot(tf.squeeze(label_id_slice), depth=dataset.bin_nums[idx_output], axis=-1)
         loss_slice_crossentropy = tf.reduce_sum(tf.multiply(gt_idx, neg_log), axis=1, keepdims=True)
-        loss_slice_crossentropy= tf.reduce_sum(tf.multiply(weights_normalized, loss_slice_crossentropy)) / count_valid * balance_cls_loss
+        loss_slice_crossentropy= tf.reduce_sum(tf.multiply(weights_normalized, loss_slice_crossentropy)) / pixels_valid * balance_cls_loss
         loss_slice_crossentropy = tf.identity(loss_slice_crossentropy, name=is_training_prefix+'loss_slice_cls_'+output)
         loss_slice_crossentropy_list.append(loss_slice_crossentropy)
         if is_training:
