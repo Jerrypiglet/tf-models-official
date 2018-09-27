@@ -122,8 +122,8 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
   areas_masked = outputs_to_areas_N[dataset.output_names[0]]
   # pixels_valid = tf.reduce_sum(areas_masked)+1e-10
   masks_float = tf.to_float(tf.not_equal(areas_masked, 0.))
-  # weights_normalized = tf.to_float(tf.shape(weights_masked)[0]) * weights_masked / tf.reduce_sum(weights_masked) # [N, 1]. sum should be N in for N cars in the batch
-  weights_normalized = areas_masked # weights equals area; will be divided by num of all pixels later
+  # weights_normalized = areas_masked # weights equals area; will be divided by num of all pixels later
+  weights_normalized = tf.ones_like(areas_masked) # NOT weights equals area
 
   # if FLAGS.val_split == 'test':
   #     scaled_prob_logits_pose = train_utils.scale_for_l1_loss(
