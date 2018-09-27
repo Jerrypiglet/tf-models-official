@@ -167,7 +167,7 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
   masks_float = masks_float * rotuvd_dict_N_within # [N, 1]
   weights_normalized = masks_float * weights_normalized
   count_valid = tf.reduce_sum(masks_float)+1e-10
-  pixels_valid = tf.reduce_sum(areas_masked * masks_float)+1e-10
+  pixels_valid = tf.reduce_sum(weights_normalized * masks_float)+1e-10
 
   def rotuvd_dict_N_2_quat_xy_dinvd_dict_N(rotuvd_dict_N_input):
       u = tf.gather(rotuvd_dict_N_input, [4], axis=1)
