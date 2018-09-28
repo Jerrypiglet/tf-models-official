@@ -90,7 +90,7 @@ def smooth_l1_loss(predictions, labels, weights, name='', loss_collection=tf.Gra
     # return loss_sum / (tf.reduce_sum(tf.to_float(masks))+1.)
     return loss_sum
 
-def add_my_pose_loss_cars(prob_logits, labels, prob_logits_in_metric, labels_in_metric, masks_float, weights_normalized, balance_rot=1., balance_trans=1., upsample_logits=True, name=None, is_training_prefix='', loss_collection=None, if_depth=False):
+def add_my_pose_loss_cars(FLAGS, prob_logits, labels, prob_logits_in_metric, labels_in_metric, masks_float, weights_normalized, balance_rot=1., balance_trans=1., upsample_logits=True, name=None, is_training_prefix='', loss_collection=None, if_depth=False):
     """ Loss for discrete pose from Peng Wang (http://icode.baidu.com/repos/baidu/personal-code/video_seg_transfer/blob/with_db:Networks/mx_losses.py)
     prob_logits, labels: [car_num, D]"""
 
@@ -110,7 +110,7 @@ def add_my_pose_loss_cars(prob_logits, labels, prob_logits_in_metric, labels_in_
     rot_gt_in_metric, trans_gt_in_metric = slice_pose(labels_in_metric)
 
     # trans_dim_weights = 1./ tf.constant([[200., 50., 0.3]], dtype=tf.float32)
-    trans_dim_weights = tf.constant([[0., 0., 10.]], dtype=tf.float32)
+    trans_dim_weights = tf.constant([[1., 1., 10.]], dtype=tf.float32)
     # trans_dim_weights = tf.ones([1, 3], dtype=tf.float32)
     # trans_dim_weights = tf.constant([[1./100., 1./50., 4.]], dtype=tf.float32)
     # trans_loss = smooth_l1_loss(tf.multiply(trans_dim_weights, trans), tf.multiply(trans_dim_weights, trans_gt),
@@ -297,6 +297,8 @@ def model_init(restore_logdir,
   # Variables that will not be restored.
   if not initialize_last_layer and last_layers!=None:
     exclude_list.extend(last_layers)
+  else:
+    exclude_list = []
 
   # output_names = ['q1', 'q2', 'q3', 'q4', 'x', 'y', 'z'] + ['shape_%d'%dim for dim in range(10)]
   # output_scopes = [output_name+'_weights' for output_name in output_names]
@@ -318,12 +320,14 @@ def model_init(restore_logdir,
       variables_to_restore = list(set(variables_to_restore) - set(variables_to_restore_ignored))
   # print '==== variables_to_restore: ', [variable.op.name for variable in variables_to_restore]
 
-
-  init_assign_op, init_feed_dict = slim.assign_from_checkpoint(
-      tf_initial_checkpoint,
-      variables_to_restore,
-      ignore_missing_vars=ignore_missing_vars)
-  return init_assign_op, init_feed_dict
+  if tf_initial_checkpoint is not None:
+      init_assign_op, init_feed_dict = slim.assign_from_checkpoint(
+          tf_initial_checkpoint,
+          variables_to_restore,
+          ignore_missing_vars=ignore_missing_vars)
+      return init_assign_op, init_feed_dict
+  else:
+      return None, None
 
 def get_model_init_fn(restore_logdir,
                       tf_initial_checkpoint,

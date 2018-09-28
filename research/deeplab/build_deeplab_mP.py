@@ -212,6 +212,7 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
 
 
   _, prob_logits_pose, rot_q_error_cars, trans_l2, depth_diff_abs, depth_relative = train_utils.add_my_pose_loss_cars(
+          FLAGS,
           prob_logits_pose,
           rotuvd_dict_N if FLAGS.if_uvflow else pose_dict_N,
           prob_logits_pose_xy_from_uv if FLAGS.if_uvflow else prob_logits_pose,

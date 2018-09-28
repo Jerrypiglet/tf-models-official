@@ -217,6 +217,9 @@ flags.DEFINE_boolean('if_shape', True,
 flags.DEFINE_boolean('if_uvflow', False,
         'True: regression to uv flow; False: regression to xy.')
 
+flags.DEFINE_boolean('if_depth_only', False,
+        'True: regression to depth only.')
+
 
 # Dataset settings.
 flags.DEFINE_string('dataset', 'apolloscape',
@@ -698,7 +701,7 @@ def main(unused_argv):
         is_chief=(FLAGS.task == 0),
         session_config=session_config,
         startup_delay_steps=startup_delay_steps,
-        init_fn=InitAssignFn,
+        init_fn=InitAssignFn if init_assign_op is None else None,
         # init_fn=train_utils.get_model_init_fn(
         #     FLAGS.restore_logdir,
         #     FLAGS.tf_initial_checkpoint,
@@ -713,6 +716,6 @@ def main(unused_argv):
 
 if __name__ == '__main__':
   flags.mark_flag_as_required('base_logdir')
-  flags.mark_flag_as_required('tf_initial_checkpoint')
+  # flags.mark_flag_as_required('tf_initial_checkpoint')
   flags.mark_flag_as_required('dataset_dir')
   tf.app.run()
