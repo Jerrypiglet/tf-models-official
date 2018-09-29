@@ -233,7 +233,7 @@ def _get_logits_mP(FLAGS,
     v_coords = tf.range(tf.shape(features)[1])
     u_coords = tf.range(tf.shape(features)[2])
     Vs, Us = tf.meshgrid(v_coords, u_coords)
-    features_Ys = tf.tile(tf.expand_dims(tf.expand_dims(tf.transpose(Vs + tf.shape(features)[1]), -1), 0), [tf.shape(features)[0], 1, 1, 1])
+    features_Ys = tf.tile(tf.expand_dims(tf.expand_dims(tf.transpose(Vs + tf.shape(features)[1]), -1), 0), [tf.shape(features)[0], 1, 1, 1]) # NOTE: added hald height for computing in original size (not halfed)
     features_Xs = tf.tile(tf.expand_dims(tf.expand_dims(tf.transpose(Us), -1), 0), [tf.shape(features)[0], 1, 1, 1])
     features_concat = tf.concat([features,
         tf.to_float(features_Xs * model_options.decoder_output_stride),
@@ -289,8 +289,6 @@ def _get_logits_mP(FLAGS,
         reuse=reuse,
         scope_suffix=output+'_logits')
 
-    outputs_to_logits_map[output] = logits
-
     if output == 'x' and FLAGS.if_uvflow:
         logits = logits + tf.to_float(features_Xs) * model_options.decoder_output_stride
         print '||||||||added grids to x'
@@ -298,6 +296,7 @@ def _get_logits_mP(FLAGS,
         logits = logits + tf.to_float(features_Ys) * model_options.decoder_output_stride
         print '||||||||added grids to y'
 
+    outputs_to_logits_map[output] = logits
 
     # Working
     with tf.variable_scope('per_car_logits_aggre_2'):

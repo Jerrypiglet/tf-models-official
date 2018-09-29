@@ -443,20 +443,20 @@ def main(unused_argv):
               summaries.add(tf.summary.image('metrics_map/shape_id_sim_map-valInv', tf.gather(shape_id_sim_map_uint8, gather_list)))
 
           if FLAGS.if_uvflow:
-              label_uv_flow_map = graph.get_tensor_by_name(pattern%'label_uv_flow_map')
-              logits_uv_flow_map = graph.get_tensor_by_name(pattern%'logits_uv_flow_map')
+              label_uv_map = graph.get_tensor_by_name(pattern%'label_uv_map')
+              logits_uv_map = graph.get_tensor_by_name(pattern%'logits_uv_map')
               for output_idx, output in enumerate(['u', 'v']):
-                  summary_label_output = tf.gather(label_uv_flow_map, [output_idx], axis=3)
+                  summary_label_output = tf.gather(label_uv_map, [output_idx], axis=3)
                   summary_label_output= tf.where(summary_mask, summary_label_output, tf.zeros_like(summary_label_output))
                   summary_label_output_uint8, pixel_scaling = scale_to_255(summary_label_output)
-                  summaries.add(tf.summary.image('test'+label_postfix+'/%s_flow_label' % output, tf.gather(summary_label_output_uint8, gather_list)))
+                  summaries.add(tf.summary.image('test'+label_postfix+'/%s_label' % output, tf.gather(summary_label_output_uint8, gather_list)))
 
-                  summary_logits_output = tf.gather(logits_uv_flow_map, [output_idx], axis=3)
+                  summary_logits_output = tf.gather(logits_uv_map, [output_idx], axis=3)
                   summary_logits_output = mask_rescaled_float * summary_logits_output
                   summary_logits_output_uint8, _ = scale_to_255(summary_logits_output, pixel_scaling)
-                  summaries.add(tf.summary.image('test'+label_postfix+'/%s_flow_logits' % output, tf.gather(summary_logits_output_uint8, gather_list)))
+                  summaries.add(tf.summary.image('test'+label_postfix+'/%s_logits' % output, tf.gather(summary_logits_output_uint8, gather_list)))
 
-          add_trans_uv_metrics = ['label_uv_flow_map', 'logits_uv_flow_map'] if FLAGS.if_uvflow else []
+          add_trans_uv_metrics = ['label_uv_map', 'logits_uv_map'] if FLAGS.if_uvflow else []
           for trans_metrics in ['trans_l2', 'depth_diff_abs', 'depth_relative', 'x_l1', 'y_l1'] + add_trans_uv_metrics:
               if pattern == pattern_val:
                 summary_trans = graph.get_tensor_by_name(pattern%trans_metrics)
@@ -511,7 +511,7 @@ def main(unused_argv):
                       summaries.add(tf.summary.scalar('slice_loss'+label_postfix+'/'+(pattern%'cls_').replace(':0', '')+output, summary_loss))
 
           add_shape_metrics = ['loss_all_shape_id_cls_metric', 'loss_reg_shape'] if FLAGS.if_summary_shape_metrics else []
-          add_uv_metrics = ['loss_reg_uv_flow_map'] if FLAGS.if_uvflow else []
+          add_uv_metrics = ['loss_reg_uv_map'] if FLAGS.if_uvflow else []
           for loss_name in ['loss_reg_rot_quat_metric', 'loss_reg_rot_quat', 'loss_reg_trans_metric', 'loss_reg_Zdepth_metric', 'loss_reg_Zdepth_relative_metric', 'loss_reg_x_metric', 'loss_reg_y_metric', 'loss_reg_trans', 'loss_cls_ALL'] + add_shape_metrics + add_uv_metrics:
               if pattern == pattern_val:
                 summary_loss_avg = graph.get_tensor_by_name(pattern%loss_name)
@@ -625,7 +625,7 @@ def main(unused_argv):
             # #         ('%s/%s:0' % (first_clone_scope, 'not_ignore_mask_in_loss')).strip('/'))
 
             mask_rescaled_float = graph.get_tensor_by_name('val-%s:0'%'mask_rescaled_float')
-            _, test_out, test_out2, test_out3, test_out4, test_out5, test_out6, test_out7, test_out8, test_out9, test_out10, test_out11, test_out12, test_out13, test_out14, test_out15 = sess.run([summary_op, image_names, z_logits, outputs_to_weights['z'], mask_rescaled_float, weights_normalized, prob_logits_pose, pose_dict_N, car_nums, car_nums_list, idx_xys, rotuvd_dict_N, masks_float, reg_logits_pose_xy_from_uv, label_uv_flow_map, logits_uv_flow_map])
+            _, test_out, test_out2, test_out3, test_out4, test_out5, test_out6, test_out7, test_out8, test_out9, test_out10, test_out11, test_out12, test_out13, test_out14, test_out15 = sess.run([summary_op, image_names, z_logits, outputs_to_weights['z'], mask_rescaled_float, weights_normalized, prob_logits_pose, pose_dict_N, car_nums, car_nums_list, idx_xys, rotuvd_dict_N, masks_float, reg_logits_pose_xy_from_uv, label_uv_map, logits_uv_map])
             print test_out
             print test_out2.shape
             test_out3 = test_out3[test_out4!=0.]
@@ -642,8 +642,8 @@ def main(unused_argv):
                 print test_out6, test_out6.shape
                 print '-- rotuvd_dict_N: ', test_out11.shape, np.max(test_out11), np.min(test_out11), np.mean(test_out11), test_out11.dtype
                 print test_out11, test_out11.shape
-                print '-- label_uv_flow_map: ', test_out14.shape, np.max(test_out14[:, :, :, 0]), np.min(test_out14[:, :, :, 0]), np.max(test_out14[:, :, :, 1]), np.min(test_out14[:, :, :, 1])
-                print '-- logits_uv_flow_map: ', test_out15.shape, np.max(test_out15[:, :, :, 0]), np.min(test_out14[:, :, :, 0]), np.max(test_out15[:, :, :, 0]), np.min(test_out15[:, :, :, 0])
+                print '-- label_uv_map: ', test_out14.shape, np.max(test_out14[:, :, :, 0]), np.min(test_out14[:, :, :, 0]), np.max(test_out14[:, :, :, 1]), np.min(test_out14[:, :, :, 1])
+                print '-- logits_uv_map: ', test_out15.shape, np.max(test_out15[:, :, :, 0]), np.min(test_out15[:, :, :, 0]), np.max(test_out15[:, :, :, 1]), np.min(test_out15[:, :, :, 1])
             print '-- car_nums: ', test_out8, test_out9, test_out10.T
 
             # # Vlen(test_out), test_out[0].shape

@@ -149,27 +149,12 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
       within_mask = tf.logical_and(tf.greater_equal(x, min_clip), tf.less_equal(x, max_clip))
       return within_mask
   rotuvd_dict_N_within = tf.to_float(within_frame(680, 544, tf.gather(rotuvd_dict_N, [4], axis=1), tf.gather(rotuvd_dict_N, [5], axis=1)))
-  # bbox_dict_N = tf.gather_nd(samples['bbox_dict'], idx_xys) # [N, 4], [x_min, x_max, y_min, y_max]
-  # bbox_dict_N = tf.identity(bbox_dict_N, is_training_prefix+'bbox_dict_N')
-  # # bbox_c_dict_N2 = tf.concat([0.5*(tf.gather(bbox_dict_N, [0], axis=1)+tf.gather(bbox_dict_N, [1], axis=1)),
-  #     # 0.5*(tf.gather(bbox_dict_N, [2], axis=1)+tf.gather(bbox_dict_N, [3], axis=1))], axis=1)
-  # bbox_c_dict_N = tf.gather_nd(samples['bbox_c_dict'], idx_xys) # [N, 2]
-  # bbox_c_dict_N = tf.identity(bbox_c_dict_N, is_training_prefix+'bbox_c_dict_N')
-  # bbox_c_dict_N_within = tf.to_float(within_frame(680, 544,
-  #     tf.gather(bbox_c_dict_N, [0], axis=1), tf.gather(bbox_c_dict_N, [1], axis=1)))
-  # quat_deltauv_dinvd_dict_N = tf.gather_nd(samples['quat_deltauv_dinvd_dict'], idx_xys) # [N, 7]; NEW GT with offsets
-  # quat_deltauv_dinvd_dict_N = tf.identity(quat_deltauv_dinvd_dict_N, is_training_prefix+'quat_deltauv_dinvd_dict_N')
-  # quat_deltauv_dinvd_dict_N_within = tf.to_float(tf.logical_and(
-  #     within_range(tf.gather(quat_deltauv_dinvd_dict_N, [4], axis=1), -30., 30.),
-  #     within_range(tf.gather(quat_deltauv_dinvd_dict_N, [5], axis=1), -20., 5.)
-  #     ))
-  # masks_float = masks_float * rotuvd_dict_N_within * bbox_c_dict_N_within * quat_deltauv_dinvd_dict_N_within
   masks_float = masks_float * rotuvd_dict_N_within # [N, 1]
   weights_normalized = masks_float * weights_normalized
   count_valid = tf.reduce_sum(masks_float)+1e-10
   pixels_valid = tf.reduce_sum(weights_normalized * masks_float)+1e-10
 
-  def rotuvd_dict_N_2_quat_xy_dinvd_dict_N(rotuvd_dict_N_input):
+  def rotuvd_dict_N_2_quat_xy_dinvd_dict_N(rotuvd_dict_N_input): # u, v in original frame (not halfed)
       u = tf.gather(rotuvd_dict_N_input, [4], axis=1)
       v = tf.gather(rotuvd_dict_N_input, [5], axis=1)
       d = tf.gather(rotuvd_dict_N_input, [6], axis=1)
@@ -186,28 +171,12 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
       quat_xy_dinvd_dict_N_output = tf.concat([tf.gather(rotuvd_dict_N_input, [0,1,2,3], axis=1), tf.gather(xyz, [0,1], axis=1), d], axis=1)
       return quat_xy_dinvd_dict_N_output
 
-  # def quat_deltauv_dinvd_dict_N_2_quat_xy_dinvd_dict_N(quat_deltauv_dinvd_dict_N_input):
-  #     u = tf.gather(quat_deltauv_dinvd_dict_N_input, [4], axis=1) + tf.gather(bbox_c_dict_N, [0], axis=1)
-  #     v = tf.gather(quat_deltauv_dinvd_dict_N_input, [5], axis=1) + tf.gather(bbox_c_dict_N, [1], axis=1)
-  #     d = tf.gather(quat_deltauv_dinvd_dict_N_input, [6], axis=1)
-  #     F1 = 463.08880615234375
-  #     W = 338.8421325683594
-  #     F2 = 462.87689208984375
-  #     H = 271.9969482421875
-  #     K_T = tf.constant([[1./F1, 0., -W/F1], [0, 1./F2, -H/F2], [0., 0., 1.]])
-  #     if FLAGS.if_depth:
-  #       uvd = tf.concat([u*d, v*d, d], axis=1)
-  #     else:
-  #       uvd = tf.concat([u/d, v/d, 1/d], axis=1)
-  #     xyz = tf.transpose(tf.matmul(K_T, tf.transpose(uvd))) # x, y, depth; [N, 3]
-  #     quat_xy_dinvd_dict_N = tf.concat([tf.gather(quat_deltauv_dinvd_dict_N_input, [0,1,2,3], axis=1), tf.gather(xyz, [0,1], axis=1), d], axis=1)
-  #     return quat_xy_dinvd_dict_N
-
 
   prob_logits_pose = tf.gather(reg_logits_concat, [0, 1, 2, 3, 4, 5, 6], axis=1)
   prob_logits_pose = tf.identity(prob_logits_pose, name=is_training_prefix+'prob_logits_pose')
   if FLAGS.if_uvflow:
       prob_logits_pose_xy_from_uv = rotuvd_dict_N_2_quat_xy_dinvd_dict_N(prob_logits_pose)
+      # prob_logits_pose_xy_from_uv = rotuvd_dict_N_2_quat_xy_dinvd_dict_N(rotuvd_dict_N)
   # return pose_dict_N, rotuvd_dict_N_2_quat_xy_dinvd_dict_N(rotuvd_dict_N)
 
 
@@ -261,38 +230,28 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
 
     if FLAGS.if_uvflow:
         label_uv_map = tf.gather(label_pose_shape_map, [4, 5], axis=3) # (-1, 272, 680, 2)
-        v_coords = tf.range(tf.shape(label_uv_map)[1])
-        u_coords = tf.range(tf.shape(label_uv_map)[2])
-        Vs, Us = tf.meshgrid(v_coords, u_coords)
-        features_Ys = tf.tile(tf.expand_dims(tf.expand_dims(tf.transpose(Vs + tf.shape(label_uv_map)[1]), -1), 0), [tf.shape(label_uv_map)[0], 1, 1, 1]) # Adding half height because of the crop!
-        features_Xs = tf.tile(tf.expand_dims(tf.expand_dims(tf.transpose(Us), -1), 0), [tf.shape(label_uv_map)[0], 1, 1, 1])
-        coords_UVs_concat = tf.to_float(tf.concat([features_Xs, features_Ys], axis=3))
-        label_uv_flow_map = tf.multiply(masks_map_filtered, label_uv_map - coords_UVs_concat)
-        label_uv_flow_map = tf.identity(label_uv_flow_map, name=is_training_prefix+'label_uv_flow_map')
+        # v_coords = tf.range(tf.shape(label_uv_map)[1])
+        # u_coords = tf.range(tf.shape(label_uv_map)[2])
+        # Vs, Us = tf.meshgrid(v_coords, u_coords)
+        # features_Ys = tf.tile(tf.expand_dims(tf.expand_dims(tf.transpose(Vs + tf.shape(label_uv_map)[1]), -1), 0), [tf.shape(label_uv_map)[0], 1, 1, 1]) # Adding half height because of the crop!
+        # features_Xs = tf.tile(tf.expand_dims(tf.expand_dims(tf.transpose(Us), -1), 0), [tf.shape(label_uv_map)[0], 1, 1, 1])
+        # coords_UVs_concat = tf.to_float(tf.concat([features_Xs, features_Ys], axis=3))
+        # label_uv_flow_map = tf.multiply(masks_map_filtered, label_uv_map - coords_UVs_concat)
+        # label_uv_flow_map = tf.identity(label_uv_flow_map, name=is_training_prefix+'label_uv_flow_map')
+        label_uv_map = tf.identity(label_uv_map, name=is_training_prefix+'label_uv_map')
 
-        logits_uv_flow_map = tf.concat([outputs_to_logits_map['x'], outputs_to_logits_map['y']], axis=3)
-        masks_map_filtered_rescaled = tf.image.resize_nearest_neighbor(masks_map_filtered, [tf.shape(logits_uv_flow_map)[1], tf.shape(logits_uv_flow_map)[2]], align_corners=True)
-        logits_uv_flow_map = tf.identity(tf.multiply(masks_map_filtered_rescaled, logits_uv_flow_map), name=is_training_prefix+'logits_uv_flow_map')
-
-        # label_uv_map_rescaled = logits_cars_to_map(tf.gather(rotuvd_dict_N, [4, 5], axis=3) # (-1, 68, 170, 2)
-        # v_coords_rescaled = tf.range(tf.shape(label_uv_map_rescaled)[1])
-        # u_coords_rescaled = tf.range(tf.shape(label_uv_map_rescaled)[2])
-        # Vs_rescaled, Us_rescaled = tf.meshgrid(v_coords_rescaled, u_coords_rescaled)
-        # features_Ys_rescaled = tf.tile(tf.expand_dims(tf.expand_dims(tf.transpose(Vs_rescaled + tf.shape(label_uv_map_rescaled)[1]), -1), 0), [tf.shape(label_uv_map_rescaled)[0], 1, 1, 1]) # Adding half height because of the crop!
-        # features_Xs_rescaled = tf.tile(tf.expand_dims(tf.expand_dims(tf.transpose(Us_rescaled), -1), 0), [tf.shape(label_uv_map_rescaled)[0], 1, 1, 1])
-        # coords_UVs_concat_rescaled = tf.to_float(tf.concat([features_Xs_rescaled * model_options.decoder_output_stride,
-        #     features_Ys_rescaled * model_options.decoder_output_stride], axis=3))
-        # label_uv_flow_map_rescaled = label_uv_map_rescaled - coords_UVs_concat_rescaled
-        # label_uv_flow_map_rescaled = tf.identity(label_uv_flow_map_rescaled, name=is_training_prefix+'label_uv_flow_map_rescaled')
+        logits_uv_map = tf.concat([outputs_to_logits_map['x'], outputs_to_logits_map['y']], axis=3)
+        masks_map_filtered_rescaled = tf.image.resize_nearest_neighbor(masks_map_filtered, [tf.shape(logits_uv_map)[1], tf.shape(logits_uv_map)[2]], align_corners=True)
+        logits_uv_map = tf.identity(tf.multiply(masks_map_filtered_rescaled, logits_uv_map), name=is_training_prefix+'logits_uv_map')
 
         balance_uv_flow = 1.
-        label_uv_flow_map_rescaled = tf.image.resize_nearest_neighbor(label_uv_flow_map, [tf.shape(logits_uv_flow_map)[1], tf.shape(logits_uv_flow_map)[2]], align_corners=True)
+        label_uv_map_rescaled = tf.image.resize_nearest_neighbor(label_uv_map, [tf.shape(logits_uv_map)[1], tf.shape(logits_uv_map)[2]], align_corners=True)
         pixels_valid_filtered = tf.reduce_sum(masks_map_filtered_rescaled)+1e-10
-        uv_flow_map_diff = tf.multiply(tf.abs(logits_uv_flow_map - label_uv_flow_map_rescaled), masks_map_filtered_rescaled)
-        loss_reg_uv_flow_map = tf.reduce_sum(uv_flow_map_diff) / pixels_valid_filtered * balance_uv_flow # L1 loss for uv flow
-        loss_reg_uv_flow_map = tf.identity(loss_reg_uv_flow_map, name=is_training_prefix+'loss_reg_uv_flow_map')
+        uv_map_diff = tf.multiply(tf.abs(logits_uv_map - label_uv_map_rescaled), masks_map_filtered_rescaled)
+        loss_reg_uv_map = tf.reduce_sum(uv_map_diff) / pixels_valid_filtered * balance_uv_flow # L1 loss for uv flow
+        loss_reg_uv_map = tf.identity(loss_reg_uv_map, name=is_training_prefix+'loss_reg_uv_map')
         if is_training:
-            tf.losses.add_loss(loss_reg_uv_flow_map, loss_collection=tf.GraphKeys.LOSSES)
+            tf.losses.add_loss(loss_reg_uv_map, loss_collection=tf.GraphKeys.LOSSES)
 
   label_id_list = []
   loss_slice_crossentropy_list = []
@@ -350,5 +309,5 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
       shape_cls_metric_loss_check = tf.reduce_sum(shape_cls_metric_error_cars * masks_float) / count_valid
       shape_cls_metric_loss_check = tf.identity(shape_cls_metric_loss_check, name=is_training_prefix+'loss_all_shape_id_cls_metric')
 
-  return samples[common.IMAGE_NAME], outputs_to_logits['z'], outputs_to_weights_map, seg_one_hots_list, weights_normalized, samples['car_nums'], car_nums_list, idx_xys, prob_logits_pose_xy_from_uv if FLAGS.if_uvflow else prob_logits_pose, pose_dict_N, prob_logits_pose, rotuvd_dict_N, masks_float, tf.multiply(masks_map_filtered, label_uv_flow_map) if FLAGS.if_uvflow else masks_map_filtered, tf.multiply(masks_map_filtered_rescaled, logits_uv_flow_map) if FLAGS.if_uvflow else masks_map_filtered
+  return samples[common.IMAGE_NAME], outputs_to_logits['z'], outputs_to_weights_map, seg_one_hots_list, weights_normalized, samples['car_nums'], car_nums_list, idx_xys, prob_logits_pose_xy_from_uv if FLAGS.if_uvflow else prob_logits_pose, pose_dict_N, prob_logits_pose, rotuvd_dict_N, masks_float, tf.multiply(masks_map_filtered, label_uv_map) if FLAGS.if_uvflow else masks_map_filtered, tf.multiply(masks_map_filtered_rescaled, logits_uv_map) if FLAGS.if_uvflow else masks_map_filtered
   # , shape_cls_metric_error_cars, count_valid
