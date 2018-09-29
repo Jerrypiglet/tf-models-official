@@ -119,7 +119,7 @@ def add_my_pose_loss_cars(FLAGS, prob_logits, labels, prob_logits_in_metric, lab
     #         tf.multiply(tf.square(tf.multiply(trans - trans_gt, tf.square(trans_dim_weights))) / 2., weights_normalized)
     #         ) / pixels_valid * balance_trans # L2
     trans_loss = tf.reduce_sum(
-            tf.multiply(tf.abs(tf.multiply(trans - trans_gt, trans_dim_weights)) / 2., weights_normalized)
+            tf.multiply(tf.abs(tf.multiply(trans - trans_gt, trans_dim_weights)), weights_normalized)
             ) / pixels_valid * balance_trans # L1
     trans_loss = tf.identity(trans_loss, name=name+'_trans')
     tf.losses.add_loss(trans_loss, loss_collection=loss_collection)
@@ -281,6 +281,7 @@ def model_init(restore_logdir,
     Initialization function.
   """
   print restore_logdir
+  exclude_list = []
   if tf_initial_checkpoint is None:
     tf.logging.info('==== Not initializing the model from the initial checkpoint (not given).')
   else:
@@ -297,8 +298,6 @@ def model_init(restore_logdir,
   # Variables that will not be restored.
   if not initialize_last_layer and last_layers!=None:
     exclude_list.extend(last_layers)
-  else:
-    exclude_list = []
 
   # output_names = ['q1', 'q2', 'q3', 'q4', 'x', 'y', 'z'] + ['shape_%d'%dim for dim in range(10)]
   # output_scopes = [output_name+'_weights' for output_name in output_names]

@@ -443,20 +443,22 @@ def main(unused_argv):
               summaries.add(tf.summary.image('metrics_map/shape_id_sim_map-valInv', tf.gather(shape_id_sim_map_uint8, gather_list)))
 
           if FLAGS.if_uvflow:
-              label_uv_map = graph.get_tensor_by_name(pattern%'label_uv_map')
-              logits_uv_map = graph.get_tensor_by_name(pattern%'logits_uv_map')
-              for output_idx, output in enumerate(['u', 'v']):
-                  summary_label_output = tf.gather(label_uv_map, [output_idx], axis=3)
-                  summary_label_output= tf.where(summary_mask, summary_label_output, tf.zeros_like(summary_label_output))
-                  summary_label_output_uint8, pixel_scaling = scale_to_255(summary_label_output)
-                  summaries.add(tf.summary.image('test'+label_postfix+'/%s_label' % output, tf.gather(summary_label_output_uint8, gather_list)))
+              for appx in ['', '_flow']:
+                  label_uv_map = graph.get_tensor_by_name(pattern%'label_uv%s_map'%appx)
+                  logits_uv_map = graph.get_tensor_by_name(pattern%'logits_uv%s_map'%appx)
+                  for output_idx, output in enumerate(['u', 'v']):
+                      summary_label_output = tf.gather(label_uv_map, [output_idx], axis=3)
+                      summary_label_output= tf.where(summary_mask, summary_label_output, tf.zeros_like(summary_label_output))
+                      summary_label_output_uint8, pixel_scaling = scale_to_255(summary_label_output)
+                      summaries.add(tf.summary.image('test'+label_postfix+'/%s%s_label' % (output, appx), tf.gather(summary_label_output_uint8, gather_list)))
 
-                  summary_logits_output = tf.gather(logits_uv_map, [output_idx], axis=3)
-                  summary_logits_output = mask_rescaled_float * summary_logits_output
-                  summary_logits_output_uint8, _ = scale_to_255(summary_logits_output, pixel_scaling)
-                  summaries.add(tf.summary.image('test'+label_postfix+'/%s_logits' % output, tf.gather(summary_logits_output_uint8, gather_list)))
+                      summary_logits_output = tf.gather(logits_uv_map, [output_idx], axis=3)
+                      summary_logits_output = mask_rescaled_float * summary_logits_output
+                      summary_logits_output_uint8, _ = scale_to_255(summary_logits_output, pixel_scaling)
+                      summaries.add(tf.summary.image('test'+label_postfix+'/%s%s_logits' % (output, appx), tf.gather(summary_logits_output_uint8, gather_list)))
 
-          add_trans_uv_metrics = ['label_uv_map', 'logits_uv_map'] if FLAGS.if_uvflow else []
+          # add_trans_uv_metrics = ['label_uv_map', 'logits_uv_map'] if FLAGS.if_uvflow else []
+          add_trans_uv_metrics = []
           for trans_metrics in ['trans_l2', 'depth_diff_abs', 'depth_relative', 'x_l1', 'y_l1'] + add_trans_uv_metrics:
               if pattern == pattern_val:
                 summary_trans = graph.get_tensor_by_name(pattern%trans_metrics)
