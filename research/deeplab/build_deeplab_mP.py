@@ -136,7 +136,7 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
 
   ## Regression loss for pose
   balance_rot_reg_loss = 1.
-  balance_trans_reg_loss = 10.
+  balance_trans_reg_loss = 1.
   pose_dict_N = tf.gather_nd(samples['pose_dict'], idx_xys) # [N, 7]
   pose_dict_N = tf.identity(pose_dict_N, is_training_prefix+'pose_dict_N')
   rotuvd_dict_N = tf.gather_nd(samples['rotuvd_dict'], idx_xys) # [N, 7]
@@ -230,7 +230,7 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
 
     if FLAGS.if_uvflow:
         label_uv_map = tf.gather(label_pose_shape_map, [4, 5], axis=3) # (-1, 272, 680, 2)
-        label_uv_map = tf.identity(label_uv_map, name=is_training_prefix+'label_uv_map')
+        label_uv_map = tf.identity(tf.multiply(masks_map_filtered, label_uv_map), name=is_training_prefix+'label_uv_map')
         v_coords = tf.range(tf.shape(label_uv_map)[1])
         u_coords = tf.range(tf.shape(label_uv_map)[2])
         Vs, Us = tf.meshgrid(v_coords, u_coords)

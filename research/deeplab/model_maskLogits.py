@@ -267,7 +267,7 @@ def _get_logits_mP(FLAGS,
     last_dim = model_options.outputs_to_num_classes[output]
 
     weights = (get_branch_logits(
-      features_weight_concat,
+      features_weight,
       1,
       model_options.atrous_rates,
       aspp_with_batch_norm=model_options.aspp_with_batch_norm,
@@ -280,7 +280,7 @@ def _get_logits_mP(FLAGS,
       + 1.) / 2. # (batch_size, 68, 170, 1)
 
     logits = get_branch_logits(
-        features_concat,
+        features,
         model_options.outputs_to_num_classes[output],
         model_options.atrous_rates,
         aspp_with_batch_norm=model_options.aspp_with_batch_norm,
