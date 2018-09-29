@@ -701,7 +701,7 @@ def main(unused_argv):
         is_chief=(FLAGS.task == 0),
         session_config=session_config,
         startup_delay_steps=startup_delay_steps,
-        init_fn=InitAssignFn if init_assign_op is None else None,
+        init_fn=InitAssignFn if init_assign_op is not None else None,
         # init_fn=train_utils.get_model_init_fn(
         #     FLAGS.restore_logdir,
         #     FLAGS.tf_initial_checkpoint,
