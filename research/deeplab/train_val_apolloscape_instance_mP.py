@@ -94,6 +94,9 @@ flags.DEFINE_boolean('if_val', False,
 flags.DEFINE_boolean('if_debug', False,
                      'If in debug mode.')
 
+flags.DEFINE_boolean('if_pause', False,
+                     'If in pause mode for eval.')
+
 flags.DEFINE_integer('val_interval_steps', 30,
                      'How often, in steps, we VALIDATE the model.')
 
@@ -247,7 +250,7 @@ def main(unused_argv):
   if not(os.path.isdir(FLAGS.train_logdir)):
       tf.gfile.MakeDirs(FLAGS.train_logdir)
   if len(os.listdir(FLAGS.train_logdir)) != 0:
-      if not(FLAGS.if_restore):
+      if not(FLAGS.if_restore) or (FLAGS.if_restore and FLAGS.task_name != FLAGS.restore_name):
           if FLAGS.if_debug:
               shutil.rmtree(FLAGS.train_logdir)
               print '==== Log folder %s emptied: '%FLAGS.train_logdir + 'rm -rf %s/*'%FLAGS.train_logdir
@@ -320,7 +323,7 @@ def main(unused_argv):
           dataset_val,
           model_options,
           codes,
-          clone_batch_size,
+          clone_batch_size*4,
           dataset_split=FLAGS.val_split,
           is_training=False,
           model_variant=FLAGS.model_variant)
@@ -340,15 +343,61 @@ def main(unused_argv):
       # the updates for the batch_norm variables created by model_fn.
       first_clone_scope = config.clone_scope(0) # clone_0
       update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS, first_clone_scope)
+      print '+++++++++++', len([v.name for v in tf.trainable_variables()])
+
+    # Gather initial summaries.
+    summaries = set(tf.get_collection(tf.GraphKeys.SUMMARIES))
+
+    # Build the optimizer based on the device specification.
+    with tf.device(config.optimizer_device()):
+      learning_rate = train_utils.get_model_learning_rate(
+          FLAGS.learning_policy, FLAGS.base_learning_rate,
+          FLAGS.learning_rate_decay_step, FLAGS.learning_rate_decay_factor,
+          FLAGS.training_number_of_steps, FLAGS.learning_power,
+          FLAGS.slow_start_step, FLAGS.slow_start_learning_rate)
+      # optimizer = tf.train.MomentumOptimizer(learning_rate, FLAGS.momentum)
+      optimizer = tf.train.AdamOptimizer(learning_rate)
+      summaries.add(tf.summary.scalar('learning_rate', learning_rate))
+
+    startup_delay_steps = FLAGS.task * FLAGS.startup_delay_steps
+
+    with tf.device(config.variables_device()):
+      total_loss, grads_and_vars = model_deploy.optimize_clones(
+          clones, optimizer)
+      print '------ total_loss', total_loss, tf.get_collection(tf.GraphKeys.LOSSES, first_clone_scope)
+      total_loss = tf.check_numerics(total_loss, 'Loss is inf or nan.')
+      summaries.add(tf.summary.scalar('total_loss/train', total_loss))
+
+      # Modify the gradients for biases and last layer variables.
+      last_layers = model.get_extra_layer_scopes(
+          FLAGS.last_layers_contain_logits_only)
+      last_layers = last_layers + ['decoder', 'decoder_weights', ]
+      print '////last layers', last_layers
+
+      # Keep trainable variables for last layers ONLY.
+      # weight_scopes = [output_name+'_weights' for output_name in dataset.output_names] + ['decoder_weights']
+      # grads_and_vars = train_utils.filter_gradients(weight_scopes, grads_and_vars)
+      # print '==== variables_to_train: ', [grad_and_var[1].op.name for grad_and_var in grads_and_vars]
+
+      grad_mult = train_utils.get_model_gradient_multipliers(
+          last_layers, FLAGS.last_layer_gradient_multiplier)
+      if grad_mult:
+        grads_and_vars = slim.learning.multiply_gradients(
+            grads_and_vars, grad_mult)
+
+      # Create gradient update op.
+      grad_updates = optimizer.apply_gradients(
+          grads_and_vars, global_step=global_step)
+      update_ops.append(grad_updates)
+      update_op = tf.group(*update_ops)
+      with tf.control_dependencies([update_op]):
+        train_tensor = tf.identity(total_loss, name='train_op')
 
     with tf.device('/device:GPU:%d'%(FLAGS.num_clones+1)):
         if FLAGS.if_val:
           ## Construct the validation graph; takes one GPU.
-          image_names, z_logits, outputs_to_weights, seg_one_hots_list, weights_normalized, car_nums, car_nums_list, idx_xys, reg_logits_pose_xy_from_uv, pose_dict_N, prob_logits_pose, rotuvd_dict_N, masks_float, label_uv_flow_map, logits_uv_flow_map = _build_deeplab(FLAGS, inputs_queue_val.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_vals, bin_range, dataset_val, codes, is_training=False)
+          image_names, z_logits, outputs_to_weights, seg_one_hots_list, weights_normalized, areas_masked, car_nums, car_nums_list, idx_xys, reg_logits_pose_xy_from_uv, pose_dict_N, prob_logits_pose, rotuvd_dict_N, masks_float, label_uv_flow_map, logits_uv_flow_map = _build_deeplab(FLAGS, inputs_queue_val.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_vals, bin_range, dataset_val, codes, is_training=False)
           # pose_dict_N, xyz = _build_deeplab(FLAGS, inputs_queue_val.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_vals, bin_range, dataset_val, codes, is_training=False)
-
-    # Gather initial summaries.
-    summaries = set(tf.get_collection(tf.GraphKeys.SUMMARIES))
 
     # Add summaries for images, labels, semantic predictions
     summary_loss_dict = {}
@@ -359,9 +408,11 @@ def main(unused_argv):
           pattern_train = '%s:0'
       pattern_val = 'val-%s:0'
       pattern = pattern_val if FLAGS.if_val else pattern_train
+      gather_list_train = range(min(3, int(FLAGS.train_batch_size/FLAGS.num_clones)))
+      gather_list_val = range(min(8, int(FLAGS.train_batch_size/FLAGS.num_clones*4)))
+      gather_List = gather_list_val if FLAGS.if_val else gather_list_train
       # pattern = pattern_train
 
-      gather_list = range(min(3, int(FLAGS.train_batch_size/FLAGS.num_clones)))
       print gather_list
 
       def scale_to_255(tensor, pixel_scaling=None):
@@ -409,7 +460,7 @@ def main(unused_argv):
           mask_rescaled_float = graph.get_tensor_by_name(pattern%'mask_rescaled_float')
 
           seg_outputs = graph.get_tensor_by_name(pattern%'seg')
-          summary_seg_output = tf.where(summary_mask, seg_outputs, tf.zeros_like(seg_outputs))
+          summary_seg_output = tf.multiply(summary_mask_float, seg_outputs)
           summary_seg_output_uint8, _ = scale_to_255(summary_seg_output)
           summaries.add(tf.summary.image(
               'gt'+label_postfix+'/seg', tf.gather(summary_seg_output_uint8, gather_list)))
@@ -423,15 +474,17 @@ def main(unused_argv):
           summary_vis = graph.get_tensor_by_name(pattern%'vis')
           summaries.add(tf.summary.image('gt'+label_postfix+'/%s' % 'vis', tf.gather(summary_vis, gather_list)))
 
-          # summary_rot_diffs = graph.get_tensor_by_name(pattern%'rot_error_map')
-          # summary_rot_diffs = tf.where(summary_mask, summary_rot_diffs, tf.zeros_like(summary_rot_diffs))
-          # summary_rot_diffs_uint8, _ = scale_to_255(summary_rot_diffs)
-          # summaries.add(tf.summary.image('metrics_map'+label_postfix+'/%s' % 'rot_diffs', tf.gather(summary_rot_diffs_uint8, gather_list)))
-
-          # summary_trans_diffs = graph.get_tensor_by_name(pattern%'trans_error_map')
-          # summary_trans_diffs = tf.where(summary_mask, summary_trans_diffs, tf.zeros_like(summary_trans_diffs))
-          # summary_trans_diffs_uint8, _ = scale_to_255(summary_trans_diffs)
-          # summaries.add(tf.summary.image('metrics_map'+label_postfix+'/%s' % 'trans_diffs', tf.gather(summary_trans_diffs, gather_list)))
+          for error_map_name in ['rot_q_loss_error_map', 'trans_loss_error_map', 'rot_q_angle_error_map', 'trans_sqrt_error_map', 'depth_diff_abs_error_map', 'depth_relative_error_map']:
+              summary_error_diffs = graph.get_tensor_by_name(pattern%error_map_name)
+              if error_map_name != 'trans_loss_error_map':
+                  print '11', summary_error_diffs.get_shape()
+                  summary_error_diffs_uint8, _ = scale_to_255(summary_error_diffs)
+                  summaries.add(tf.summary.image('metrics_map'+label_postfix+'/%s' % error_map_name, tf.gather(summary_error_diffs_uint8, gather_list)))
+              else:
+                  for output_idx, output in enumerate(['u', 'v', 'z']):
+                      summary_error_diff = tf.expand_dims(tf.gather(summary_error_diffs, output_idx, axis=3), -1)
+                      summary_error_diff_uint8, _ = scale_to_255(summary_error_diff)
+                      summaries.add(tf.summary.image('metrics_map'+label_postfix+'/%s_%s' % (error_map_name, output), tf.gather(summary_error_diff_uint8, gather_list)))
 
           if FLAGS.if_summary_shape_metrics:
               shape_id_sim_map_train = graph.get_tensor_by_name(pattern_train%'shape_id_sim_map')
@@ -448,7 +501,6 @@ def main(unused_argv):
                   logits_uv_map = graph.get_tensor_by_name(pattern%'logits_uv%s_map'%appx)
                   for output_idx, output in enumerate(['u', 'v']):
                       summary_label_output = tf.gather(label_uv_map, [output_idx], axis=3)
-                      summary_label_output= tf.where(summary_mask, summary_label_output, tf.zeros_like(summary_label_output))
                       summary_label_output_uint8, pixel_scaling = scale_to_255(summary_label_output)
                       summaries.add(tf.summary.image('test'+label_postfix+'/%s%s_label' % (output, appx), tf.gather(summary_label_output_uint8, gather_list)))
 
@@ -459,7 +511,7 @@ def main(unused_argv):
 
           # add_trans_uv_metrics = ['label_uv_map', 'logits_uv_map'] if FLAGS.if_uvflow else []
           add_trans_uv_metrics = []
-          for trans_metrics in ['trans_l2', 'depth_diff_abs', 'depth_relative', 'x_l1', 'y_l1'] + add_trans_uv_metrics:
+          for trans_metrics in ['trans_sqrt_error', 'depth_diff_abs_error', 'depth_relative_error', 'x_l1', 'y_l1'] + add_trans_uv_metrics:
               if pattern == pattern_val:
                 summary_trans = graph.get_tensor_by_name(pattern%trans_metrics)
               else:
@@ -473,12 +525,12 @@ def main(unused_argv):
           for output_idx, output in enumerate(dataset.output_names):
               # # Scale up summary image pixel values for better visualization.
               summary_label_output = tf.gather(label_outputs, [output_idx], axis=3)
-              summary_label_output= tf.where(summary_mask, summary_label_output, tf.zeros_like(summary_label_output))
+              summary_label_output= tf.multiply(summary_mask_float_filtered, summary_label_output)
               summary_label_output_uint8, pixel_scaling = scale_to_255(summary_label_output)
               summaries.add(tf.summary.image('output'+label_postfix+'/%s_label' % output, tf.gather(summary_label_output_uint8, gather_list)))
 
               summary_logits_output = tf.gather(logit_outputs, [output_idx], axis=3)
-              summary_logits_output = tf.where(summary_mask, summary_logits_output, tf.zeros_like(summary_logits_output))
+              summary_logits_output = tf.multiply(summary_mask_float_filtered, summary_logits_output)
               summary_logits_output_uint8, _ = scale_to_255(summary_logits_output, pixel_scaling)
               summaries.add(tf.summary.image(
                   'output'+label_postfix+'/%s_logit' % output, tf.gather(summary_logits_output_uint8, gather_list)))
@@ -500,13 +552,13 @@ def main(unused_argv):
               # summaries.add(tf.summary.image(
               #     'test/%s_label_id' % output, tf.gather(summary_label_id_output_uint8, gather_list)))
 
-              summary_diff = tf.abs(tf.to_float(summary_label_output_uint8) - tf.to_float(summary_logits_output_uint8))
-              summary_diff = tf.where(summary_mask, summary_diff, tf.zeros_like(summary_diff))
+              summary_diff, _ = scale_to_255(tf.abs(tf.to_float(summary_label_output_uint8) - tf.to_float(summary_logits_output_uint8)))
+              summary_diff = tf.multiply(summary_mask_float_filtered, tf.to_float(summary_diff))
               summaries.add(tf.summary.image('diff_map'+label_postfix+'/%s_ldiff' % output, tf.gather(tf.cast(summary_diff, tf.uint8), gather_list)))
 
               if output_idx in [0, 1, 2, 3, 4,5,6]:
-                  summary_loss = graph.get_tensor_by_name((pattern%'loss_slice_reg_').replace(':0', '')+output+':0')
-                  summaries.add(tf.summary.scalar('slice_loss'+label_postfix+'/'+(pattern%'reg_').replace(':0', '')+output, summary_loss))
+                  summary_loss_slice_reg = graph.get_tensor_by_name((pattern%'loss_slice_reg_').replace(':0', '')+output+':0')
+                  summaries.add(tf.summary.scalar('slice_loss'+label_postfix+'/'+(pattern%'reg_').replace(':0', '')+output, summary_loss_slice_reg))
 
                   if output_idx in [0, 1, 2, 3, 6]:
                       summary_loss = graph.get_tensor_by_name((pattern%'loss_slice_cls_').replace(':0', '')+output+':0')
@@ -521,54 +573,6 @@ def main(unused_argv):
                 summary_loss_avg = train_utils.get_avg_tensor_from_scopes(FLAGS.num_clones, '%s:0', graph, config, loss_name)
               summaries.add(tf.summary.scalar(('total_loss%s/'%label_postfix+pattern%loss_name).replace(':0', ''), summary_loss_avg))
 
-
-    # Build the optimizer based on the device specification.
-    with tf.device(config.optimizer_device()):
-      learning_rate = train_utils.get_model_learning_rate(
-          FLAGS.learning_policy, FLAGS.base_learning_rate,
-          FLAGS.learning_rate_decay_step, FLAGS.learning_rate_decay_factor,
-          FLAGS.training_number_of_steps, FLAGS.learning_power,
-          FLAGS.slow_start_step, FLAGS.slow_start_learning_rate)
-      # optimizer = tf.train.MomentumOptimizer(learning_rate, FLAGS.momentum)
-      optimizer = tf.train.AdamOptimizer(learning_rate)
-      summaries.add(tf.summary.scalar('learning_rate', learning_rate))
-
-    startup_delay_steps = FLAGS.task * FLAGS.startup_delay_steps
-
-    with tf.device(config.variables_device()):
-      total_loss, grads_and_vars = model_deploy.optimize_clones(
-          clones, optimizer)
-      print '------ total_loss', total_loss, tf.get_collection(tf.GraphKeys.LOSSES, first_clone_scope)
-      total_loss = tf.check_numerics(total_loss, 'Loss is inf or nan.')
-      summaries.add(tf.summary.scalar('total_loss/train', total_loss))
-
-      # Modify the gradients for biases and last layer variables.
-      last_layers = model.get_extra_layer_scopes(
-          FLAGS.last_layers_contain_logits_only)
-      last_layers = last_layers + ['decoder', 'decoder_weights', ]
-      print '////last layers', last_layers
-
-      # Keep trainable variables for last layers ONLY.
-      # weight_scopes = [output_name+'_weights' for output_name in dataset.output_names] + ['decoder_weights']
-      # grads_and_vars = train_utils.filter_gradients(weight_scopes, grads_and_vars)
-      # print '==== variables_to_train: ', [grad_and_var[1].op.name for grad_and_var in grads_and_vars]
-
-      grad_mult = train_utils.get_model_gradient_multipliers(
-          last_layers, FLAGS.last_layer_gradient_multiplier)
-      if grad_mult:
-        grads_and_vars = slim.learning.multiply_gradients(
-            grads_and_vars, grad_mult)
-
-      # Create gradient update op.
-      grad_updates = optimizer.apply_gradients(
-          grads_and_vars, global_step=global_step)
-      update_ops.append(grad_updates)
-      update_op = tf.group(*update_ops)
-      with tf.control_dependencies([update_op]):
-        train_tensor = tf.identity(total_loss, name='train_op')
-
-    # Add the summaries from the first clone. These contain the summaries
-    # created by model_fn and either optimize_clones() or _gather_clone_loss().
     summaries |= set(
         tf.get_collection(tf.GraphKeys.SUMMARIES, first_clone_scope))
 
@@ -585,8 +589,11 @@ def main(unused_argv):
         loss= 0
 
         # calc training losses
-        loss, should_stop = slim.learning.train_step(sess, train_op, global_step, train_step_kwargs)
-        print loss
+        if not(FLAGS.if_pause):
+            loss, should_stop = slim.learning.train_step(sess, train_op, global_step, train_step_kwargs)
+            print loss
+
+
         # # print 'loss: ', loss
         # first_clone_test = graph.get_tensor_by_name(
                 # ('%s/%s:0' % (first_clone_scope, 'z')).strip('/'))
@@ -627,12 +634,18 @@ def main(unused_argv):
             # #         ('%s/%s:0' % (first_clone_scope, 'not_ignore_mask_in_loss')).strip('/'))
 
             mask_rescaled_float = graph.get_tensor_by_name('val-%s:0'%'mask_rescaled_float')
-            _, test_out, test_out2, test_out3, test_out4, test_out5, test_out6, test_out7, test_out8, test_out9, test_out10, test_out11, test_out12, test_out13, test_out14, test_out15 = sess.run([summary_op, image_names, z_logits, outputs_to_weights['z'], mask_rescaled_float, weights_normalized, prob_logits_pose, pose_dict_N, car_nums, car_nums_list, idx_xys, rotuvd_dict_N, masks_float, reg_logits_pose_xy_from_uv, label_uv_map, logits_uv_map])
+            trans_sqrt_error = graph.get_tensor_by_name(pattern_val%'trans_sqrt_error')
+            trans_diff_metric_abs = graph.get_tensor_by_name(pattern_val%'trans_diff_metric_abs')
+            summary_loss_slice_reg_vector_x = graph.get_tensor_by_name((pattern%'loss_slice_reg_vector_').replace(':0', '')+'x'+':0')
+            summary_loss_slice_reg_vector_y = graph.get_tensor_by_name((pattern%'loss_slice_reg_vector_').replace(':0', '')+'y'+':0')
+            summary_loss_slice_reg_vector_z = graph.get_tensor_by_name((pattern%'loss_slice_reg_vector_').replace(':0', '')+'z'+':0')
+            _, test_out, test_out2, test_out3, test_out4, test_out5_areas, test_out5, test_out6, test_out7, test_out8, test_out9, test_out10, test_out11, test_out12, test_out13, test_out14, test_out15, test_out_regx, test_out_regy, test_out_regz, trans_sqrt_error, trans_diff_metric_abs  = sess.run([summary_op, image_names, z_logits, outputs_to_weights['z'], mask_rescaled_float, areas_masked, weights_normalized, prob_logits_pose, pose_dict_N, car_nums, car_nums_list, idx_xys, rotuvd_dict_N, masks_float, reg_logits_pose_xy_from_uv, label_uv_map, logits_uv_map, summary_loss_slice_reg_vector_x, summary_loss_slice_reg_vector_y, summary_loss_slice_reg_vector_z, trans_sqrt_error, trans_diff_metric_abs])
+            # test_out_regx, test_out_regy, test_out_regz, trans_sqrt_error, trans_diff_metric_abs = sess.run([)
             print test_out
             print test_out2.shape
             test_out3 = test_out3[test_out4!=0.]
             print 'outputs_to_weights[z] masked: ', test_out3.shape, np.max(test_out3), np.min(test_out3), np.mean(test_out3), test_out3.dtype
-            print 'areas: ', test_out5.T, test_out5.shape, np.sum(test_out5)
+            print 'areas: ', test_out5_areas.T, test_out5_areas.shape, np.sum(test_out5_areas)
             print 'masks: ', test_out12.T
 
             print '-- reg_logits_pose_xy(optionally from_uv): ', test_out13.shape, np.max(test_out13), np.min(test_out13), np.mean(test_out13), test_out13.dtype
@@ -647,6 +660,15 @@ def main(unused_argv):
                 print '-- label_uv_map: ', test_out14.shape, np.max(test_out14[:, :, :, 0]), np.min(test_out14[:, :, :, 0]), np.max(test_out14[:, :, :, 1]), np.min(test_out14[:, :, :, 1])
                 print '-- logits_uv_map: ', test_out15.shape, np.max(test_out15[:, :, :, 0]), np.min(test_out15[:, :, :, 0]), np.max(test_out15[:, :, :, 1]), np.min(test_out15[:, :, :, 1])
             print '-- car_nums: ', test_out8, test_out9, test_out10.T
+            print '-- slice reg x: ', test_out_regx.T, np.max(test_out_regx), test_out_regx.shape
+            print '-- slice reg y: ', test_out_regy.T, np.max(test_out_regy), test_out_regy.shape
+            print '-- slice reg z: ', test_out_regz.T, np.max(test_out_regz), test_out_regz.shape
+            print '-- trans_sqrt_error: ', trans_sqrt_error.T, np.max(trans_sqrt_error), trans_sqrt_error.shape
+            print '-- trans_diff_metric_abs: ', np.hstack((trans_diff_metric_abs, test_out5_areas)), np.max(trans_diff_metric_abs, axis=0), trans_diff_metric_abs.shape
+
+            if FLAGS.if_pause:
+                programPause = raw_input("Press the <ENTER> key to continue...")
+
 
             # # Vlen(test_out), test_out[0].shape
             # # print test_out2.shape, test_out2
@@ -674,6 +696,7 @@ def main(unused_argv):
     # print '===== ', len(list(set(trainables) - set(alls)))
     # print '===== ', len(list(set(alls) - set(trainables))), list(set(alls) - set(trainables))
     # print summaries
+    print '+++++++++++', len([v.name for v in tf.trainable_variables()])
 
     if FLAGS.if_print_tensors:
         for op in tf.get_default_graph().get_operations():
