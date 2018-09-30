@@ -410,9 +410,7 @@ def main(unused_argv):
       pattern = pattern_val if FLAGS.if_val else pattern_train
       gather_list_train = range(min(3, int(FLAGS.train_batch_size/FLAGS.num_clones)))
       gather_list_val = range(min(8, int(FLAGS.train_batch_size/FLAGS.num_clones*4)))
-      gather_List = gather_list_val if FLAGS.if_val else gather_list_train
-      # pattern = pattern_train
-
+      gather_list = gather_list_val if FLAGS.if_val else gather_list_train
       print gather_list
 
       def scale_to_255(tensor, pixel_scaling=None):
