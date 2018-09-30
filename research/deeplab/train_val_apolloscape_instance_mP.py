@@ -410,8 +410,6 @@ def main(unused_argv):
       pattern = pattern_val if FLAGS.if_val else pattern_train
       gather_list_train = range(min(3, int(FLAGS.train_batch_size/FLAGS.num_clones)))
       gather_list_val = range(min(8, int(FLAGS.train_batch_size/FLAGS.num_clones*4)))
-      gather_list = gather_list_val if FLAGS.if_val else gather_list_train
-      print gather_list
 
       def scale_to_255(tensor, pixel_scaling=None):
           tensor = tf.to_float(tensor)
@@ -442,8 +440,10 @@ def main(unused_argv):
       for pattern in [pattern_train, pattern_val] if FLAGS.if_val else [pattern_train]:
           if pattern == pattern_train:
               label_postfix = ''
+              gather_list = gather_list_train
           else:
               label_postfix = '_val'
+              gather_list = gather_list_val
 
           summary_mask = graph.get_tensor_by_name(pattern%'not_ignore_mask_in_loss')
           summary_mask = tf.reshape(summary_mask, [-1, dataset.height, dataset.width, 1])
@@ -475,7 +475,6 @@ def main(unused_argv):
           for error_map_name in ['rot_q_loss_error_map', 'trans_loss_error_map', 'rot_q_angle_error_map', 'trans_sqrt_error_map', 'depth_diff_abs_error_map', 'depth_relative_error_map']:
               summary_error_diffs = graph.get_tensor_by_name(pattern%error_map_name)
               if error_map_name != 'trans_loss_error_map':
-                  print '11', summary_error_diffs.get_shape()
                   summary_error_diffs_uint8, _ = scale_to_255(summary_error_diffs)
                   summaries.add(tf.summary.image('metrics_map'+label_postfix+'/%s' % error_map_name, tf.gather(summary_error_diffs_uint8, gather_list)))
               else:
