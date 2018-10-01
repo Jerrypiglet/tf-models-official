@@ -250,7 +250,7 @@ def main(unused_argv):
   if not(os.path.isdir(FLAGS.train_logdir)):
       tf.gfile.MakeDirs(FLAGS.train_logdir)
   if len(os.listdir(FLAGS.train_logdir)) != 0:
-      if not(FLAGS.if_restore) or (FLAGS.if_restore and FLAGS.task_name != FLAGS.restore_name):
+      if not(FLAGS.if_restore) or (FLAGS.if_restore and FLAGS.task_name != FLAGS.restore_name and FLAGS.restore_name != None):
           if FLAGS.if_debug:
               shutil.rmtree(FLAGS.train_logdir)
               print '==== Log folder %s emptied: '%FLAGS.train_logdir + 'rm -rf %s/*'%FLAGS.train_logdir
@@ -409,16 +409,18 @@ def main(unused_argv):
       pattern_val = 'val-%s:0'
       pattern = pattern_val if FLAGS.if_val else pattern_train
       gather_list_train = range(min(3, int(FLAGS.train_batch_size/FLAGS.num_clones)))
-      gather_list_val = range(min(8, int(FLAGS.train_batch_size/FLAGS.num_clones*4)))
+      gather_list_val = range(min(3, int(FLAGS.train_batch_size/FLAGS.num_clones*4)))
 
-      def scale_to_255(tensor, pixel_scaling=None):
+      def scale_to_255(tensor, pixel_scaling=None, batch_scale=False):
           tensor = tf.to_float(tensor)
           if pixel_scaling == None:
-              offset_to_zero = tf.reduce_min(tf.reduce_min(tf.reduce_min(tensor, axis=3, keepdims=True), axis=2, keepdims=True), axis=1, keepdims=True)
-              scale_to_255 = tf.div(255., tf.reduce_max(tf.reduce_max(tf.reduce_max(
-                  tensor - offset_to_zero, axis=3, keepdims=True), axis=2, keepdims=True), axis=1, keepdims=True))
-              # offset_to_zero = tf.reduce_min(tensor)
-              # scale_to_255 = tf.div(255., tf.reduce_max(tensor - offset_to_zero))
+              if not(batch_scale):
+                  offset_to_zero = tf.reduce_min(tf.reduce_min(tf.reduce_min(tensor, axis=3, keepdims=True), axis=2, keepdims=True), axis=1, keepdims=True)
+                  scale_to_255 = tf.div(255., tf.reduce_max(tf.reduce_max(tf.reduce_max(
+                      tensor - offset_to_zero, axis=3, keepdims=True), axis=2, keepdims=True), axis=1, keepdims=True))
+              else:
+                  offset_to_zero = tf.reduce_min(tensor)
+                  scale_to_255 = tf.div(255., tf.reduce_max(tensor - offset_to_zero))
           else:
               offset_to_zero, scale_to_255 = pixel_scaling
           summary_tensor_float = tensor - offset_to_zero
@@ -444,11 +446,14 @@ def main(unused_argv):
           else:
               label_postfix = '_val'
               gather_list = gather_list_val
+          print gather_list
 
           summary_mask = graph.get_tensor_by_name(pattern%'not_ignore_mask_in_loss')
+          print summary_mask.get_shape()
           summary_mask = tf.reshape(summary_mask, [-1, dataset.height, dataset.width, 1])
           summary_mask_float = tf.to_float(summary_mask)
           summaries.add(tf.summary.image('gt'+label_postfix+'/%s' % 'not_ignore_mask', tf.gather(tf.cast(summary_mask_float*255., tf.uint8), gather_list)))
+          print tf.gather(tf.cast(summary_mask_float*255., tf.uint8), gather_list).get_shape()
 
           summary_mask_filtered = graph.get_tensor_by_name(pattern%'masks_map_filtered')
           summary_mask_filtered = tf.reshape(summary_mask_filtered, [-1, dataset.height, dataset.width, 1])
@@ -475,12 +480,12 @@ def main(unused_argv):
           for error_map_name in ['rot_q_loss_error_map', 'trans_loss_error_map', 'rot_q_angle_error_map', 'trans_sqrt_error_map', 'depth_diff_abs_error_map', 'depth_relative_error_map']:
               summary_error_diffs = graph.get_tensor_by_name(pattern%error_map_name)
               if error_map_name != 'trans_loss_error_map':
-                  summary_error_diffs_uint8, _ = scale_to_255(summary_error_diffs)
+                  summary_error_diffs_uint8, _ = scale_to_255(summary_error_diffs, pixel_scaling=None, batch_scale=True)
                   summaries.add(tf.summary.image('metrics_map'+label_postfix+'/%s' % error_map_name, tf.gather(summary_error_diffs_uint8, gather_list)))
               else:
                   for output_idx, output in enumerate(['u', 'v', 'z']):
                       summary_error_diff = tf.expand_dims(tf.gather(summary_error_diffs, output_idx, axis=3), -1)
-                      summary_error_diff_uint8, _ = scale_to_255(summary_error_diff)
+                      summary_error_diff_uint8, _ = scale_to_255(summary_error_diff, pixel_scaling=None, batch_scale=True)
                       summaries.add(tf.summary.image('metrics_map'+label_postfix+'/%s_%s' % (error_map_name, output), tf.gather(summary_error_diff_uint8, gather_list)))
 
           if FLAGS.if_summary_shape_metrics:
@@ -589,6 +594,8 @@ def main(unused_argv):
         if not(FLAGS.if_pause):
             loss, should_stop = slim.learning.train_step(sess, train_op, global_step, train_step_kwargs)
             print loss
+        else:
+            sess.run(global_step)
 
 
         # # print 'loss: ', loss

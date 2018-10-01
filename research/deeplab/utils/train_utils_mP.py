@@ -110,7 +110,7 @@ def add_my_pose_loss_cars(FLAGS, prob_logits, labels, prob_logits_in_metric, lab
     rot_gt_in_metric, trans_gt_in_metric = slice_pose(labels_in_metric)
 
     # trans_dim_weights = 1./ tf.constant([[200., 50., 0.3]], dtype=tf.float32)
-    trans_dim_weights = tf.constant([[1., 1., 10.]], dtype=tf.float32)
+    trans_dim_weights = tf.constant([[1., 1., 10.]], dtype=tf.float32) if not(FLAGS.if_depth) else tf.constant([[1., 1., 1.]], dtype=tf.float32)
     # trans_dim_weights = tf.ones([1, 3], dtype=tf.float32)
     # trans_dim_weights = tf.constant([[1./100., 1./50., 4.]], dtype=tf.float32)
     # trans_loss = smooth_l1_loss(tf.multiply(trans_dim_weights, trans), tf.multiply(trans_dim_weights, trans_gt),

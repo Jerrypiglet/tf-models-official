@@ -133,7 +133,7 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
   # return samples['idxs']
 
   ## Regression loss for pose
-  balance_rot_reg_loss = 1.
+  balance_rot_reg_loss = 10.
   balance_trans_reg_loss = 1.
   pose_dict_N = tf.gather_nd(samples['pose_dict'], idx_xys) # [N, 7]
   pose_dict_N = tf.identity(pose_dict_N, is_training_prefix+'pose_dict_N')
@@ -147,7 +147,7 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
   #     within_mask = tf.logical_and(tf.greater_equal(x, min_clip), tf.less_equal(x, max_clip))
   #     return within_mask
   rotuvd_dict_N_within = tf.to_float(within_frame(680, 544, tf.gather(rotuvd_dict_N, [4], axis=1), tf.gather(rotuvd_dict_N, [5], axis=1)))
-  masks_float = masks_float * rotuvd_dict_N_within # [N, 1] # NOT filtering border objects
+  # masks_float = masks_float * rotuvd_dict_N_within # [N, 1] # NOT filtering border objects
   weights_normalized = masks_float * weights_normalized
   count_valid = tf.reduce_sum(masks_float)+1e-10
   pixels_valid = tf.reduce_sum(weights_normalized * masks_float)+1e-10
