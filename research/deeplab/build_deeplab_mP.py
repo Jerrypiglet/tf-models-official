@@ -200,6 +200,7 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
   depth_diff_abs_error_map = tf.identity(logits_cars_to_map(depth_diff_abs_error), name=is_training_prefix+'depth_diff_abs_error_map')
   depth_relative_error_map = tf.identity(logits_cars_to_map(depth_relative_error), name=is_training_prefix+'depth_relative_error_map')
   trans_sqrt_error = tf.identity(trans_sqrt_error, name=is_training_prefix+'trans_sqrt_error')
+  trans_loss_error = tf.identity(trans_loss_error, name=is_training_prefix+'trans_loss_error')
   trans_diff_metric_abs = tf.identity(trans_diff_metric_abs, name=is_training_prefix+'trans_diff_metric_abs')
   depth_diff_abs_error = tf.identity(depth_diff_abs_error, name=is_training_prefix+'depth_diff_abs_error')
   depth_relative_error = tf.identity(depth_relative_error, name=is_training_prefix+'depth_relative_error')

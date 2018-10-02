@@ -639,11 +639,12 @@ def main(unused_argv):
 
             mask_rescaled_float = graph.get_tensor_by_name('val-%s:0'%'mask_rescaled_float')
             trans_sqrt_error = graph.get_tensor_by_name(pattern_val%'trans_sqrt_error')
+            trans_loss_error = graph.get_tensor_by_name(pattern_val%'trans_loss_error')
             trans_diff_metric_abs = graph.get_tensor_by_name(pattern_val%'trans_diff_metric_abs')
             summary_loss_slice_reg_vector_x = graph.get_tensor_by_name((pattern%'loss_slice_reg_vector_').replace(':0', '')+'x'+':0')
             summary_loss_slice_reg_vector_y = graph.get_tensor_by_name((pattern%'loss_slice_reg_vector_').replace(':0', '')+'y'+':0')
             summary_loss_slice_reg_vector_z = graph.get_tensor_by_name((pattern%'loss_slice_reg_vector_').replace(':0', '')+'z'+':0')
-            _, test_out, test_out2, test_out3, test_out4, test_out5_areas, test_out5, test_out6, test_out7, test_out8, test_out9, test_out10, test_out11, test_out12, test_out13, test_out14, test_out15, test_out_regx, test_out_regy, test_out_regz, trans_sqrt_error, trans_diff_metric_abs  = sess.run([summary_op, image_names, z_logits, outputs_to_weights['z'], mask_rescaled_float, areas_masked, weights_normalized, prob_logits_pose, pose_dict_N, car_nums, car_nums_list, idx_xys, rotuvd_dict_N, masks_float, reg_logits_pose_xy_from_uv, label_uv_map, logits_uv_map, summary_loss_slice_reg_vector_x, summary_loss_slice_reg_vector_y, summary_loss_slice_reg_vector_z, trans_sqrt_error, trans_diff_metric_abs])
+            _, test_out, test_out2, test_out3, test_out4, test_out5_areas, test_out5, test_out6, test_out7, test_out8, test_out9, test_out10, test_out11, test_out12, test_out13, test_out14, test_out15, test_out_regx, test_out_regy, test_out_regz, trans_sqrt_error, trans_diff_metric_abs, trans_loss_error  = sess.run([summary_op, image_names, z_logits, outputs_to_weights['z'], mask_rescaled_float, areas_masked, weights_normalized, prob_logits_pose, pose_dict_N, car_nums, car_nums_list, idx_xys, rotuvd_dict_N, masks_float, reg_logits_pose_xy_from_uv, label_uv_map, logits_uv_map, summary_loss_slice_reg_vector_x, summary_loss_slice_reg_vector_y, summary_loss_slice_reg_vector_z, trans_sqrt_error, trans_diff_metric_abs, trans_loss_error])
             # test_out_regx, test_out_regy, test_out_regz, trans_sqrt_error, trans_diff_metric_abs = sess.run([)
             print test_out
             print test_out2.shape
@@ -668,7 +669,7 @@ def main(unused_argv):
             print '-- slice reg y: ', test_out_regy.T, np.max(test_out_regy), test_out_regy.shape
             print '-- slice reg z: ', test_out_regz.T, np.max(test_out_regz), test_out_regz.shape
             print '-- trans_sqrt_error: ', trans_sqrt_error.T, np.max(trans_sqrt_error), trans_sqrt_error.shape
-            print '-- trans_diff_metric_abs: ', np.hstack((trans_diff_metric_abs, test_out5_areas)), np.max(trans_diff_metric_abs, axis=0), trans_diff_metric_abs.shape
+            print '-- trans_diff_metric_abs: ', np.hstack((trans_diff_metric_abs, test_out5_areas, trans_sqrt_error)), np.max(trans_diff_metric_abs, axis=0), trans_diff_metric_abs.shape
 
             if FLAGS.if_pause:
                 programPause = raw_input("Press the <ENTER> key to continue...")
