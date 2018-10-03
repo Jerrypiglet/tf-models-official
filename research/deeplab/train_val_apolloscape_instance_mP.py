@@ -576,7 +576,7 @@ def main(unused_argv):
 
           add_shape_metrics = ['loss_all_shape_id_cls_metric', 'loss_reg_shape'] if FLAGS.if_summary_shape_metrics else []
           add_uv_metrics = ['loss_reg_uv_map'] if (FLAGS.if_uvflow and not(FLAGS.if_depth_only)) else []
-          add_trans_metrics = ['loss_reg_Zdepth_metric', 'loss_reg_Zdepth_relative_metric'] if FLAGS.if_depth_only else ['loss_reg_rot_quat_metric', 'loss_reg_rot_quat', 'loss_reg_trans_metric', 'loss_reg_Zdepth_metric', 'loss_reg_Zdepth_relative_metric', 'loss_reg_x_metric', 'loss_reg_y_metric', 'loss_reg_trans']
+          add_trans_metrics = ['loss_reg_Zdepth_metric', 'loss_reg_Zdepth_relative_metric', 'loss_reg_trans'] if FLAGS.if_depth_only else ['loss_reg_rot_quat_metric', 'loss_reg_rot_quat', 'loss_reg_trans_metric', 'loss_reg_Zdepth_metric', 'loss_reg_Zdepth_relative_metric', 'loss_reg_x_metric', 'loss_reg_y_metric', 'loss_reg_trans']
           for loss_name in ['loss_cls_ALL'] + add_shape_metrics + add_uv_metrics + add_trans_metrics:
               if pattern == pattern_val:
                 summary_loss_avg = graph.get_tensor_by_name(pattern%loss_name)
@@ -602,7 +602,7 @@ def main(unused_argv):
         # calc training losses
         if not(FLAGS.if_pause):
             loss, should_stop = slim.learning.train_step(sess, train_op, global_step, train_step_kwargs)
-            print loss
+            print train_step_fn.step, loss
         else:
             sess.run(global_step)
 
@@ -659,6 +659,8 @@ def main(unused_argv):
             else:
                 summary_loss_slice_reg_vector_x = graph.get_tensor_by_name((pattern%'loss_slice_reg_vector_').replace(':0', '')+'x'+':0')
                 summary_loss_slice_reg_vector_y = graph.get_tensor_by_name((pattern%'loss_slice_reg_vector_').replace(':0', '')+'y'+':0')
+                label_uv_map = graph.get_tensor_by_name(pattern%'label_uv_flow_map')
+                logits_uv_map = graph.get_tensor_by_name(pattern%'logits_uv_flow_map')
             _, test_out, test_out2, test_out3, test_out4, test_out5_areas, test_out5, test_out6, test_out7, test_out8, test_out9, test_out10, test_out11, test_out12, test_out13, test_out14, test_out15, test_out_regx, test_out_regy, test_out_regz, trans_sqrt_error, trans_diff_metric_abs, trans_loss_error  = sess.run([summary_op, image_names, z_logits, outputs_to_weights['z'], mask_rescaled_float, areas_masked, weights_normalized, prob_logits_pose, pose_dict_N, car_nums, car_nums_list, idx_xys, rotuvd_dict_N, masks_float, reg_logits_pose_xy_from_uv, label_uv_map, logits_uv_map, summary_loss_slice_reg_vector_x, summary_loss_slice_reg_vector_y, summary_loss_slice_reg_vector_z, trans_sqrt_error, trans_diff_metric_abs, trans_loss_error])
             # test_out_regx, test_out_regy, test_out_regz, trans_sqrt_error, trans_diff_metric_abs = sess.run([)
             print test_out
