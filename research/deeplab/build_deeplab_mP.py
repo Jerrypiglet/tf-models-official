@@ -193,9 +193,10 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
           is_training_prefix = is_training_prefix,
           loss_collection=tf.GraphKeys.LOSSES if is_training else None,
           if_depth=FLAGS.if_depth)
-  rot_q_loss_error_map = tf.identity(logits_cars_to_map(rot_q_loss_error), name=is_training_prefix+'rot_q_loss_error_map')
+  if not(FLAGS.if_depth_only):
+      rot_q_loss_error_map = tf.identity(logits_cars_to_map(rot_q_loss_error), name=is_training_prefix+'rot_q_loss_error_map')
+      rot_q_angle_error_map = tf.identity(logits_cars_to_map(rot_q_angle_error), name=is_training_prefix+'rot_q_angle_error_map')
   trans_loss_error_map = tf.identity(logits_cars_to_map(trans_loss_error), name=is_training_prefix+'trans_loss_error_map')
-  rot_q_angle_error_map = tf.identity(logits_cars_to_map(rot_q_angle_error), name=is_training_prefix+'rot_q_angle_error_map')
   trans_sqrt_error_map = tf.identity(logits_cars_to_map(trans_sqrt_error), name=is_training_prefix+'trans_sqrt_error_map')
   depth_diff_abs_error_map = tf.identity(logits_cars_to_map(depth_diff_abs_error), name=is_training_prefix+'depth_diff_abs_error_map')
   depth_relative_error_map = tf.identity(logits_cars_to_map(depth_relative_error), name=is_training_prefix+'depth_relative_error_map')
@@ -232,7 +233,7 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
     label_pose_shape_map = logits_cars_to_map(pose_shape_dict_N)
     label_pose_shape_map = tf.identity(label_pose_shape_map, name=is_training_prefix+'label_pose_shape_map')
 
-    if FLAGS.if_uvflow:
+    if FLAGS.if_uvflow and not(FLAGS.if_depth_only):
         label_uv_map = tf.gather(label_pose_shape_map, [4, 5], axis=3) # (-1, 272, 680, 2)
         label_uv_map = tf.identity(tf.multiply(masks_map_filtered, label_uv_map), name=is_training_prefix+'label_uv_map')
         v_coords = tf.range(tf.shape(label_uv_map)[1])
@@ -256,13 +257,15 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
         uv_map_diff = tf.multiply(tf.abs(logits_uv_flow_map - label_uv_map_rescaled), masks_map_filtered_rescaled)
         loss_reg_uv_map = tf.reduce_sum(uv_map_diff) / pixels_valid_filtered * balance_uv_flow # L1 loss for uv flow
         loss_reg_uv_map = tf.identity(loss_reg_uv_map, name=is_training_prefix+'loss_reg_uv_map')
-        if is_training:
+        if is_training and not(FLAGS.if_depth_only):
             tf.losses.add_loss(loss_reg_uv_map, loss_collection=tf.GraphKeys.LOSSES)
 
   label_id_list = []
   loss_slice_crossentropy_list = []
   for idx_output, output in enumerate(dataset.output_names):
     if idx_output not in [0, 1, 2, 3, 4,5,6] and not(FLAGS.if_shape): # not adding SHAPE loss
+        continue
+    if FLAGS.if_depth_only and output != 'z':
         continue
 
     label_slice = tf.gather(pose_shape_dict_N, [idx_output], axis=1)
@@ -325,5 +328,5 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
           tf.multiply(masks_float, prob_logits_pose), \
           tf.multiply(masks_float, rotuvd_dict_N), \
           masks_float, \
-          tf.multiply(masks_map_filtered, label_uv_map) if FLAGS.if_uvflow else masks_map_filtered, \
-          tf.multiply(masks_map_filtered_rescaled, logits_uv_map) if FLAGS.if_uvflow else masks_map_filtered
+          tf.multiply(masks_map_filtered, label_uv_map) if (FLAGS.if_uvflow and not(FLAGS.if_depth_only)) else masks_map_filtered, \
+          tf.multiply(masks_map_filtered_rescaled, logits_uv_map) if (FLAGS.if_uvflow and not(FLAGS.if_depth_only)) else masks_map_filtered

@@ -477,7 +477,11 @@ def main(unused_argv):
           summary_vis = graph.get_tensor_by_name(pattern%'vis')
           summaries.add(tf.summary.image('gt'+label_postfix+'/%s' % 'vis', tf.gather(summary_vis, gather_list)))
 
-          for error_map_name in ['rot_q_loss_error_map', 'trans_loss_error_map', 'rot_q_angle_error_map', 'trans_sqrt_error_map', 'depth_diff_abs_error_map', 'depth_relative_error_map']:
+          if FLAGS.if_depth_only:
+              trans_error_names = ['depth_diff_abs_error_map', 'depth_relative_error_map']
+          else:
+              trans_error_names = ['rot_q_loss_error_map', 'trans_loss_error_map', 'rot_q_angle_error_map', 'trans_sqrt_error_map', 'depth_diff_abs_error_map', 'depth_relative_error_map']
+          for error_map_name in trans_error_names:
               summary_error_diffs = graph.get_tensor_by_name(pattern%error_map_name)
               if error_map_name != 'trans_loss_error_map':
                   summary_error_diffs_uint8, _ = scale_to_255(summary_error_diffs, pixel_scaling=None, batch_scale=True)
@@ -497,7 +501,7 @@ def main(unused_argv):
               shape_id_sim_map_uint8, _ = scale_to_255(shape_id_sim_map, pixel_scaling=(0., 255.))
               summaries.add(tf.summary.image('metrics_map/shape_id_sim_map-valInv', tf.gather(shape_id_sim_map_uint8, gather_list)))
 
-          if FLAGS.if_uvflow:
+          if FLAGS.if_uvflow and not(FLAGS.if_depth_only):
               for appx in ['', '_flow']:
                   label_uv_map = graph.get_tensor_by_name(pattern%'label_uv%s_map'%appx)
                   logits_uv_map = graph.get_tensor_by_name(pattern%'logits_uv%s_map'%appx)
@@ -511,9 +515,11 @@ def main(unused_argv):
                       summary_logits_output_uint8, _ = scale_to_255(summary_logits_output, pixel_scaling)
                       summaries.add(tf.summary.image('test'+label_postfix+'/%s%s_logits' % (output, appx), tf.gather(summary_logits_output_uint8, gather_list)))
 
-          # add_trans_uv_metrics = ['label_uv_map', 'logits_uv_map'] if FLAGS.if_uvflow else []
-          add_trans_uv_metrics = []
-          for trans_metrics in ['trans_sqrt_error', 'depth_diff_abs_error', 'depth_relative_error', 'x_l1', 'y_l1'] + add_trans_uv_metrics:
+          if FLAGS.if_depth_only:
+              trans_hist_names = ['depth_diff_abs_error', 'depth_relative_error']
+          else:
+              trans_hist_names = ['trans_sqrt_error', 'depth_diff_abs_error', 'depth_relative_error', 'x_l1', 'y_l1']
+          for trans_metrics in trans_hist_names:
               if pattern == pattern_val:
                 summary_trans = graph.get_tensor_by_name(pattern%trans_metrics)
               else:
@@ -521,10 +527,12 @@ def main(unused_argv):
               summaries.add(tf.summary.histogram('metrics_map'+label_postfix+'/%s' % trans_metrics, summary_trans))
 
           label_outputs = graph.get_tensor_by_name(pattern%'label_pose_shape_map')
-          # label_id_outputs = graph.get_tensor_by_name(pattern%'pose_shape_label_id_map')
           logit_outputs = graph.get_tensor_by_name(pattern%'prob_logits_pose_shape_map')
-          # seg_one_hots_outputs = graph.get_tensor_by_name(pattern%'seg_one_hots')
           for output_idx, output in enumerate(dataset.output_names):
+              if not(FLAGS.if_shape) and 'q' in output:
+                  continue
+              if FLAGS.if_depth_only and output != 'z':
+                  continue
               # # Scale up summary image pixel values for better visualization.
               summary_label_output = tf.gather(label_outputs, [output_idx], axis=3)
               summary_label_output= tf.multiply(summary_mask_float_filtered, summary_label_output)
@@ -567,8 +575,9 @@ def main(unused_argv):
                       summaries.add(tf.summary.scalar('slice_loss'+label_postfix+'/'+(pattern%'cls_').replace(':0', '')+output, summary_loss))
 
           add_shape_metrics = ['loss_all_shape_id_cls_metric', 'loss_reg_shape'] if FLAGS.if_summary_shape_metrics else []
-          add_uv_metrics = ['loss_reg_uv_map'] if FLAGS.if_uvflow else []
-          for loss_name in ['loss_reg_rot_quat_metric', 'loss_reg_rot_quat', 'loss_reg_trans_metric', 'loss_reg_Zdepth_metric', 'loss_reg_Zdepth_relative_metric', 'loss_reg_x_metric', 'loss_reg_y_metric', 'loss_reg_trans', 'loss_cls_ALL'] + add_shape_metrics + add_uv_metrics:
+          add_uv_metrics = ['loss_reg_uv_map'] if (FLAGS.if_uvflow and not(FLAGS.if_depth_only)) else []
+          add_trans_metrics = ['loss_reg_Zdepth_metric', 'loss_reg_Zdepth_relative_metric'] if FLAGS.if_depth_only else ['loss_reg_rot_quat_metric', 'loss_reg_rot_quat', 'loss_reg_trans_metric', 'loss_reg_Zdepth_metric', 'loss_reg_Zdepth_relative_metric', 'loss_reg_x_metric', 'loss_reg_y_metric', 'loss_reg_trans']
+          for loss_name in ['loss_cls_ALL'] + add_shape_metrics + add_uv_metrics + add_trans_metrics:
               if pattern == pattern_val:
                 summary_loss_avg = graph.get_tensor_by_name(pattern%loss_name)
               else:
@@ -641,9 +650,15 @@ def main(unused_argv):
             trans_sqrt_error = graph.get_tensor_by_name(pattern_val%'trans_sqrt_error')
             trans_loss_error = graph.get_tensor_by_name(pattern_val%'trans_loss_error')
             trans_diff_metric_abs = graph.get_tensor_by_name(pattern_val%'trans_diff_metric_abs')
-            summary_loss_slice_reg_vector_x = graph.get_tensor_by_name((pattern%'loss_slice_reg_vector_').replace(':0', '')+'x'+':0')
-            summary_loss_slice_reg_vector_y = graph.get_tensor_by_name((pattern%'loss_slice_reg_vector_').replace(':0', '')+'y'+':0')
             summary_loss_slice_reg_vector_z = graph.get_tensor_by_name((pattern%'loss_slice_reg_vector_').replace(':0', '')+'z'+':0')
+            if FLAGS.if_depth_only:
+                summary_loss_slice_reg_vector_x = summary_loss_slice_reg_vector_z
+                summary_loss_slice_reg_vector_y = summary_loss_slice_reg_vector_z
+                label_uv_map = summary_loss_slice_reg_vector_z
+                logits_uv_map = summary_loss_slice_reg_vector_z
+            else:
+                summary_loss_slice_reg_vector_x = graph.get_tensor_by_name((pattern%'loss_slice_reg_vector_').replace(':0', '')+'x'+':0')
+                summary_loss_slice_reg_vector_y = graph.get_tensor_by_name((pattern%'loss_slice_reg_vector_').replace(':0', '')+'y'+':0')
             _, test_out, test_out2, test_out3, test_out4, test_out5_areas, test_out5, test_out6, test_out7, test_out8, test_out9, test_out10, test_out11, test_out12, test_out13, test_out14, test_out15, test_out_regx, test_out_regy, test_out_regz, trans_sqrt_error, trans_diff_metric_abs, trans_loss_error  = sess.run([summary_op, image_names, z_logits, outputs_to_weights['z'], mask_rescaled_float, areas_masked, weights_normalized, prob_logits_pose, pose_dict_N, car_nums, car_nums_list, idx_xys, rotuvd_dict_N, masks_float, reg_logits_pose_xy_from_uv, label_uv_map, logits_uv_map, summary_loss_slice_reg_vector_x, summary_loss_slice_reg_vector_y, summary_loss_slice_reg_vector_z, trans_sqrt_error, trans_diff_metric_abs, trans_loss_error])
             # test_out_regx, test_out_regy, test_out_regz, trans_sqrt_error, trans_diff_metric_abs = sess.run([)
             print test_out
@@ -662,11 +677,13 @@ def main(unused_argv):
                 print test_out6, test_out6.shape
                 print '-- rotuvd_dict_N: ', test_out11.shape, np.max(test_out11), np.min(test_out11), np.mean(test_out11), test_out11.dtype
                 print test_out11, test_out11.shape
-                print '-- label_uv_map: ', test_out14.shape, np.max(test_out14[:, :, :, 0]), np.min(test_out14[:, :, :, 0]), np.max(test_out14[:, :, :, 1]), np.min(test_out14[:, :, :, 1])
-                print '-- logits_uv_map: ', test_out15.shape, np.max(test_out15[:, :, :, 0]), np.min(test_out15[:, :, :, 0]), np.max(test_out15[:, :, :, 1]), np.min(test_out15[:, :, :, 1])
+                if not(FLAGS.if_depth_only) and FLAGS.if_uvflow:
+                    print '-- label_uv_map: ', test_out14.shape, np.max(test_out14[:, :, :, 0]), np.min(test_out14[:, :, :, 0]), np.max(test_out14[:, :, :, 1]), np.min(test_out14[:, :, :, 1])
+                    print '-- logits_uv_map: ', test_out15.shape, np.max(test_out15[:, :, :, 0]), np.min(test_out15[:, :, :, 0]), np.max(test_out15[:, :, :, 1]), np.min(test_out15[:, :, :, 1])
             print '-- car_nums: ', test_out8, test_out9, test_out10.T
-            print '-- slice reg x: ', test_out_regx.T, np.max(test_out_regx), test_out_regx.shape
-            print '-- slice reg y: ', test_out_regy.T, np.max(test_out_regy), test_out_regy.shape
+            if not(FLAGS.if_depth_only):
+                print '-- slice reg x: ', test_out_regx.T, np.max(test_out_regx), test_out_regx.shape
+                print '-- slice reg y: ', test_out_regy.T, np.max(test_out_regy), test_out_regy.shape
             print '-- slice reg z: ', test_out_regz.T, np.max(test_out_regz), test_out_regz.shape
             print '-- trans_sqrt_error: ', trans_sqrt_error.T, np.max(trans_sqrt_error), trans_sqrt_error.shape
             print '-- trans_diff_metric_abs: ', np.hstack((trans_diff_metric_abs, test_out5_areas, trans_sqrt_error)), np.max(trans_diff_metric_abs, axis=0), trans_diff_metric_abs.shape
