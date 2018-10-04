@@ -277,9 +277,11 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
     prob_logits_slice = tf.gather(prob_logits_pose_shape, [idx_output], axis=1)
     # print 'Logging reg error for: ', idx_output, output
     if output == 'z':
-        loss_slice_reg_unsummed = tf.identity(tf.multiply(masks_float, tf.abs(1./label_slice - 1./prob_logits_slice)), name=is_training_prefix+'loss_slice_reg_vector_'+output)
+        if FLAGS.if_depth:
+            loss_slice_reg_unsummed = tf.identity(tf.multiply(masks_float, tf.abs(label_slice - prob_logits_slice)), name=is_training_prefix+'loss_slice_reg_vector_'+output)
+        else:
+            loss_slice_reg_unsummed = tf.identity(tf.multiply(masks_float, tf.abs(1./label_slice - 1./prob_logits_slice)), name=is_training_prefix+'loss_slice_reg_vector_'+output)
     else:
-        loss_slice_reg_unsummed = tf.identity(tf.multiply(masks_float, tf.abs(label_slice - prob_logits_slice)), name=is_training_prefix+'loss_slice_reg_vector_'+output)
     loss_slice_reg = tf.reduce_sum(loss_slice_reg_unsummed) / count_valid # [N, 1]; L1 error
     loss_slice_reg = tf.identity(loss_slice_reg, name=is_training_prefix+'loss_slice_reg_'+output)
 
@@ -288,6 +290,8 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
     if output not in ['x', 'y'] or not(FLAGS.if_uvflow):
         print '... adding cls loss for: ', idx_output, output
         bin_vals_output = bin_range[idx_output]
+        if output == 'z' and FLAGS.if_log_depth:
+            label_slice = tf.log(label_slice)
         label_id_slice = tf.round((label_slice - bin_vals_output[0]) / (bin_vals_output[1] - bin_vals_output[0]))
         label_id_slice = tf.clip_by_value(label_id_slice, 0, dataset.bin_nums[idx_output]-1)
         label_id_slice = tf.cast(label_id_slice, tf.int32)
