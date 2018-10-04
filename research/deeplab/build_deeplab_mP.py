@@ -165,10 +165,7 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
       H = 271.9969482421875
       K_T = tf.constant([[1./F1, 0., -W/F1], [0, 1./F2, -H/F2], [0., 0., 1.]])
       if FLAGS.if_depth:
-          if FLAGS.if_log_depth:
-              uvd = tf.concat([u*tf.exp(d), v*tf.exp(d), tf.exp(d)], axis=1)
-          else:
-              uvd = tf.concat([u*d, v*d, d], axis=1)
+        uvd = tf.concat([u*d, v*d, d], axis=1)
       else:
         uvd = tf.concat([u/d, v/d, 1/d], axis=1)
       xyz = tf.transpose(tf.matmul(K_T, tf.transpose(uvd))) # x, y, depth; [N, 3]
@@ -293,6 +290,7 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
         bin_vals_output = bin_range[idx_output]
         if output == 'z' and FLAGS.if_log_depth:
             label_slice = tf.log(label_slice)
+            print '.. converting z label from depth to log depth.'
         label_id_slice = tf.round((label_slice - bin_vals_output[0]) / (bin_vals_output[1] - bin_vals_output[0]))
         label_id_slice = tf.clip_by_value(label_id_slice, 0, dataset.bin_nums[idx_output]-1)
         label_id_slice = tf.cast(label_id_slice, tf.int32)
