@@ -130,7 +130,11 @@ def add_my_pose_loss_cars(FLAGS, prob_logits, labels, prob_logits_in_metric, lab
         trans_gt_in_metric_with_depth = tf.concat([tf.gather(trans_gt_in_metric, [0, 1], axis=1), 1./tf.gather(trans_gt_in_metric, [2], axis=1)], axis=1)
         trans_diff_metric = tf.multiply(trans_in_metric_with_depth - trans_gt_in_metric_with_depth, masks_float) # 1/2: reg ind
     else:
-        trans_diff_metric = tf.multiply(trans_in_metric - trans_gt_in_metric, masks_float) # 2/2: reg depth
+        if FLAGS.if_log_depth:
+            trans_in_metric_with_depth = tf.concat([tf.gather(trans_in_metric, [0, 1], axis=1), tf.exp(tf.gather(trans_in_metric, [2], axis=1))], axis=1)
+            trans_diff_metric = tf.multiply(trans_in_metric_with_depth - trans_gt_in_metric, masks_float) # 1/2: reg ind
+        else:
+            trans_diff_metric = tf.multiply(trans_in_metric - trans_gt_in_metric, masks_float) # 2/2: reg depth
     if FLAGS.if_depth_only:
         trans_diff_metric = tf.multiply(trans_dim_weights, trans_diff_metric)
     trans_sqrt_error = tf.sqrt(tf.reduce_sum(tf.square(trans_diff_metric), axis=1, keepdims=True))
@@ -143,7 +147,10 @@ def add_my_pose_loss_cars(FLAGS, prob_logits, labels, prob_logits_in_metric, lab
     if not(if_depth):
         depth_diff = 1./tf.gather(trans_in_metric, [2], axis=1) - 1./tf.gather(trans_gt_in_metric, [2], axis=1) # 1/2: reg invd
     else:
-        depth_diff = tf.gather(trans_in_metric, [2], axis=1) - tf.gather(trans_gt_in_metric, [2], axis=1) # 2/2: reg depth
+        if FLAGS.if_log_depth:
+            depth_diff = tf.exp(tf.gather(trans_in_metric, [2], axis=1)) - tf.gather(trans_gt_in_metric, [2], axis=1) # 2/2: reg depth
+        else:
+            depth_diff = tf.gather(trans_in_metric, [2], axis=1) - tf.gather(trans_gt_in_metric, [2], axis=1) # 2/2: reg depth
     depth_diff_abs_error = tf.multiply(tf.abs(depth_diff), masks_float)
     depth_metric = tf.reduce_sum(depth_diff_abs_error) / count_valid
     depth_metric = tf.identity(depth_metric, name=name+'_Zdepth_metric')

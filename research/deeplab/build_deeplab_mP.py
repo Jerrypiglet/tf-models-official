@@ -165,7 +165,10 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
       H = 271.9969482421875
       K_T = tf.constant([[1./F1, 0., -W/F1], [0, 1./F2, -H/F2], [0., 0., 1.]])
       if FLAGS.if_depth:
-        uvd = tf.concat([u*d, v*d, d], axis=1)
+          if FLAGS.if_log_depth:
+              uvd = tf.concat([u*tf.exp(d), v*tf.exp(d), tf.exp(d)], axis=1)
+          else:
+              uvd = tf.concat([u*d, v*d, d], axis=1)
       else:
         uvd = tf.concat([u/d, v/d, 1/d], axis=1)
       xyz = tf.transpose(tf.matmul(K_T, tf.transpose(uvd))) # x, y, depth; [N, 3]
