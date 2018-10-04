@@ -123,7 +123,7 @@ def add_my_pose_loss_cars(FLAGS, prob_logits, labels, prob_logits_in_metric, lab
     trans_loss_error = tf.multiply(tf.abs(tf.multiply(trans - trans_gt, trans_dim_weights)), weights_normalized)
     trans_loss = tf.reduce_sum(trans_loss_error) / pixels_valid * balance_trans # L1
     trans_loss = tf.identity(trans_loss, name=name+'_trans')
-    tf.losses.add_loss(trans_loss, loss_collection=loss_collection)
+    # tf.losses.add_loss(trans_loss, loss_collection=loss_collection)
 
     if not(if_depth):
         trans_in_metric_with_depth = tf.concat([tf.gather(trans_in_metric, [0, 1], axis=1), 1./tf.gather(trans_in_metric, [2], axis=1)], axis=1)

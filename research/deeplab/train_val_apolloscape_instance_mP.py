@@ -215,7 +215,7 @@ flags.DEFINE_boolean('if_depth', False,
         'True: regression to depth; False: regression to invd.')
 
 flags.DEFINE_boolean('if_log_depth', False,
-        'True: regression to depth; False: regression to invd.')
+        'True: log depth space.')
 
 flags.DEFINE_boolean('if_shape', True,
         'True: adding shape loss. if FLAGS.if_uvflow else None')
@@ -292,8 +292,14 @@ def main(unused_argv):
     with tf.device(config.inputs_device()):
       codes_max = np.amax(codes, axis=1).reshape((-1, 1))
       codes_min = np.amin(codes, axis=1).reshape((-1, 1))
-      shape_range = np.hstack((codes_max + (codes_max - codes_min)/(dataset.SHAPE_BINS-1.), codes_min - (codes_max - codes_min)/(dataset.SHAPE_BINS-1.)))
+      # shape_range = np.hstack((codes_max + (codes_max - codes_min)/(dataset.SHAPE_BINS-1.), codes_min - (codes_max - codes_min)/(dataset.SHAPE_BINS-1.)))
+      shape_range = np.hstack((codes_min, codes_max))
       bin_range = [np.linspace(r[0], r[1], num=b).tolist() for r, b in zip(np.vstack((dataset.pose_range, shape_range)), dataset.bin_nums)]
+      if FLAGS.if_log_depth:
+          log_depth_range = np.linspace(np.log(dataset.pose_range[6][0]), np.log(dataset.pose_range[6][1]), num=dataset.POSE_BINS).tolist()
+          bin_range[6] = log_depth_range
+      # for bins in bin_range:
+      #     print bins
       outputs_to_num_classes = {}
       outputs_to_indices = {}
       for output, bin_num, idx in zip(dataset.output_names, dataset.bin_nums,range(len(dataset.output_names))):
@@ -529,6 +535,8 @@ def main(unused_argv):
                 summary_trans = train_utils.get_avg_tensor_from_scopes(FLAGS.num_clones, '%s:0', graph, config, trans_metrics, return_concat=True)
               if trans_metrics == 'depth_diff_abs_error':
                   summary_trans = tf.boolean_mask(summary_trans, summary_trans < 10.)
+              if trans_metrics == 'depth_relative_error':
+                  summary_trans = tf.boolean_mask(summary_trans, summary_trans < 1.)
               summaries.add(tf.summary.histogram('metrics_map'+label_postfix+'/%s' % trans_metrics, summary_trans))
 
           if pattern == pattern_val:

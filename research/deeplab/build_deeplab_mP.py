@@ -109,6 +109,9 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
           prob_logits = train_utils.logits_cls_to_logits_probReg(
               outputs_to_logits[output],
               bin_vals[outputs_to_indices[output]]) # [car_num_total, 1]
+          if output == 'z' and FLAGS.if_log_depth:
+              prob_logits = tf.exp(prob_logits)
+              print '++++ exp logits for z!'
           reg_logits_list.append(prob_logits)
           print '||||||||CLS logits for '+output
       else:
@@ -287,7 +290,7 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
         bin_vals_output = bin_range[idx_output]
         label_id_slice = tf.round((label_slice - bin_vals_output[0]) / (bin_vals_output[1] - bin_vals_output[0]))
         label_id_slice = tf.clip_by_value(label_id_slice, 0, dataset.bin_nums[idx_output]-1)
-        label_id_slice = tf.cast(label_id_slice, tf.uint8)
+        label_id_slice = tf.cast(label_id_slice, tf.int32)
         # label_id_list.append(label_id_slice)
         neg_log = -1. * tf.nn.log_softmax(outputs_to_logits[output])
         gt_idx = tf.one_hot(tf.squeeze(label_id_slice), depth=dataset.bin_nums[idx_output], axis=-1)
@@ -296,8 +299,8 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
         loss_slice_crossentropy = tf.identity(loss_slice_crossentropy, name=is_training_prefix+'loss_slice_cls_'+output)
         loss_slice_crossentropy_list.append(loss_slice_crossentropy)
         if is_training:
-            tf.losses.add_loss(loss_slice_crossentropy, loss_collection=None)
-            # tf.losses.add_loss(loss_slice_crossentropy, loss_collection=tf.GraphKeys.LOSSES)
+            # tf.losses.add_loss(loss_slice_crossentropy, loss_collection=None)
+            tf.losses.add_loss(loss_slice_crossentropy, loss_collection=tf.GraphKeys.LOSSES)
   loss_crossentropy = tf.identity(tf.add_n(loss_slice_crossentropy_list), name=is_training_prefix+'loss_cls_ALL')
   # label_id = tf.concat(label_id_list, axis=1)
   # label_id_map = logits_cars_to_map(label_id)
