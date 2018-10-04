@@ -289,17 +289,27 @@ def main(unused_argv):
   codes = np.load('./deeplab/codes.npy')
 
   with tf.Graph().as_default() as graph:
+    np.set_printoptions(precision=4)
     with tf.device(config.inputs_device()):
       codes_max = np.amax(codes, axis=1).reshape((-1, 1))
       codes_min = np.amin(codes, axis=1).reshape((-1, 1))
       # shape_range = np.hstack((codes_max + (codes_max - codes_min)/(dataset.SHAPE_BINS-1.), codes_min - (codes_max - codes_min)/(dataset.SHAPE_BINS-1.)))
       shape_range = np.hstack((codes_min, codes_max))
-      bin_range = [np.linspace(r[0], r[1], num=b).tolist() for r, b in zip(np.vstack((dataset.pose_range, shape_range)), dataset.bin_nums)]
+      pose_range = dataset.pose_range
       if FLAGS.if_log_depth:
-          log_depth_range = np.linspace(np.log(dataset.pose_range[6][0]), np.log(dataset.pose_range[6][1]), num=dataset.POSE_BINS).tolist()
-          bin_range[6] = log_depth_range
-      # for bins in bin_range:
-      #     print bins
+          pose_range[6] = np.log(pose_range[6]).tolist()
+      bin_centers_list = [np.linspace(r[0], r[1], num=b).tolist() for r, b in zip(np.vstack((pose_range, shape_range)), dataset.bin_nums)]
+      bin_size_list = [(r[1]-r[0])/(b-1 if b!=1 else 1) for r, b in zip(np.vstack((pose_range, shape_range)), dataset.bin_nums)]
+      bin_bounds_list = [[c_elem-s/2. for c_elem in c] + [c[-1]+s/2.] for c, s in zip(bin_centers_list, bin_size_list)]
+      for output, pose_range, bin_size, bin_centers, bin_bounds in zip(dataset.output_names[:7], pose_range[:7], bin_size_list[:7], bin_centers_list[:7], bin_bounds_list[:7]):
+          print output + '_poserange_binsize', pose_range, bin_size
+          print output + '_bin_centers', bin_centers, len(bin_centers)
+          print output + '_bin_bounds', bin_bounds, len(bin_bounds)
+      bin_centers_tensors = [tf.constant(value=[bin_centers_list[i]], dtype=tf.float32, shape=[1, dataset.bin_nums[i]], name=name) \
+              for i, name in enumerate(dataset.output_names)]
+      # bin_bounds_tensors = [tf.constant(value=[bin_bounds_list[i]], dtype=tf.float32, shape=[1, dataset.bin_nums[i]+1], name=name) \
+              # for i, name in enumerate(dataset.output_names)]
+
       outputs_to_num_classes = {}
       outputs_to_indices = {}
       for output, bin_num, idx in zip(dataset.output_names, dataset.bin_nums,range(len(dataset.output_names))):
@@ -308,8 +318,6 @@ def main(unused_argv):
           else:
               outputs_to_num_classes[output] = 1
           outputs_to_indices[output] = idx
-      bin_vals = [tf.constant(value=[bin_range[i]], dtype=tf.float32, shape=[1, dataset.bin_nums[i]], name=name) \
-              for i, name in enumerate(dataset.output_names)]
 
       model_options = common.ModelOptions(
         outputs_to_num_classes=outputs_to_num_classes,
@@ -345,7 +353,7 @@ def main(unused_argv):
 
       # Define the model and create clones.
       model_fn = _build_deeplab
-      model_args = (FLAGS, inputs_queue.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_vals, bin_range, dataset, codes, True)
+      model_args = (FLAGS, inputs_queue.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_centers_tensors, bin_centers_list, bin_bounds_list, bin_size_list, dataset, codes, True)
       clones = model_deploy.create_clones(config, model_fn, args=model_args)
 
       # Gather update_ops from the first clone. These contain, for example,
@@ -405,7 +413,7 @@ def main(unused_argv):
     with tf.device('/device:GPU:%d'%(FLAGS.num_clones+1)):
         if FLAGS.if_val:
           ## Construct the validation graph; takes one GPU.
-          image_names, z_logits, outputs_to_weights, seg_one_hots_list, weights_normalized, areas_masked, car_nums, car_nums_list, idx_xys, reg_logits_pose_xy_from_uv, pose_dict_N, prob_logits_pose, rotuvd_dict_N, masks_float, label_uv_flow_map, logits_uv_flow_map = _build_deeplab(FLAGS, inputs_queue_val.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_vals, bin_range, dataset_val, codes, is_training=False)
+          image_names, z_logits, outputs_to_weights, seg_one_hots_list, weights_normalized, areas_masked, car_nums, car_nums_list, idx_xys, reg_logits_pose_xy_from_uv, pose_dict_N, prob_logits_pose, rotuvd_dict_N, masks_float, label_uv_flow_map, logits_uv_flow_map = _build_deeplab(FLAGS, inputs_queue_val.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_centers_tensors, bin_centers_list, dataset_val, codes, is_training=False)
           # pose_dict_N, xyz = _build_deeplab(FLAGS, inputs_queue_val.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_vals, bin_range, dataset_val, codes, is_training=False)
 
     # Add summaries for images, labels, semantic predictions

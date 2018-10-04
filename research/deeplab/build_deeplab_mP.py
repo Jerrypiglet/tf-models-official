@@ -1,10 +1,11 @@
 import tensorflow as tf
+from tensorflow.python.ops import math_ops
 from deeplab import common
 from deeplab import model_maskLogits as model
 from deeplab.utils import train_utils_mP as train_utils
 import numpy as np
 
-def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, bin_vals, bin_range, dataset, codes, is_training=True):
+def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, bin_centers_tensors, bin_centers_list, bin_bounds_list, bin_size_list, dataset, codes, is_training=True):
   """Builds a clone of DeepLab.
 
   Args:
@@ -92,7 +93,7 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
     samples['seg_rescaled'],
     samples['car_nums'],
     idx_xys,
-    bin_vals,
+    bin_centers_tensors,
     outputs_to_indices,
     model_options=model_options,
     weight_decay=FLAGS.weight_decay,
@@ -108,7 +109,7 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
       if output not in ['x', 'y'] or not(FLAGS.if_uvflow):
           prob_logits = train_utils.logits_cls_to_logits_probReg(
               outputs_to_logits[output],
-              bin_vals[outputs_to_indices[output]]) # [car_num_total, 1]
+              bin_centers_tensors[outputs_to_indices[output]]) # [car_num_total, 1]
           if output == 'z' and FLAGS.if_log_depth:
               prob_logits = tf.exp(prob_logits)
               print '++++ exp logits for z!'
@@ -149,8 +150,12 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
   # def within_range(x, min_clip, max_clip):
   #     within_mask = tf.logical_and(tf.greater_equal(x, min_clip), tf.less_equal(x, max_clip))
   #     return within_mask
+  def within_range(z_list, zmin, zmax):
+      return tf.logical_and(tf.greater_equal(z_list, zmin), tf.less_equal(z_list, zmax))
   rotuvd_dict_N_within = tf.to_float(within_frame(680, 544, tf.gather(rotuvd_dict_N, [4], axis=1), tf.gather(rotuvd_dict_N, [5], axis=1)))
+  z_N_within = tf.to_float(within_range(tf.log(tf.gather(rotuvd_dict_N, [6], axis=1)), bin_centers_list[6][0], bin_centers_list[6][-1]))
   # masks_float = masks_float * rotuvd_dict_N_within # [N, 1] # NOT filtering border objects
+  masks_float = masks_float * z_N_within # [N, 1] # filtering depth outof range
   weights_normalized = masks_float * weights_normalized
   count_valid = tf.reduce_sum(masks_float)+1e-10
   pixels_valid = tf.reduce_sum(weights_normalized * masks_float)+1e-10
@@ -275,7 +280,6 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
 
     # Add losses for each output names for logging
     prob_logits_slice = tf.gather(prob_logits_pose_shape, [idx_output], axis=1)
-    # print 'Logging reg error for: ', idx_output, output
     if output != 'z' or ( output == 'z'  and FLAGS.if_depth):
         loss_slice_reg_unsummed = tf.identity(tf.multiply(masks_float, tf.abs(label_slice - prob_logits_slice)), name=is_training_prefix+'loss_slice_reg_vector_'+output)
     else:
@@ -287,12 +291,16 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
     balance_cls_loss = 1.
     if output not in ['x', 'y'] or not(FLAGS.if_uvflow):
         print '... adding cls loss for: ', idx_output, output
-        bin_vals_output = bin_range[idx_output]
+        bin_centers = bin_centers_list[idx_output]
         if output == 'z' and FLAGS.if_log_depth:
             label_slice = tf.log(label_slice)
             print '.. converting z label from depth to log depth.'
-        label_id_slice = tf.round((label_slice - bin_vals_output[0]) / (bin_vals_output[1] - bin_vals_output[0]))
-        label_id_slice = tf.clip_by_value(label_id_slice, 0, dataset.bin_nums[idx_output]-1)
+        # label_id_slice = tf.round((label_slice - bin_centers[0]) / bin_size_list[idx_output])
+        label_id_slice = math_ops._bucketize(label_slice, bin_bounds_list[idx_output]) - 1
+        # label_id_slice = tf.clip_by_value(label_id_slice, 0, dataset.bin_nums[idx_output]-1)
+        tf.assert_greater_equal(label_id_slice, 0, message='label_id not all >=0!')
+        tf.assert_less_equal(label_id_slice, dataset.bin_nums[idx_output]-1, message='label_id not all <=dataset.bin_nums[idx_output]-1!')
+        print '\\\\\\\\\\', label_id_slice.dtype
         label_id_slice = tf.cast(label_id_slice, tf.int32)
         # label_id_list.append(label_id_slice)
         neg_log = -1. * tf.nn.log_softmax(outputs_to_logits[output])

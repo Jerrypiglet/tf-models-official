@@ -129,7 +129,7 @@ def _get_data(dataset, model_options, data_provider, dataset_split, codes_cons):
     # pose_shape_map_masked = tf.concat([pose_map_masked, shape_map_masked], axis=2)
 
     # returning per-instance pose_dict and shape_dict, and segs
-    pose_dict_depth = tf.clip_by_value(tf.gather(pose_dict, [5], axis=1), dataset.pose_range[6][0], dataset.pose_range[6][1])
+    pose_dict_depth = tf.gather(pose_dict, [5], axis=1)
     pose_dict_invd = tf.clip_by_value(tf.reciprocal(pose_dict_depth), 0.0003, 0.25)
     pose_dict_angles = tf.gather(pose_dict, [0, 1, 2], axis=1)
     pose_dict_quat = euler_angles_to_quaternions(pose_dict_angles)
