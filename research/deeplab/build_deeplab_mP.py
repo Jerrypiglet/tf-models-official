@@ -276,13 +276,11 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
     # Add losses for each output names for logging
     prob_logits_slice = tf.gather(prob_logits_pose_shape, [idx_output], axis=1)
     # print 'Logging reg error for: ', idx_output, output
-    if output == 'z':
-        if FLAGS.if_depth:
-            loss_slice_reg_unsummed = tf.identity(tf.multiply(masks_float, tf.abs(label_slice - prob_logits_slice)), name=is_training_prefix+'loss_slice_reg_vector_'+output)
-        else:
-            loss_slice_reg_unsummed = tf.identity(tf.multiply(masks_float, tf.abs(1./label_slice - 1./prob_logits_slice)), name=is_training_prefix+'loss_slice_reg_vector_'+output)
+    if output != 'z' or ( output == 'z'  and FLAGS.if_depth):
+        loss_slice_reg_unsummed = tf.identity(tf.multiply(masks_float, tf.abs(label_slice - prob_logits_slice)), name=is_training_prefix+'loss_slice_reg_vector_'+output)
     else:
-        loss_slice_reg = tf.reduce_sum(loss_slice_reg_unsummed) / count_valid # [N, 1]; L1 error
+        loss_slice_reg_unsummed = tf.identity(tf.multiply(masks_float, tf.abs(1./label_slice - 1./prob_logits_slice)), name=is_training_prefix+'loss_slice_reg_vector_'+output)
+    loss_slice_reg = tf.reduce_sum(loss_slice_reg_unsummed) / count_valid # [N, 1]; L1 error
     loss_slice_reg = tf.identity(loss_slice_reg, name=is_training_prefix+'loss_slice_reg_'+output)
 
     ## Cross-entropy loss for each output http://icode.baidu.com/repos/baidu/personal-code/video_seg_transfer/blob/with_db:Networks/mx_losses.py (L89)
