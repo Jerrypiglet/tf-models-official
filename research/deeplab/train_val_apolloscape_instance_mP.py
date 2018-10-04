@@ -214,6 +214,9 @@ flags.DEFINE_integer('output_stride', 16,
 flags.DEFINE_boolean('if_depth', False,
         'True: regression to depth; False: regression to invd.')
 
+flags.DEFINE_boolean('if_log_depth', False,
+        'True: regression to depth; False: regression to invd.')
+
 flags.DEFINE_boolean('if_shape', True,
         'True: adding shape loss. if FLAGS.if_uvflow else None')
 
@@ -525,6 +528,13 @@ def main(unused_argv):
               else:
                 summary_trans = train_utils.get_avg_tensor_from_scopes(FLAGS.num_clones, '%s:0', graph, config, trans_metrics, return_concat=True)
               summaries.add(tf.summary.histogram('metrics_map'+label_postfix+'/%s' % trans_metrics, summary_trans))
+
+          if pattern == pattern_val:
+              depth_diff_abs_error = graph.get_tensor_by_name(pattern%'depth_diff_abs_error')
+          else:
+              depth_diff_abs_error = train_utils.get_avg_tensor_from_scopes(FLAGS.num_clones, '%s:0', graph, config, 'depth_diff_abs_error', return_concat=True)
+          depth_diff_abs_error_thres2_8 = tf.reduce_sum(tf.to_float(depth_diff_abs_error<2.8)) / tf.reduce_sum(tf.to_float(depth_diff_abs_error>0.))
+          summaries.add(tf.summary.scalar(('total_loss%s/'%label_postfix+pattern%'loss_reg_Zdepth_metric_thres2_8').replace(':0', ''), depth_diff_abs_error_thres2_8))
 
           label_outputs = graph.get_tensor_by_name(pattern%'label_pose_shape_map')
           logit_outputs = graph.get_tensor_by_name(pattern%'prob_logits_pose_shape_map')
