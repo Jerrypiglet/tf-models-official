@@ -527,6 +527,8 @@ def main(unused_argv):
                 summary_trans = graph.get_tensor_by_name(pattern%trans_metrics)
               else:
                 summary_trans = train_utils.get_avg_tensor_from_scopes(FLAGS.num_clones, '%s:0', graph, config, trans_metrics, return_concat=True)
+              if trans_metrics == 'depth_diff_abs_error':
+                  summary_trans = tf.boolean_mask(summary_trans, summary_trans < 10.)
               summaries.add(tf.summary.histogram('metrics_map'+label_postfix+'/%s' % trans_metrics, summary_trans))
 
           if pattern == pattern_val:

@@ -296,8 +296,8 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
         loss_slice_crossentropy = tf.identity(loss_slice_crossentropy, name=is_training_prefix+'loss_slice_cls_'+output)
         loss_slice_crossentropy_list.append(loss_slice_crossentropy)
         if is_training:
-            # tf.losses.add_loss(loss_slice_crossentropy, loss_collection=None)
-            tf.losses.add_loss(loss_slice_crossentropy, loss_collection=tf.GraphKeys.LOSSES)
+            tf.losses.add_loss(loss_slice_crossentropy, loss_collection=None)
+            # tf.losses.add_loss(loss_slice_crossentropy, loss_collection=tf.GraphKeys.LOSSES)
   loss_crossentropy = tf.identity(tf.add_n(loss_slice_crossentropy_list), name=is_training_prefix+'loss_cls_ALL')
   # label_id = tf.concat(label_id_list, axis=1)
   # label_id_map = logits_cars_to_map(label_id)
