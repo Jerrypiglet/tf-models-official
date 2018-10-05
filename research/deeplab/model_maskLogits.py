@@ -277,7 +277,7 @@ def _get_logits_mP(FLAGS,
       scope_suffix=output+'_weights',
       is_training=is_training,
       fine_tune_batch_norm=fine_tune_batch_norm,
-      normalizer_fn=slim.batch_norm,
+      # normalizer_fn=slim.batch_norm,
       activation=tf.tanh)
       + 1.) / 2. # (batch_size, 68, 170, 1)
 
