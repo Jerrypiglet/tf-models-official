@@ -292,7 +292,8 @@ def _get_logits_mP(FLAGS,
         scope_suffix=output+'_logits',
         is_training=is_training,
         fine_tune_batch_norm=fine_tune_batch_norm,
-        normalizer_fn=slim.batch_norm)
+        normalizer_fn=slim.batch_norm,
+        activation=None)
 
     if output == 'x' and FLAGS.if_uvflow:
         logits = logits + tf.to_float(features_Xs) * model_options.decoder_output_stride
@@ -678,10 +679,10 @@ def get_branch_logits(features,
     atrous_rates = [1]
 
   batch_norm_params = {
-    'is_training': is_training and fine_tune_batch_norm,
-    'decay': 0.9997,
-    'epsilon': 1e-5,
-    'scale': True,
+    'is_training': is_training,
+    # 'decay': 0.9997,
+    # 'epsilon': 1e-5,
+    # 'scale': True,
   }
 
   with slim.arg_scope(

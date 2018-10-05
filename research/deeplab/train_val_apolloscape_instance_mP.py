@@ -341,7 +341,7 @@ def main(unused_argv):
           dataset_val,
           model_options,
           codes,
-          clone_batch_size*4,
+          clone_batch_size*7,
           dataset_split=FLAGS.val_split,
           is_training=False,
           model_variant=FLAGS.model_variant)
@@ -382,7 +382,9 @@ def main(unused_argv):
     with tf.device(config.variables_device()):
       total_loss, grads_and_vars = model_deploy.optimize_clones(
           clones, optimizer)
-      print '------ total_loss', total_loss, tf.get_collection(tf.GraphKeys.LOSSES, first_clone_scope)
+      print '------ total_loss', total_loss
+      for loss_item in tf.get_collection(tf.GraphKeys.LOSSES, first_clone_scope):
+          print loss_item
       total_loss = tf.check_numerics(total_loss, 'Loss is inf or nan.')
       summaries.add(tf.summary.scalar('total_loss/train', total_loss))
 

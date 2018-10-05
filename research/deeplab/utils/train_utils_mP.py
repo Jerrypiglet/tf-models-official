@@ -170,7 +170,6 @@ def add_my_pose_loss_cars(FLAGS, prob_logits, labels, prob_logits_in_metric, lab
         rot_q_loss_error = tf.multiply(tf.norm(rot - rot_gt, axis=1, keepdims=True), weights_normalized)
         rot_q_loss = tf.reduce_sum(rot_q_loss_error) / pixels_valid * balance_rot
         rot_q_loss = tf.identity(rot_q_loss, name=name+'_rot_quat'),
-        # tf.losses.add_loss(tf.identity(rot_q_loss, name=name+'_rot_quat'), loss_collection=loss_collection)
         tf.losses.add_loss(rot_q_loss, loss_collection=loss_collection)
 
         rot_q_unit = tf.nn.l2_normalize(rot, axis=1)
