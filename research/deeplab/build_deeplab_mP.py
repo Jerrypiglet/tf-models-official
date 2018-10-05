@@ -311,7 +311,7 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
             lab_l = tf.matmul(gt_idx, weight)
             err_dist = tf.nn.sigmoid_cross_entropy_with_logits(logits=outputs_to_logits[output], labels=lab_l)
             print lab_l.get_shape(), outputs_to_logits[output].get_shape(), err_dist.get_shape(), '666666'
-            loss_slice_crossentropy = tf.reduce_sum(err_dist, 1, keepdims=True)
+            loss_slice_crossentropy = tf.reduce_mean(err_dist, 1, keepdims=True)
         else:
             neg_log = -1. * tf.nn.log_softmax(outputs_to_logits[output])
             loss_slice_crossentropy = tf.reduce_sum(tf.multiply(gt_idx, neg_log), axis=1, keepdims=True)

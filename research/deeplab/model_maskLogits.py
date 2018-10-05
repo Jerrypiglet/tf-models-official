@@ -275,8 +275,7 @@ def _get_logits_mP(FLAGS,
       weight_decay=weight_decay,
       reuse=reuse,
       scope_suffix=output+'_weights',
-      activation=tf.tanh,
-      normalizer_fn=slim.batch_norm)
+      activation=tf.tanh)
       + 1.) / 2. # (batch_size, 68, 170, 1)
 
     logits = get_branch_logits(
