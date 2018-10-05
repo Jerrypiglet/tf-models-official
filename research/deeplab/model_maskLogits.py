@@ -275,6 +275,9 @@ def _get_logits_mP(FLAGS,
       weight_decay=weight_decay,
       reuse=reuse,
       scope_suffix=output+'_weights',
+      is_training=is_training,
+      fine_tune_batch_norm=fine_tune_batch_norm,
+      normalizer_fn=slim.batch_norm,
       activation=tf.tanh)
       + 1.) / 2. # (batch_size, 68, 170, 1)
 
@@ -286,7 +289,10 @@ def _get_logits_mP(FLAGS,
         kernel_size=model_options.logits_kernel_size,
         weight_decay=weight_decay,
         reuse=reuse,
-        scope_suffix=output+'_logits')
+        scope_suffix=output+'_logits',
+        is_training=is_training,
+        fine_tune_batch_norm=fine_tune_batch_norm,
+        normalizer_fn=slim.batch_norm)
 
     if output == 'x' and FLAGS.if_uvflow:
         logits = logits + tf.to_float(features_Xs) * model_options.decoder_output_stride
@@ -637,8 +643,10 @@ def get_branch_logits(features,
                       weight_decay=0.0001,
                       reuse=None,
                       scope_suffix='',
-                      activation=None,
-                      normalizer_fn=None):
+                      is_training=False,
+                      fine_tune_batch_norm=False,
+                      normalizer_fn=None,
+                      activation=None):
   """Gets the logits from each model's branch.
 
   The underlying model is branched out in the last layer when atrous
@@ -669,29 +677,37 @@ def get_branch_logits(features,
                        'using aspp_with_batch_norm. Gets %d.' % kernel_size)
     atrous_rates = [1]
 
+  batch_norm_params = {
+    'is_training': is_training and fine_tune_batch_norm,
+    'decay': 0.9997,
+    'epsilon': 1e-5,
+    'scale': True,
+  }
+
   with slim.arg_scope(
       [slim.conv2d],
       weights_regularizer=slim.l2_regularizer(weight_decay),
       weights_initializer=tf.truncated_normal_initializer(stddev=0.01),
+      normalizer_fn=normalizer_fn,
       reuse=reuse):
-    with tf.variable_scope(LOGITS_SCOPE_NAME, LOGITS_SCOPE_NAME, [features]):
-      branch_logits = []
-      for i, rate in enumerate(atrous_rates):
-        scope = scope_suffix
-        if i:
-          scope += '_%d' % i
+    with slim.arg_scope([slim.batch_norm], **batch_norm_params):
+        with tf.variable_scope(LOGITS_SCOPE_NAME, LOGITS_SCOPE_NAME, [features]):
+          branch_logits = []
+          for i, rate in enumerate(atrous_rates):
+            scope = scope_suffix
+            if i:
+              scope += '_%d' % i
 
-        branch_logits.append(
-            slim.conv2d(
-                features,
-                num_classes,
-                kernel_size=kernel_size,
-                rate=rate,
-                activation_fn=activation,
-                normalizer_fn=normalizer_fn,
-                scope=scope))
+            branch_logits.append(
+                slim.conv2d(
+                    features,
+                    num_classes,
+                    kernel_size=kernel_size,
+                    rate=rate,
+                    activation_fn=activation,
+                    scope=scope))
 
-      return tf.add_n(branch_logits)
+          return tf.add_n(branch_logits)
 
 
 def not_predict_labels_multi_scale(images,
