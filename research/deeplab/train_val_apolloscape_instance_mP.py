@@ -298,14 +298,15 @@ def main(unused_argv):
       pose_range = dataset.pose_range
       if FLAGS.if_log_depth:
           pose_range[6] = np.log(pose_range[6]).tolist()
-      bin_centers_list = [np.linspace(r[0], r[1], num=b).tolist() for r, b in zip(np.vstack((pose_range, shape_range)), dataset.bin_nums)]
+      bin_centers_list = [np.linspace(r[0], r[1], num=b) for r, b in zip(np.vstack((pose_range, shape_range)), dataset.bin_nums)]
       bin_size_list = [(r[1]-r[0])/(b-1 if b!=1 else 1) for r, b in zip(np.vstack((pose_range, shape_range)), dataset.bin_nums)]
       bin_bounds_list = [[c_elem-s/2. for c_elem in c] + [c[-1]+s/2.] for c, s in zip(bin_centers_list, bin_size_list)]
+      assert bin_bounds_list[6][0] > 0, 'Need more bins to make the first bound of log depth positive! (Or do we?)'
       for output, pose_range, bin_size, bin_centers, bin_bounds in zip(dataset.output_names[:7], pose_range[:7], bin_size_list[:7], bin_centers_list[:7], bin_bounds_list[:7]):
           print output + '_poserange_binsize', pose_range, bin_size
           print output + '_bin_centers', bin_centers, len(bin_centers)
           print output + '_bin_bounds', bin_bounds, len(bin_bounds)
-      bin_centers_tensors = [tf.constant(value=[bin_centers_list[i]], dtype=tf.float32, shape=[1, dataset.bin_nums[i]], name=name) \
+      bin_centers_tensors = [tf.constant(value=[bin_centers_list[i].tolist()], dtype=tf.float32, shape=[1, dataset.bin_nums[i]], name=name) \
               for i, name in enumerate(dataset.output_names)]
       # bin_bounds_tensors = [tf.constant(value=[bin_bounds_list[i]], dtype=tf.float32, shape=[1, dataset.bin_nums[i]+1], name=name) \
               # for i, name in enumerate(dataset.output_names)]

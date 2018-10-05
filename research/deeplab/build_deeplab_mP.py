@@ -300,12 +300,21 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
         # label_id_slice = tf.clip_by_value(label_id_slice, 0, dataset.bin_nums[idx_output]-1)
         tf.assert_greater_equal(label_id_slice, 0, message='label_id not all >=0!')
         tf.assert_less_equal(label_id_slice, dataset.bin_nums[idx_output]-1, message='label_id not all <=dataset.bin_nums[idx_output]-1!')
-        print '\\\\\\\\\\', label_id_slice.dtype
-        label_id_slice = tf.cast(label_id_slice, tf.int32)
+        print '\\\\\\\\\\', label_id_slice.dtype, label_id_slice.get_shape()
+        # label_id_slice = tf.cast(label_id_slice, tf.int32)
         # label_id_list.append(label_id_slice)
-        neg_log = -1. * tf.nn.log_softmax(outputs_to_logits[output])
-        gt_idx = tf.one_hot(tf.squeeze(label_id_slice), depth=dataset.bin_nums[idx_output], axis=-1)
-        loss_slice_crossentropy = tf.reduce_sum(tf.multiply(gt_idx, neg_log), axis=1, keepdims=True)
+        gt_idx = tf.one_hot(tf.reshape(label_id_slice, [-1]), depth=dataset.bin_nums[idx_output], axis=-1)
+        if FLAGS.if_log_depth:
+            alpha = 15
+            weight = [np.exp(-alpha * np.power(bin_centers - x, 2)) for x in bin_centers]
+            weight = tf.constant(np.asarray(weight,dtype=np.float32))
+            lab_l = tf.matmul(gt_idx, weight)
+            err_dist = tf.nn.sigmoid_cross_entropy_with_logits(logits=outputs_to_logits[output], labels=lab_l)
+            print lab_l.get_shape(), outputs_to_logits[output].get_shape(), err_dist.get_shape(), '666666'
+            loss_slice_crossentropy = tf.reduce_sum(err_dist, 1, keepdims=True)
+        else:
+            neg_log = -1. * tf.nn.log_softmax(outputs_to_logits[output])
+            loss_slice_crossentropy = tf.reduce_sum(tf.multiply(gt_idx, neg_log), axis=1, keepdims=True)
         loss_slice_crossentropy= tf.reduce_sum(tf.multiply(weights_normalized, loss_slice_crossentropy)) / pixels_valid * balance_cls_loss
         loss_slice_crossentropy = tf.identity(loss_slice_crossentropy, name=is_training_prefix+'loss_slice_cls_'+output)
         loss_slice_crossentropy_list.append(loss_slice_crossentropy)
