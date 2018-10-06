@@ -186,7 +186,7 @@ def add_my_pose_loss_cars(FLAGS, prob_logits, labels, prob_logits_in_metric, lab
 
 
 def logits_cls_to_logits_probReg(logits, bin_vals):
-    bin_vals_expand = tf.tile(bin_vals, [tf.shape(prob)[0], 1])
+    bin_vals_expand = tf.tile(bin_vals, [tf.shape(logits)[0], 1])
 
     prob = tf.contrib.layers.softmax(logits)
     prob = tf.multiply(prob, bin_vals_expand)
@@ -194,7 +194,7 @@ def logits_cls_to_logits_probReg(logits, bin_vals):
 
     # DORN
     # acts = tf.reduce_sum(tf.cast(tf.nn.sigmoid(logits) >= 0.5, tf.int32),-1)
-    # prob_logits = tf.expand_dims(tf.tensordot(tf.one_hot(acts, tf.shape(bin_vals)[1]), bin_vals_expand,[-1]),-1)
+    # prob_logits = tf.reduce_sum(tf.multiply(tf.one_hot(acts, tf.shape(bin_vals)[1]), bin_vals_expand),-1, keepdims=True)
     return prob_logits
 
 def scale_for_l1_loss(logits, labels, masks, upsample_logits):
