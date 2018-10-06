@@ -307,7 +307,11 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
         gt_idx = tf.one_hot(tf.reshape(label_id_slice, [-1]), depth=dataset.bin_nums[idx_output], axis=-1)
         if FLAGS.if_log_depth:
             alpha = 15
-            weight = [np.exp(-alpha * np.power(bin_centers - x, 2)) for x in bin_centers]
+            # weight = [np.exp(-alpha * np.power(bin_centers - x, 2)) for x in bin_centers] # binary multi-class cls loss
+
+            weight = np.zeros((dataset.bin_nums[idx_output], dataset.bin_nums[idx_output])) # DORN loss
+            for i in range(dataset.bin_nums[idx_output]): weight[i,:i] = 1
+
             weight = tf.constant(np.asarray(weight,dtype=np.float32))
             lab_l = tf.matmul(gt_idx, weight)
             err_dist = tf.nn.sigmoid_cross_entropy_with_logits(logits=outputs_to_logits[output], labels=lab_l)

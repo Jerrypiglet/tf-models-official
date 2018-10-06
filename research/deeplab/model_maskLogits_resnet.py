@@ -1,56 +1,3 @@
-# Copyright 2018 The TensorFlow Authors All Rights Reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-# ==============================================================================
-r"""Provides DeepLab model definition and helper functions.
-
-DeepLab is a deep learning system for semantic image segmentation with
-the following features:
-
-(1) Atrous convolution to explicitly control the resolution at which
-feature responses are computed within Deep Convolutional Neural Networks.
-
-(2) Atrous spatial pyramid pooling (ASPP) to robustly segment objects at
-multiple scales with filters at multiple sampling rates and effective
-fields-of-views.
-
-(3) ASPP module augmented with image-level feature and batch normalization.
-
-(4) A simple yet effective decoder module to recover the object boundaries.
-
-See the following papers for more details:
-
-"Encoder-Decoder with Atrous Separable Convolution for Semantic Image
-Segmentation"
-Liang-Chieh Chen, Yukun Zhu, George Papandreou, Florian Schroff, Hartwig Adam.
-(https://arxiv.org/abs/1802.02611)
-
-"Rethinking Atrous Convolution for Semantic Image Segmentation,"
-Liang-Chieh Chen, George Papandreou, Florian Schroff, Hartwig Adam
-(https://arxiv.org/abs/1706.05587)
-
-"DeepLab: Semantic Image Segmentation with Deep Convolutional Nets,
-Atrous Convolution, and Fully Connected CRFs",
-Liang-Chieh Chen*, George Papandreou*, Iasonas Kokkinos, Kevin Murphy,
-Alan L Yuille (* equal contribution)
-(https://arxiv.org/abs/1606.00915)
-
-"Semantic Image Segmentation with Deep Convolutional Nets and Fully Connected
-CRFs"
-Liang-Chieh Chen*, George Papandreou*, Iasonas Kokkinos, Kevin Murphy,
-Alan L. Yuille (* equal contribution)
-(https://arxiv.org/abs/1412.7062)
-"""
 import tensorflow as tf
 from deeplab.core import feature_extractor
 from deeplab.utils import train_utils_mP as train_utils
@@ -64,31 +11,6 @@ ASPP_SCOPE = 'aspp'
 CONCAT_PROJECTION_SCOPE = 'concat_projection'
 DECODER_SCOPE = 'decoder'
 WEIGHTS_DECODER_SCOPE = 'decoder_weights'
-
-
-def get_extra_layer_scopes(last_layers_contain_logits_only=False):
-  """Gets the scopes for extra layers.
-
-  Args:
-    last_layers_contain_logits_only: Boolean, True if only consider logits as
-    the last layer (i.e., exclude ASPP module, decoder module and so on)
-
-  Returns:
-    A list of scopes for extra layers.
-  """
-  if last_layers_contain_logits_only:
-    return [LOGITS_SCOPE_NAME]
-  else:
-    return [
-        LOGITS_SCOPE_NAME,
-        IMAGE_POOLING_SCOPE,
-        ASPP_SCOPE,
-        CONCAT_PROJECTION_SCOPE,
-        DECODER_SCOPE,
-    ]
-
-
-
 
 def scale_dimension(dim, scale):
   """Scales the input dimension.
@@ -156,10 +78,6 @@ def single_scale_logits(FLAGS,
   logits_width = scale_dimension(
       tf.shape(images)[2],
       1.0 / logits_output_stride)
-
-  # seg_one_hots_N_rescaled = tf.image.resize_nearest_neighbor(seg_one_hots_N,
-      # [logits_height, logits_width], align_corners=True)
-  # seg_one_hots_N_rescaled = tf.reshape(seg_one_hots_N_flattened, [-1, logits_height, logits_width, 1])
 
   outputs_to_logits, outputs_to_logits_map, outputs_to_weights_map, outputs_to_areas_N = _get_logits_mP( # Here we get the regression 'logits' from features!
         FLAGS,
