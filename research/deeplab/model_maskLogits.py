@@ -214,11 +214,12 @@ def _get_logits_mP(FLAGS,
       fine_tune_batch_norm=fine_tune_batch_norm,
       fine_tune_feature_extractor=fine_tune_feature_extractor) # (1, 34, 85, 256), ..,  (1, 34, 85, 2048)
 
-  decoder_height = scale_dimension(model_options.crop_size[0],
-                                     1.0 / model_options.decoder_output_stride)
-  decoder_width = scale_dimension(model_options.crop_size[1],
-                                    1.0 / model_options.decoder_output_stride)
   if model_options.decoder_output_stride is not None:
+    decoder_height = scale_dimension(model_options.crop_size[0],
+              1.0 / model_options.decoder_output_stride)
+    decoder_width = scale_dimension(model_options.crop_size[1],
+              1.0 / model_options.decoder_output_stride)
+
     features = refine_by_decoder(
         features_aspp,
         end_points,
@@ -238,7 +239,7 @@ def _get_logits_mP(FLAGS,
     features_concat = tf.concat([features,
         tf.to_float(features_Xs * model_options.decoder_output_stride),
         tf.to_float(features_Ys) * model_options.decoder_output_stride], axis=3)
-    print '== Features_aspp/backbone, features, features_concat:', features_aspp.get_shape(), features_backbone.get_shape(), features.get_shape(), features_concat.get_shape() # (3, 34, 85, 256) (3, 34, 85, 2048) (3, 68, 170, 256)
+    print '== Features_aspp/backbone, features, features_concat:', features_aspp.get_shape(), features_backbone.get_shape(), features.get_shape(), features_concat.get_shape() # (2, 34, 85, 256) (2, 34, 85, 2048) (2, 68, 170, 256) (2, 68, 170, 258)
     features_weight = refine_by_decoder(
         features_aspp,
         end_points,
@@ -349,7 +350,7 @@ def _get_logits_mP(FLAGS,
     areas_N = tf.slice(logits_areas_N, [0, last_dim], [-1, 1])
 
     outputs_to_logits_N[output] = logits_N # [N, 32]
-    # print logits.get_shape(), features_Xs.get_shape(), logits.get_shape(), outputs_to_logits_N[output].get_shape(), '+++++++++++++', output
+    print logits.get_shape(), features_Xs.get_shape(), logits.get_shape(), outputs_to_logits_N[output].get_shape(), '+++++++++++++', output # (2, 68, 170, 64) (2, 68, 170, 1) (2, 68, 170, 64) (?, 64)
     outputs_to_weights_map[output] = weights # [batch_size, H', W', 1]
     outputs_to_areas_N[output] = areas_N # [N, 1]
   return outputs_to_logits_N, outputs_to_logits_map, outputs_to_weights_map, outputs_to_areas_N
