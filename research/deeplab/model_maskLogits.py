@@ -278,7 +278,7 @@ def _get_logits_mP(FLAGS,
       scope_suffix=output+'_weights',
       is_training=is_training,
       fine_tune_batch_norm=fine_tune_batch_norm,
-      # normalizer_fn=slim.batch_norm,
+      if_bn = True,
       activation=tf.tanh)
       + 1.) / 2. # (batch_size, 68, 170, 1)
 
@@ -293,7 +293,7 @@ def _get_logits_mP(FLAGS,
         scope_suffix=output+'_logits',
         is_training=is_training,
         fine_tune_batch_norm=fine_tune_batch_norm,
-        normalizer_fn=slim.batch_norm,
+        if_bn = False,
         activation=None)
 
     if output == 'x' and FLAGS.if_uvflow:
@@ -354,67 +354,6 @@ def _get_logits_mP(FLAGS,
     outputs_to_weights_map[output] = weights # [batch_size, H', W', 1]
     outputs_to_areas_N[output] = areas_N # [N, 1]
   return outputs_to_logits_N, outputs_to_logits_map, outputs_to_weights_map, outputs_to_areas_N
-
-# def _get_logits(images,
-#                 seg_int,
-#                 model_options,
-#                 weight_decay=0.0001,
-#                 reuse=None,
-#                 is_training=False,
-#                 fine_tune_batch_norm=False,
-#                 fine_tune_feature_extractor=True):
-#   """Gets the logits by atrous/image spatial pyramid pooling.
-
-#   Args:
-#     images: A tensor of size [batch, height, width, channels].
-#     model_options: A ModelOptions instance to configure models.
-#     weight_decay: The weight decay for model variables.
-#     reuse: Reuse the model variables or not.
-#     is_training: Is training or not.
-#     fine_tune_batch_norm: Fine-tune the batch norm parameters or not.
-
-#   Returns:
-#     outputs_to_logits: A map from output_type to logits.
-#   """
-#   features, end_points = extract_features(
-#       images,
-#       model_options,
-#       weight_decay=weight_decay,
-#       reuse=reuse,
-#       is_training=is_training,
-#       fine_tune_batch_norm=fine_tune_batch_norm,
-#       fine_tune_feature_extractor=fine_tune_feature_extractor) # (3, 68, 170, 256)
-
-#   if model_options.decoder_output_stride is not None:
-#     decoder_height = scale_dimension(model_options.crop_size[0],
-#                                      1.0 / model_options.decoder_output_stride)
-#     decoder_width = scale_dimension(model_options.crop_size[1],
-#                                     1.0 / model_options.decoder_output_stride)
-#     features = refine_by_decoder(
-#         features,
-#         end_points,
-#         decoder_height=decoder_height,
-#         decoder_width=decoder_width,
-#         decoder_use_separable_conv=model_options.decoder_use_separable_conv,
-#         model_variant=model_options.model_variant,
-#         weight_decay=weight_decay,
-#         reuse=reuse,
-#         is_training=is_training,
-#         fine_tune_batch_norm=fine_tune_batch_norm)
-
-#   outputs_to_logits = {}
-#   for output in sorted(model_options.outputs_to_num_classes):
-#     outputs_to_logits[output] = get_branch_logits(
-#         features,
-#         model_options.outputs_to_num_classes[output],
-#         model_options.atrous_rates,
-#         aspp_with_batch_norm=model_options.aspp_with_batch_norm,
-#         kernel_size=model_options.logits_kernel_size,
-#         weight_decay=weight_decay,
-#         reuse=reuse,
-#         scope_suffix=output)
-
-#   return outputs_to_logits
 
 
 def extract_features(images,
@@ -647,7 +586,7 @@ def get_branch_logits(features,
                       scope_suffix='',
                       is_training=False,
                       fine_tune_batch_norm=False,
-                      normalizer_fn=None,
+                      if_bn=False,
                       activation=None):
   """Gets the logits from each model's branch.
 
@@ -690,7 +629,7 @@ def get_branch_logits(features,
       [slim.conv2d],
       weights_regularizer=slim.l2_regularizer(weight_decay),
       weights_initializer=tf.truncated_normal_initializer(stddev=0.01),
-      normalizer_fn=normalizer_fn,
+      normalizer_fn=slim.batch_norm if if_bn else None,
       reuse=reuse):
     with slim.arg_scope([slim.batch_norm], **batch_norm_params):
         with tf.variable_scope(LOGITS_SCOPE_NAME, LOGITS_SCOPE_NAME, [features]):

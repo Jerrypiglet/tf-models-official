@@ -29,7 +29,8 @@ coloredlogs.install(level='DEBUG')
 tf.logging.set_verbosity(tf.logging.DEBUG)
 from deeplab import common
 # from deeplab import model
-from deeplab import model_maskLogits as model
+# from deeplab import model_maskLogits as model
+from deeplab import model_maskLogits_resnet as model
 from deeplab.datasets import regression_dataset_mP as regression_dataset
 from deeplab.utils import input_generator_mP as input_generator
 from deeplab.utils import train_utils_mP as train_utils

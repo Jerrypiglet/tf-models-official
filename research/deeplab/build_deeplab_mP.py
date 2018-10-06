@@ -1,7 +1,8 @@
 import tensorflow as tf
 from tensorflow.python.ops import math_ops
 from deeplab import common
-from deeplab import model_maskLogits as model
+# from deeplab import model_maskLogits as model
+from deeplab import model_maskLogits_resnet as model
 from deeplab.utils import train_utils_mP as train_utils
 import numpy as np
 
