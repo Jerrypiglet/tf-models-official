@@ -534,7 +534,7 @@ def main(unused_argv):
 
             print '++++ label_id_slice', label_id_slice.T, np.min(label_id_slice), np.max(label_id_slice)
             print '++++ label_log_slice', label_log_slice.T, np.min(label_log_slice), np.max(label_log_slice)
-            print '++++ label_explog_slice', np.exp(label_log_slice).T, np.min(np.exp(label_log_slice)), np.max(np.exp(label_log_slice)
+            print '++++ label_explog_slice', np.exp(label_log_slice).T, np.min(np.exp(label_log_slice)), np.max(np.exp(label_log_slice))
             if np.min(label_id_slice)<0 or np.max(label_id_slice)>=64:
                 programPause = raw_input("!!!!!!!!!!!!!!!!!np.min(label_id_slice)<0 or np.max(label_id_slice)>=64")
 
