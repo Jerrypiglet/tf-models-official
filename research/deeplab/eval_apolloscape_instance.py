@@ -114,6 +114,21 @@ flags.DEFINE_multi_integer('atrous_rates', None,
 flags.DEFINE_integer('output_stride', 16,
                      'The ratio of input to output spatial resolution.')
 
+flags.DEFINE_boolean('if_depth', False,
+        'True: regression to depth; False: regression to invd.')
+
+flags.DEFINE_boolean('if_log_depth', False,
+        'True: log depth space.')
+
+flags.DEFINE_boolean('if_shape', True,
+        'True: adding shape loss. if FLAGS.if_uvflow else None')
+
+flags.DEFINE_boolean('if_uvflow', False,
+        'True: regression to uv flow; False: regression to xy.')
+
+flags.DEFINE_boolean('if_depth_only', False,
+        'True: regression to depth only.')
+
 # Dataset settings.
 flags.DEFINE_string('dataset', 'apolloscape',
                     'Name of the segmentation dataset.')

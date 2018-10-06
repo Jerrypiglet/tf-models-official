@@ -309,8 +309,6 @@ def main(unused_argv):
           print output + '_bin_bounds', bin_bounds, len(bin_bounds)
       bin_centers_tensors = [tf.constant(value=[bin_centers_list[i].tolist()], dtype=tf.float32, shape=[1, dataset.bin_nums[i]], name=name) \
               for i, name in enumerate(dataset.output_names)]
-      # bin_bounds_tensors = [tf.constant(value=[bin_bounds_list[i]], dtype=tf.float32, shape=[1, dataset.bin_nums[i]+1], name=name) \
-              # for i, name in enumerate(dataset.output_names)]
 
       outputs_to_num_classes = {}
       outputs_to_indices = {}
@@ -419,6 +417,12 @@ def main(unused_argv):
           ## Construct the validation graph; takes one GPU.
           image_names, z_logits, outputs_to_weights, seg_one_hots_list, weights_normalized, areas_masked, car_nums, car_nums_list, idx_xys, reg_logits_pose_xy_from_uv, pose_dict_N, prob_logits_pose, rotuvd_dict_N, masks_float, label_uv_flow_map, logits_uv_flow_map = _build_deeplab(FLAGS, inputs_queue_val.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_centers_tensors, bin_centers_list, bin_bounds_list, bin_size_list, dataset_val, codes, is_training=False)
           # pose_dict_N, xyz = _build_deeplab(FLAGS, inputs_queue_val.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_vals, bin_range, dataset_val, codes, is_training=False)
+    if FLAGS.num_clones > 1:
+        pattern_train = first_clone_scope + '/%s:0'
+    else:
+        pattern_train = '%s:0'
+    pattern_val = 'val-%s:0'
+    pattern = pattern_val if FLAGS.if_val else pattern_train
 
     # Add summaries for images, labels, semantic predictions
     summaries = get_summaries(FLAGS, graph, summaries, dataset, config, first_clone_scope)
@@ -486,6 +490,8 @@ def main(unused_argv):
             trans_sqrt_error = graph.get_tensor_by_name(pattern_val%'trans_sqrt_error')
             trans_loss_error = graph.get_tensor_by_name(pattern_val%'trans_loss_error')
             trans_diff_metric_abs = graph.get_tensor_by_name(pattern_val%'trans_diff_metric_abs')
+            label_id_slice = graph.get_tensor_by_name(pattern_val%'label_id_slice')
+            label_log_slice = graph.get_tensor_by_name(pattern_val%'label_log_slice')
             summary_loss_slice_reg_vector_z = graph.get_tensor_by_name((pattern%'loss_slice_reg_vector_').replace(':0', '')+'z'+':0')
             if FLAGS.if_depth_only:
                 summary_loss_slice_reg_vector_x = summary_loss_slice_reg_vector_z
@@ -497,7 +503,7 @@ def main(unused_argv):
                 summary_loss_slice_reg_vector_y = graph.get_tensor_by_name((pattern%'loss_slice_reg_vector_').replace(':0', '')+'y'+':0')
                 label_uv_map = graph.get_tensor_by_name(pattern%'label_uv_flow_map')
                 logits_uv_map = graph.get_tensor_by_name(pattern%'logits_uv_flow_map')
-            _, test_out, test_out2, test_out3, test_out4, test_out5_areas, test_out5, test_out6, test_out7, test_out8, test_out9, test_out10, test_out11, test_out12, test_out13, test_out14, test_out15, test_out_regx, test_out_regy, test_out_regz, trans_sqrt_error, trans_diff_metric_abs, trans_loss_error  = sess.run([summary_op, image_names, z_logits, outputs_to_weights['z'], mask_rescaled_float, areas_masked, weights_normalized, prob_logits_pose, pose_dict_N, car_nums, car_nums_list, idx_xys, rotuvd_dict_N, masks_float, reg_logits_pose_xy_from_uv, label_uv_map, logits_uv_map, summary_loss_slice_reg_vector_x, summary_loss_slice_reg_vector_y, summary_loss_slice_reg_vector_z, trans_sqrt_error, trans_diff_metric_abs, trans_loss_error])
+            _, test_out, test_out2, test_out3, test_out4, test_out5_areas, test_out5, test_out6, test_out7, test_out8, test_out9, test_out10, test_out11, test_out12, test_out13, test_out14, test_out15, test_out_regx, test_out_regy, test_out_regz, trans_sqrt_error, trans_diff_metric_abs, trans_loss_error, label_id_slice, label_log_slice  = sess.run([summary_op, image_names, z_logits, outputs_to_weights['z'], mask_rescaled_float, areas_masked, weights_normalized, prob_logits_pose, pose_dict_N, car_nums, car_nums_list, idx_xys, rotuvd_dict_N, masks_float, reg_logits_pose_xy_from_uv, label_uv_map, logits_uv_map, summary_loss_slice_reg_vector_x, summary_loss_slice_reg_vector_y, summary_loss_slice_reg_vector_z, trans_sqrt_error, trans_diff_metric_abs, trans_loss_error, label_id_slice, label_log_slice])
             # test_out_regx, test_out_regy, test_out_regz, trans_sqrt_error, trans_diff_metric_abs = sess.run([)
             print test_out
             print test_out2.shape
@@ -525,6 +531,12 @@ def main(unused_argv):
             print '-- slice reg z: ', test_out_regz.T, np.max(test_out_regz), test_out_regz.shape
             print '-- trans_sqrt_error: ', trans_sqrt_error.T, np.max(trans_sqrt_error), trans_sqrt_error.shape
             print '-- trans_diff_metric_abs: ', np.hstack((trans_diff_metric_abs, test_out5_areas, trans_sqrt_error)), np.max(trans_diff_metric_abs, axis=0), trans_diff_metric_abs.shape
+
+            print '++++ label_id_slice', label_id_slice.T, np.min(label_id_slice), np.max(label_id_slice)
+            print '++++ label_log_slice', label_log_slice.T, np.min(label_log_slice), np.max(label_log_slice)
+            print '++++ label_explog_slice', np.exp(label_log_slice).T, np.min(np.exp(label_log_slice)), np.max(np.exp(label_log_slice)
+            if np.min(label_id_slice)<0 or np.max(label_id_slice)>=64:
+                programPause = raw_input("!!!!!!!!!!!!!!!!!np.min(label_id_slice)<0 or np.max(label_id_slice)>=64")
 
             if FLAGS.if_pause:
                 programPause = raw_input("Press the <ENTER> key to continue...")

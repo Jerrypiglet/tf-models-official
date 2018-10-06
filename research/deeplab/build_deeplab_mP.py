@@ -297,20 +297,23 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
             label_slice = tf.log(label_slice)
             print '.. converting z label from depth to log depth.'
         # label_id_slice = tf.round((label_slice - bin_centers[0]) / bin_size_list[idx_output])
+        print bin_bounds_list[idx_output]
         label_id_slice = math_ops._bucketize(label_slice, bin_bounds_list[idx_output]) - 1
         # label_id_slice = tf.clip_by_value(label_id_slice, 0, dataset.bin_nums[idx_output]-1)
         tf.assert_greater_equal(label_id_slice, 0, message='label_id not all >=0!')
         tf.assert_less_equal(label_id_slice, dataset.bin_nums[idx_output]-1, message='label_id not all <=dataset.bin_nums[idx_output]-1!')
+        if output == 'z':
+            label_id_slice = tf.identity(label_id_slice, name=is_training_prefix+'label_id_slice')
+            label_slice = tf.identity(label_slice, name=is_training_prefix+'label_log_slice')
         print '\\\\\\\\\\', label_id_slice.dtype, label_id_slice.get_shape()
-        # label_id_slice = tf.cast(label_id_slice, tf.int32)
         # label_id_list.append(label_id_slice)
         gt_idx = tf.one_hot(tf.reshape(label_id_slice, [-1]), depth=dataset.bin_nums[idx_output], axis=-1)
         if FLAGS.if_log_depth:
             alpha = 15
-            # weight = [np.exp(-alpha * np.power(bin_centers - x, 2)) for x in bin_centers] # binary multi-class cls loss
+            weight = [np.exp(-alpha * np.power(bin_centers - x, 2)) for x in bin_centers] # binary multi-class cls loss
 
-            weight = np.zeros((dataset.bin_nums[idx_output], dataset.bin_nums[idx_output])) # DORN loss
-            for i in range(dataset.bin_nums[idx_output]): weight[i,:i] = 1
+            # weight = np.zeros((dataset.bin_nums[idx_output], dataset.bin_nums[idx_output])) # DORN loss
+            # for i in range(dataset.bin_nums[idx_output]): weight[i,:i] = 1
 
             weight = tf.constant(np.asarray(weight,dtype=np.float32))
             lab_l = tf.matmul(gt_idx, weight)
