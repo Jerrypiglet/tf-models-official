@@ -344,7 +344,7 @@ def main(unused_argv):
                 image_id_offset += FLAGS.eval_batch_size
 
             depth_diff_abs_errors = np.vstack(depth_diff_abs_error_list)
-            depth_diff_abs_error_thres2_8_out = np.float(np.sum(depth_diff_abs_errors<2.8)) / np.float(np.sum(depth_diff_abs_errors>0.))
+            depth_diff_abs_error_thres2_8_out = np.float(np.sum(np.logical_and(depth_diff_abs_errors<2.8, depth_diff_abs_errors>0.))) / np.float(np.sum(depth_diff_abs_errors>0.))
             depth_diff_abs_error_out = np.float(np.sum(depth_diff_abs_errors)) / np.float(np.sum(depth_diff_abs_errors>0.))
 
             summaries_out, global_step_out = sess.run([summaries, global_step], feed_dict={depth_diff_abs_error_thres2_8_pl: depth_diff_abs_error_thres2_8_out, depth_diff_abs_error_pl: depth_diff_abs_error_out})
