@@ -261,10 +261,12 @@ def main(unused_argv):
     # global_step = graph.get_tensor_by_name('global_step')
     global_step = tf.train.get_or_create_global_step()
     depth_diff_abs_error = graph.get_tensor_by_name(pattern%'depth_diff_abs_error')
+    loss_cls_ALL = graph.get_tensor_by_name(pattern%'loss_cls_ALL')
     depth_diff_abs_error_thres2_8_pl = tf.placeholder(tf.float32, shape=(), name="depth_diff_abs_error_thres2_8")
     depth_diff_abs_error_pl = tf.placeholder(tf.float32, shape=(), name="depth_diff_abs_error")
 
     tf.summary.scalar(('total_loss_val/'+pattern%'loss_reg_Zdepth_metric_thres2_8').replace(':0', ''), depth_diff_abs_error_thres2_8_pl)
+    # tf.summary.scalar(('total_loss_val/'+pattern%'loss_cls_ALL').replace(':0', ''), loss_cls_ALL)
     tf.summary.scalar(('total_loss_val/'+pattern%'loss_reg_Zdepth_metric').replace(':0', ''), depth_diff_abs_error_pl)
     summaries = tf.summary.merge_all()
 

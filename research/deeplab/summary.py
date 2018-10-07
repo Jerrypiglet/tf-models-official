@@ -90,6 +90,13 @@ def get_summaries(FLAGS, graph, summaries, dataset, config, first_clone_scope):
               if error_map_name != 'trans_loss_error_map':
                   summary_error_diffs_uint8, _ = scale_to_255(summary_error_diffs, pixel_scaling=None, batch_scale=True)
                   summaries.add(tf.summary.image('metrics_map'+label_postfix+'/%s' % error_map_name, tf.gather(summary_error_diffs_uint8, gather_list)))
+                  if error_map_name == 'depth_diff_abs_error_map':
+                      summary_error_diffs_less2_8 = tf.where(tf.logical_and(tf.less_equal(summary_error_diffs, 2.8), tf.greater(summary_error_diffs, 0.)), tf.ones_like(summary_error_diffs), tf.zeros_like(summary_error_diffs))
+                      summary_error_diffs_uint8, _ = scale_to_255(summary_error_diffs_less2_8, pixel_scaling=None, batch_scale=True)
+                      summaries.add(tf.summary.image('metrics_map'+label_postfix+'/depth_diff_abs_error_map_less2.8', tf.gather(summary_error_diffs_uint8, gather_list)))
+                      summary_error_diffs_greater2_8 = tf.where(tf.greater(summary_error_diffs, 2.8), tf.ones_like(summary_error_diffs), tf.zeros_like(summary_error_diffs))
+                      summary_error_diffs_uint8, _ = scale_to_255(summary_error_diffs_greater2_8, pixel_scaling=None, batch_scale=True)
+                      summaries.add(tf.summary.image('metrics_map'+label_postfix+'/depth_diff_abs_error_map_greater2.8', tf.gather(summary_error_diffs_uint8, gather_list)))
               else:
                   for output_idx, output in enumerate(['u', 'v', 'z']):
                       summary_error_diff = tf.expand_dims(tf.gather(summary_error_diffs, output_idx, axis=3), -1)
