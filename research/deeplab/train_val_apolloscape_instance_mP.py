@@ -307,8 +307,7 @@ def main(unused_argv):
           print output + '_poserange_binsize', pose_range, bin_size
           print output + '_bin_centers', bin_centers, len(bin_centers)
           print output + '_bin_bounds', bin_bounds, len(bin_bounds)
-      bin_centers_tensors = [tf.constant(value=[bin_centers_list[i].tolist()], dtype=tf.float32, shape=[1, dataset.bin_nums[i]], name=name) \
-              for i, name in enumerate(dataset.output_names)]
+      bin_centers_tensors = [tf.constant(value=[bin_centers_list[i].tolist()], dtype=tf.float32, shape=[1, dataset.bin_nums[i]], name=name) for i, name in enumerate(dataset.output_names)]
 
       outputs_to_num_classes = {}
       outputs_to_indices = {}

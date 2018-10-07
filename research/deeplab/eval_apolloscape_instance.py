@@ -23,11 +23,15 @@ import time
 import six
 import os
 import tensorflow as tf
+from tensorflow import logging
+import coloredlogs
+coloredlogs.install(level='DEBUG')
+tf.logging.set_verbosity(tf.logging.DEBUG)
 from deeplab import common
-from deeplab import model
-from deeplab.datasets import regression_dataset
-from deeplab.utils import input_generator
-from deeplab.utils import train_utils
+from deeplab import model_maskLogits as model
+from deeplab.datasets import regression_dataset_mP as regression_dataset
+from deeplab.utils import input_generator_mP as input_generator
+from deeplab.utils import train_utils_mP as train_utils
 from deployment import model_deploy
 import numpy as np
 np.set_printoptions(threshold=np.nan)
@@ -85,11 +89,6 @@ flags.DEFINE_float('weight_decay', 0.00004,
 flags.DEFINE_boolean('upsample_logits', True,
                      'Upsample logits during evaluation.')
 
-# Settings for fine-tuning the network.
-
-flags.DEFINE_boolean('if_restore', True,
-                    'Whether to restore the logged checkpoint.')
-
 # Set to False if one does not want to re-use the trained classifier weights.
 flags.DEFINE_boolean('initialize_last_layer', True,
                      'Initialize the last layer.')
@@ -129,6 +128,9 @@ flags.DEFINE_boolean('if_uvflow', False,
 flags.DEFINE_boolean('if_depth_only', False,
         'True: regression to depth only.')
 
+flags.DEFINE_boolean('if_summary_shape_metrics', True,
+                     'Save image metrics to summary.')
+
 # Dataset settings.
 flags.DEFINE_string('dataset', 'apolloscape',
                     'Name of the segmentation dataset.')
@@ -138,7 +140,10 @@ flags.DEFINE_string('val_split', 'val',
 
 flags.DEFINE_string('dataset_dir', 'deeplab/datasets/apolloscape', 'Where the dataset reside.')
 
-from build_deeplab import _build_deeplab
+flags.DEFINE_boolean('if_print_tensors', False,
+                     'If we print all the tensors and their names.')
+
+from build_deeplab_mP import _build_deeplab
 
 def main(unused_argv):
   FLAGS.restore_logdir = FLAGS.base_logdir + '/' + FLAGS.restore_name
@@ -147,7 +152,7 @@ def main(unused_argv):
   tf.logging.info('==== Logging in dir:%s; Evaluating on %s set', FLAGS.eval_logdir, FLAGS.val_split)
 
   # Get dataset-dependent information.
-  dataset = regression_dataset.get_dataset(
+  dataset = regression_dataset.get_dataset(FLAGS,
       FLAGS.dataset, FLAGS.val_split, dataset_dir=FLAGS.dataset_dir)
   print '#### The data has size:', dataset.num_samples
 
@@ -155,19 +160,31 @@ def main(unused_argv):
     codes = np.load('/ssd2/public/zhurui/Documents/mesh-voxelization/models/cars_64/codes.npy')
     codes_max = np.amax(codes, axis=1).reshape((-1, 1))
     codes_min = np.amin(codes, axis=1).reshape((-1, 1))
-    shape_range = np.hstack((codes_max + (codes_max - codes_min)/(dataset.SHAPE_BINS-1.), codes_min - (codes_max - codes_min)/(dataset.SHAPE_BINS-1.)))
-    bin_range = [np.linspace(r[0], r[1], num=b).tolist() for r, b in zip(np.vstack((dataset.pose_range, shape_range)), dataset.bin_nums)]
+    shape_range = np.hstack((codes_min, codes_max))
+    pose_range = dataset.pose_range
+    if FLAGS.if_log_depth:
+        pose_range[6] = np.log(pose_range[6]).tolist()
+    bin_centers_list = [np.linspace(r[0], r[1], num=b) for r, b in zip(np.vstack((pose_range, shape_range)), dataset.bin_nums)]
+    bin_size_list = [(r[1]-r[0])/(b-1 if b!=1 else 1) for r, b in zip(np.vstack((pose_range, shape_range)), dataset.bin_nums)]
+    bin_bounds_list = [[c_elem-s/2. for c_elem in c] + [c[-1]+s/2.] for c, s in zip(bin_centers_list, bin_size_list)]
+    assert bin_bounds_list[6][0] > 0, 'Need more bins to make the first bound of log depth positive! (Or do we?)'
+    bin_centers_tensors = [tf.constant(value=[bin_centers_list[i].tolist()], dtype=tf.float32, shape=[1, dataset.bin_nums[i]], name=name) for i, name in enumerate(dataset.output_names)]
 
     outputs_to_num_classes = {}
     outputs_to_indices = {}
     for output, bin_num, idx in zip(dataset.output_names, dataset.bin_nums,range(len(dataset.output_names))):
         outputs_to_num_classes[output] = bin_num
         outputs_to_indices[output] = idx
-    bin_vals = [tf.constant(value=[bin_range[i]], dtype=tf.float32, shape=[1, dataset.bin_nums[i]], name=name) \
-            for i, name in enumerate(dataset.output_names)]
+
+    model_options = common.ModelOptions(
+            outputs_to_num_classes=outputs_to_num_classes,
+            crop_size=[dataset.height, dataset.width],
+            atrous_rates=FLAGS.atrous_rates,
+            output_stride=FLAGS.output_stride)
 
     samples = input_generator.get(
         dataset,
+        model_options,
         codes,
         FLAGS.eval_batch_size,
         dataset_split=FLAGS.val_split,
@@ -177,7 +194,13 @@ def main(unused_argv):
 
     # Create the global step on the device storing the variables.
       ## Construct the validation graph; takes one GPU.
-    _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, bin_vals, bin_range, dataset, codes, is_training=False, reuse=False)
+    _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, bin_centers_tensors, bin_centers_list, bin_bounds_list, bin_size_list, dataset, codes, is_training=False)
+
+    if FLAGS.if_print_tensors:
+        for op in tf.get_default_graph().get_operations():
+            if 'step' in op.name:
+                print str(op.name)
+                return
 
     # Add summaries for images, labels, semantic predictions
     pattern = 'val-%s:0'
@@ -220,41 +243,67 @@ def main(unused_argv):
     # for metric, value in zip(names_to_values.keys(), metric_values):
     #     print 'Metric %s has value: %f', metric, value
 
-    shape_sim_mat = np.loadtxt('./deeplab/dataset-api/car_instance/sim_mat.txt')
+    restore_VAL_logdir = FLAGS.restore_logdir + '_VAL'
+    if not(os.path.isdir(restore_VAL_logdir)):
+        tf.gfile.MakeDirs(restore_VAL_logdir)
+        print '--- mkdir '+restore_VAL_logdir
+    elif len(os.listdir(restore_VAL_logdir)) != 0:
+        if_delete_all = raw_input('#### The log folder %s exists and non-empty; delete all logs? [y/n] '%restore_VAL_logdir)
+        if if_delete_all == 'y':
+            shutil.rmtree(restore_VAL_logdir)
+            print '==== Log folder %s emptied: '%restore_VAL_logdir + 'rm -rf %s/*'%restore_VAL_logdir
+
+    summary_writer = tf.summary.FileWriter(restore_VAL_logdir)
+
+    # global_step = graph.get_tensor_by_name('global_step')
+    global_step = tf.train.get_or_create_global_step()
+    depth_diff_abs_error = graph.get_tensor_by_name(pattern%'depth_diff_abs_error')
+    depth_diff_abs_error_thres2_8_pl = tf.placeholder(tf.float32, shape=(), name="depth_diff_abs_error_thres2_8")
+    depth_diff_abs_error_pl = tf.placeholder(tf.float32, shape=(), name="depth_diff_abs_error")
+
+    tf.summary.scalar(('total_loss_val/'+pattern%'loss_reg_Zdepth_metric_thres2_8').replace(':0', ''), depth_diff_abs_error_thres2_8_pl)
+    tf.summary.scalar(('total_loss_val/'+pattern%'loss_reg_Zdepth_metric').replace(':0', ''), depth_diff_abs_error_pl)
+    summaries = tf.summary.merge_all()
+
+    depth_diff_abs_error_list = []
+
     def _process_batch(sess, batch):
         # Label and outputs for pose and shape
         image = graph.get_tensor_by_name(pattern%common.IMAGE)
         seg = graph.get_tensor_by_name(pattern%'seg')
-        logits_pose_shape_map = graph.get_tensor_by_name(pattern%'scaled_prob_logits_pose_shape_map')
+        # logits_pose_shape_map = graph.get_tensor_by_name(pattern%'scaled_prob_logits_pose_shape_map')
         # For logging
         image_name = graph.get_tensor_by_name(pattern%common.IMAGE_NAME)
         mask = graph.get_tensor_by_name(pattern%'not_ignore_mask_in_loss')
         if FLAGS.val_split != 'test':
-            label_pose_shape_map = graph.get_tensor_by_name(pattern%'label_pose_shape_map')
-            vis = graph.get_tensor_by_name(pattern%'vis')
-            shape_id_map = graph.get_tensor_by_name(pattern%'shape_id_map')
-            shape_id_map_predict = graph.get_tensor_by_name(pattern%'shape_id_map_predict')
-            # The metrics map
-            rot_error_map = graph.get_tensor_by_name(pattern%'rot_error_map')
-            trans_error_map = graph.get_tensor_by_name(pattern%'trans_error_map')
-            shape_id_sim_map = graph.get_tensor_by_name(pattern%'shape_id_sim_map')
-            image_out, vis_out, seg_out, \
-                    label_pose_shape_map_out, logits_pose_shape_map_out, shape_id_map_out, shape_id_map_predict_out, \
-                    rot_error_map_out, trans_error_map_out, shape_id_sim_map_out, \
-                    image_name_out, mask_out = sess.run([image, vis, seg, \
-                    label_pose_shape_map, logits_pose_shape_map, shape_id_map, shape_id_map_predict,  \
-                    rot_error_map, trans_error_map, shape_id_sim_map, \
-                    image_name, mask])
-            print image_name_out
-            savemat(FLAGS.eval_logdir+'/%d-%s.mat'%(batch, image_name_out[0]), {'image': image_out, 'vis': vis_out, 'seg': seg_out, \
-                    'label_pose_shape_map': label_pose_shape_map_out, 'logits_pose_shape_map': logits_pose_shape_map_out, 'shape_id_map': shape_id_map_out, 'shape_id_map_predict': shape_id_map_predict_out, \
-                    'rot_error_map': rot_error_map_out, 'trans_error_map': trans_error_map_out, 'shape_id_sim_map': shape_id_sim_map_out, \
-                    'image_name': image_name_out, 'mask': mask_out})
-        else:
-            image_out, seg_out, logits_pose_shape_map_out, image_name_out, mask_out = \
-                    sess.run([image, seg, logits_pose_shape_map, image_name, mask])
-            print image_name_out
-            savemat(FLAGS.eval_logdir+'/%d-%s.mat'%(batch, image_name_out[0]), {'image': image_out, 'seg': seg_out, 'logits_pose_shape_map': logits_pose_shape_map_out, 'image_name': image_name_out, 'mask': mask_out})
+            depth_diff_abs_error_out = sess.run(depth_diff_abs_error)
+            depth_diff_abs_error_list.append(depth_diff_abs_error_out)
+            print depth_diff_abs_error_out.shape
+            # label_pose_shape_map = graph.get_tensor_by_name(pattern%'label_pose_shape_map')
+            # vis = graph.get_tensor_by_name(pattern%'vis')
+            # shape_id_map = graph.get_tensor_by_name(pattern%'shape_id_map')
+            # shape_id_map_predict = graph.get_tensor_by_name(pattern%'shape_id_map_predict')
+            # # The metrics map
+            # rot_error_map = graph.get_tensor_by_name(pattern%'rot_error_map')
+            # trans_error_map = graph.get_tensor_by_name(pattern%'trans_error_map')
+            # shape_id_sim_map = graph.get_tensor_by_name(pattern%'shape_id_sim_map')
+
+            #         label_pose_shape_map_out, logits_pose_shape_map_out, shape_id_map_out, shape_id_map_predict_out, \
+            #         rot_error_map_out, trans_error_map_out, shape_id_sim_map_out, \
+            #         image_name_out, mask_out = sess.run([image, vis, seg, \
+            #         label_pose_shape_map, logits_pose_shape_map, shape_id_map, shape_id_map_predict,  \
+            #         rot_error_map, trans_error_map, shape_id_sim_map, \
+            #         image_name, mask])
+            # print image_name_out
+            # savemat(FLAGS.eval_logdir+'/%d-%s.mat'%(batch, image_name_out[0]), {'image': image_out, 'vis': vis_out, 'seg': seg_out, \
+            #         'label_pose_shape_map': label_pose_shape_map_out, 'logits_pose_shape_map': logits_pose_shape_map_out, 'shape_id_map': shape_id_map_out, 'shape_id_map_predict': shape_id_map_predict_out, \
+            #         'rot_error_map': rot_error_map_out, 'trans_error_map': trans_error_map_out, 'shape_id_sim_map': shape_id_sim_map_out, \
+            #         'image_name': image_name_out, 'mask': mask_out})
+        # else:
+            # image_out, seg_out, logits_pose_shape_map_out, image_name_out, mask_out = \
+            #         sess.run([image, seg, logits_pose_shape_map, image_name, mask])
+            # print image_name_out
+            # savemat(FLAGS.eval_logdir+'/%d-%s.mat'%(batch, image_name_out[0]), {'image': image_out, 'seg': seg_out, 'logits_pose_shape_map': logits_pose_shape_map_out, 'image_name': image_name_out, 'mask': mask_out})
 
     tf.train.get_or_create_global_step()
     saver = tf.train.Saver(slim.get_variables_to_restore())
@@ -291,6 +340,14 @@ def main(unused_argv):
                 _process_batch(sess, batch)
 
                 image_id_offset += FLAGS.eval_batch_size
+
+            depth_diff_abs_errors = np.vstack(depth_diff_abs_error_list)
+            depth_diff_abs_error_thres2_8_out = np.float(np.sum(depth_diff_abs_errors<2.8)) / np.float(np.sum(depth_diff_abs_errors>0.))
+            depth_diff_abs_error_out = np.float(np.sum(depth_diff_abs_errors>0.)) / np.float(np.sum(depth_diff_abs_errors>0.))
+
+            summaries_out, global_step_out = sess.run([summaries, global_step], feed_dict={depth_diff_abs_error_thres2_8_pl: depth_diff_abs_error_thres2_8_out, depth_diff_abs_error_pl: depth_diff_abs_error_out})
+            print global_step_out, depth_diff_abs_error_thres2_8_out, depth_diff_abs_error_out
+            summary_writer.add_summary(summaries_out, global_step_out)
 
 
 if __name__ == '__main__':
