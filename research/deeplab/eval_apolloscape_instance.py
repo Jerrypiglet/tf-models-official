@@ -22,6 +22,7 @@ import math
 import time
 import six
 import os
+import shutil
 import tensorflow as tf
 from tensorflow import logging
 import coloredlogs
@@ -36,6 +37,7 @@ from deployment import model_deploy
 import numpy as np
 np.set_printoptions(threshold=np.nan)
 np.set_printoptions(precision=4)
+np.set_printoptions(suppress=True)
 from scipy.io import savemat, loadmat
 from deeplab.core import preprocess_utils
 
@@ -343,7 +345,7 @@ def main(unused_argv):
 
             depth_diff_abs_errors = np.vstack(depth_diff_abs_error_list)
             depth_diff_abs_error_thres2_8_out = np.float(np.sum(depth_diff_abs_errors<2.8)) / np.float(np.sum(depth_diff_abs_errors>0.))
-            depth_diff_abs_error_out = np.float(np.sum(depth_diff_abs_errors>0.)) / np.float(np.sum(depth_diff_abs_errors>0.))
+            depth_diff_abs_error_out = np.float(np.sum(depth_diff_abs_errors)) / np.float(np.sum(depth_diff_abs_errors>0.))
 
             summaries_out, global_step_out = sess.run([summaries, global_step], feed_dict={depth_diff_abs_error_thres2_8_pl: depth_diff_abs_error_thres2_8_out, depth_diff_abs_error_pl: depth_diff_abs_error_out})
             print global_step_out, depth_diff_abs_error_thres2_8_out, depth_diff_abs_error_out
