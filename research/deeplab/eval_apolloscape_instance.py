@@ -159,7 +159,7 @@ def main(unused_argv):
   print '#### The data has size:', dataset.num_samples
 
   with tf.Graph().as_default() as graph:
-    codes = np.load('/ssd2/public/zhurui/Documents/mesh-voxelization/models/cars_64/codes.npy')
+    codes = np.load('./deeplab/codes.npy')
     codes_max = np.amax(codes, axis=1).reshape((-1, 1))
     codes_min = np.amin(codes, axis=1).reshape((-1, 1))
     shape_range = np.hstack((codes_min, codes_max))
