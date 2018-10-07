@@ -2,7 +2,7 @@ import tensorflow as tf
 from tensorflow.python.ops import math_ops
 from deeplab import common
 # from deeplab import model_maskLogits as model
-from deeplab import model_maskLogits_resnet as model
+from deeplab import model_maskLogits as model
 from deeplab.utils import train_utils_mP as train_utils
 import numpy as np
 
@@ -71,24 +71,29 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
 
     seg_one_hots_list = []
     seg_one_hots_flattened_list = []
+    seg_one_hots_flattened_rescaled_list = []
     seg_list = tf.split(samples['seg'], samples['seg'].get_shape()[0])
     for seg_sample, car_num in zip(seg_list, car_nums_list):
       seg_one_hots_sample = tf.one_hot(tf.squeeze(tf.cast(seg_sample, tf.int32)), depth=tf.reshape(car_num+1, []))
       seg_one_hots_sample = tf.slice(seg_one_hots_sample, [0, 0, 1], [-1, -1, -1])
       seg_one_hots_list.append(tf.expand_dims(seg_one_hots_sample, 0)) # (1, 272, 680, ?)
       seg_one_hots_flattened_list.append(tf.reshape(seg_one_hots_sample, [-1, tf.shape(seg_one_hots_sample)[2]])) # (272*680, ?)
+      seg_one_hots_sample_rescaled = tf.image.resize_nearest_neighbor(tf.expand_dims(seg_one_hots_sample, 0), [tf.shape(masks_rescaled_float)[1], tf.shape(masks_rescaled_float)[2]], align_corners=True)
+      seg_one_hots_flattened_rescaled_list.append(tf.reshape(seg_one_hots_sample_rescaled, [-1, tf.shape(seg_one_hots_sample_rescaled)[2]])) # (272/4*680/4, ?)
 
-  def logits_cars_to_map(logits_cars):
+
+  def logits_cars_to_map(logits_cars, rescale=False):
     logits_cars_N_list = tf.split(logits_cars, samples['car_nums'])
     logits_samples_list = []
-    for seg_one_hots_sample, logits_cars_sample in zip(seg_one_hots_flattened_list, logits_cars_N_list): # (272*680, ?) (?, 17)
+    seg_one_hots_flattened_list_use = seg_one_hots_flattened_list if not(rescale) else seg_one_hots_flattened_rescaled_list
+    for seg_one_hots_sample, logits_cars_sample in zip(seg_one_hots_flattened_list_use, logits_cars_N_list): # (272*680, ?) (?, 17)
       logits_sample = tf.matmul(seg_one_hots_sample, tf.cast(logits_cars_sample, seg_one_hots_sample.dtype))
       logits_sample  = tf.cast(logits_sample, logits_cars_sample.dtype)
-      logits_samples_list.append(tf.reshape(logits_sample, [dataset.height, dataset.width, logits_cars_sample.get_shape()[1]]))
+      logits_samples_list.append(tf.reshape(logits_sample, [dataset.height if not(rescale) else tf.shape(masks_rescaled_float)[1], dataset.width if not(rescale) else tf.shape(masks_rescaled_float)[2], logits_cars_sample.get_shape()[1]]))
     logits_map = tf.stack(logits_samples_list, axis=0) # (3, 272, 680, 17)
     return logits_map
 
-  outputs_to_logits, outputs_to_logits_map, outputs_to_weights_map, outputs_to_areas_N = model.single_scale_logits(
+  outputs_to_logits, outputs_to_logits_map, outputs_to_weights_map, outputs_to_areas_N, outputs_to_weightsum_N = model.single_scale_logits(
     FLAGS,
     samples[common.IMAGE],
     samples['seg_rescaled'],
@@ -119,7 +124,6 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
       else:
           reg_logits_list.append(outputs_to_logits[output])
           print '||||||||REG logits for '+output
-      outputs_to_weights_map[output] = tf.identity(outputs_to_weights_map[output], name=is_training_prefix+'%s_weights_map'%output)
   reg_logits_concat = tf.concat(reg_logits_list, axis=1) # [car_num_total, 17]
   reg_logits_concat = tf.where(tf.is_nan(reg_logits_concat), tf.zeros_like(reg_logits_concat)+1e-5, reg_logits_concat) # Hack to process NaN!!!!!!
   reg_logits_mask = tf.logical_not(tf.is_nan(tf.reduce_sum(reg_logits_concat, axis=1, keepdims=True)))
@@ -318,7 +322,6 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
             weight = tf.constant(np.asarray(weight,dtype=np.float32))
             lab_l = tf.matmul(gt_idx, weight)
             err_dist = tf.nn.sigmoid_cross_entropy_with_logits(logits=outputs_to_logits[output], labels=lab_l)
-            print lab_l.get_shape(), outputs_to_logits[output].get_shape(), err_dist.get_shape(), '666666'
             loss_slice_crossentropy = tf.reduce_mean(err_dist, 1, keepdims=True)
         else:
             neg_log = -1. * tf.nn.log_softmax(outputs_to_logits[output])
@@ -333,6 +336,12 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
   # label_id = tf.concat(label_id_list, axis=1)
   # label_id_map = logits_cars_to_map(label_id)
   # label_id_map = tf.identity(label_id_map, name=is_training_prefix+'pose_shape_label_id_map')
+
+  for output in dataset.output_names:
+      weightsum_map = logits_cars_to_map(outputs_to_weightsum_N[output], rescale=True)
+      outputs_to_weights_map_exp = tf.exp(outputs_to_weights_map[output])
+      outputs_to_weights_map[output] = tf.multiply(logits_cars_to_map(masks_float, rescale=True), tf.div(outputs_to_weights_map_exp, weightsum_map))
+      outputs_to_weights_map[output] = tf.identity(outputs_to_weights_map[output], name=is_training_prefix+'%s_weights_map'%output)
 
   if FLAGS.if_summary_shape_metrics and FLAGS.if_shape:
       shape_sim_mat = np.loadtxt('./deeplab/dataset-api/car_instance/sim_mat.txt')
