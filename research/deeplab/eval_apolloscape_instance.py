@@ -153,6 +153,16 @@ def main(unused_argv):
   tf.logging.set_verbosity(tf.logging.INFO)
   tf.logging.info('==== Logging in dir:%s; Evaluating on %s set', FLAGS.eval_logdir, FLAGS.val_split)
 
+  restore_VAL_logdir = FLAGS.restore_logdir + '_VAL'
+  if not(os.path.isdir(restore_VAL_logdir)):
+      tf.gfile.MakeDirs(restore_VAL_logdir)
+      print '--- mkdir '+restore_VAL_logdir
+  elif len(os.listdir(restore_VAL_logdir)) != 0:
+      if_delete_all = raw_input('#### The log folder %s exists and non-empty; delete all logs? [y/n] '%restore_VAL_logdir)
+      if if_delete_all == 'y':
+          shutil.rmtree(restore_VAL_logdir)
+          print '==== Log folder %s emptied: '%restore_VAL_logdir + 'rm -rf %s/*'%restore_VAL_logdir
+
   # Get dataset-dependent information.
   dataset = regression_dataset.get_dataset(FLAGS,
       FLAGS.dataset, FLAGS.val_split, dataset_dir=FLAGS.dataset_dir)
@@ -245,15 +255,6 @@ def main(unused_argv):
     # for metric, value in zip(names_to_values.keys(), metric_values):
     #     print 'Metric %s has value: %f', metric, value
 
-    restore_VAL_logdir = FLAGS.restore_logdir + '_VAL'
-    if not(os.path.isdir(restore_VAL_logdir)):
-        tf.gfile.MakeDirs(restore_VAL_logdir)
-        print '--- mkdir '+restore_VAL_logdir
-    elif len(os.listdir(restore_VAL_logdir)) != 0:
-        if_delete_all = raw_input('#### The log folder %s exists and non-empty; delete all logs? [y/n] '%restore_VAL_logdir)
-        if if_delete_all == 'y':
-            shutil.rmtree(restore_VAL_logdir)
-            print '==== Log folder %s emptied: '%restore_VAL_logdir + 'rm -rf %s/*'%restore_VAL_logdir
 
     summary_writer = tf.summary.FileWriter(restore_VAL_logdir)
 

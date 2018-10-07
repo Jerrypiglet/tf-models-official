@@ -138,7 +138,7 @@ def get_summaries(FLAGS, graph, summaries, dataset, config, first_clone_scope):
               depth_diff_abs_error = graph.get_tensor_by_name(pattern%'depth_diff_abs_error')
           else:
               depth_diff_abs_error = train_utils.get_avg_tensor_from_scopes(FLAGS.num_clones, '%s:0', graph, config, 'depth_diff_abs_error', return_concat=True)
-          depth_diff_abs_error_thres2_8 = tf.reduce_sum(tf.to_float(depth_diff_abs_error<2.8 and depth_diff_abs_error>0.)) / tf.reduce_sum(tf.to_float(depth_diff_abs_error>0.))
+          depth_diff_abs_error_thres2_8 = tf.reduce_sum(tf.to_float(tf.logical_and(depth_diff_abs_error<2.8, depth_diff_abs_error>0.))) / tf.reduce_sum(tf.to_float(depth_diff_abs_error>0.))
           summaries.add(tf.summary.scalar(('total_loss%s/'%label_postfix+pattern%'loss_reg_Zdepth_metric_thres2_8').replace(':0', ''), depth_diff_abs_error_thres2_8))
 
           label_outputs = graph.get_tensor_by_name(pattern%'label_pose_shape_map')
