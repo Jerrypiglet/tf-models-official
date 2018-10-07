@@ -293,7 +293,7 @@ def _get_logits_mP(FLAGS,
         scope_suffix=output+'_logits',
         is_training=is_training,
         fine_tune_batch_norm=fine_tune_batch_norm,
-        if_bn = True,
+        if_bn = False,
         activation=None)
 
     if output == 'x' and FLAGS.if_uvflow:
