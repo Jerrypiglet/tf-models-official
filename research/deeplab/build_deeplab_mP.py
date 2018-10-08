@@ -73,13 +73,14 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
     seg_one_hots_flattened_list = []
     seg_one_hots_flattened_rescaled_list = []
     seg_list = tf.split(samples['seg'], samples['seg'].get_shape()[0])
+
     for seg_sample, car_num in zip(seg_list, car_nums_list):
       seg_one_hots_sample = tf.one_hot(tf.squeeze(tf.cast(seg_sample, tf.int32)), depth=tf.reshape(car_num+1, []))
       seg_one_hots_sample = tf.slice(seg_one_hots_sample, [0, 0, 1], [-1, -1, -1])
       seg_one_hots_list.append(tf.expand_dims(seg_one_hots_sample, 0)) # (1, 272, 680, ?)
       seg_one_hots_flattened_list.append(tf.reshape(seg_one_hots_sample, [-1, tf.shape(seg_one_hots_sample)[2]])) # (272*680, ?)
-      seg_one_hots_sample_rescaled = tf.image.resize_nearest_neighbor(tf.expand_dims(seg_one_hots_sample, 0), [tf.shape(masks_rescaled_float)[1], tf.shape(masks_rescaled_float)[2]], align_corners=True)
-      seg_one_hots_flattened_rescaled_list.append(tf.reshape(seg_one_hots_sample_rescaled, [-1, tf.shape(seg_one_hots_sample_rescaled)[2]])) # (272/4*680/4, ?)
+      seg_one_hots_sample_rescaled = tf.image.resize_nearest_neighbor(tf.expand_dims(seg_one_hots_sample, 0), [masks_rescaled_float.get_shape()[1], masks_rescaled_float.get_shape()[2]], align_corners=True)
+      seg_one_hots_flattened_rescaled_list.append(tf.reshape(seg_one_hots_sample_rescaled, [-1, tf.shape(seg_one_hots_sample)[2]])) # (272/4*680/4, ?)
 
 
   def logits_cars_to_map(logits_cars, rescale=False):
@@ -337,10 +338,12 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
   # label_id_map = logits_cars_to_map(label_id)
   # label_id_map = tf.identity(label_id_map, name=is_training_prefix+'pose_shape_label_id_map')
 
+  masks_map_filtered_rescaled = logits_cars_to_map(masks_float, rescale=True)
   for output in dataset.output_names:
-      weightsum_map = logits_cars_to_map(outputs_to_weightsum_N[output], rescale=True)
+      weightsum_map = logits_cars_to_map(tf.reciprocal(outputs_to_weightsum_N[output]), rescale=True)
       outputs_to_weights_map_exp = tf.exp(outputs_to_weights_map[output])
-      outputs_to_weights_map[output] = tf.multiply(logits_cars_to_map(masks_float, rescale=True), tf.div(outputs_to_weights_map_exp, weightsum_map))
+      outputs_to_weights_map[output] = tf.multiply(masks_map_filtered_rescaled, tf.multiply(outputs_to_weights_map_exp, weightsum_map))
+      # outputs_to_weights_map[output] = weightsum_map
       outputs_to_weights_map[output] = tf.identity(outputs_to_weights_map[output], name=is_training_prefix+'%s_weights_map'%output)
 
   if FLAGS.if_summary_shape_metrics and FLAGS.if_shape:
