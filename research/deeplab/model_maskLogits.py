@@ -338,7 +338,7 @@ def _get_logits_mP(FLAGS,
                 logits_car_aggre = tf.reshape(tf.reduce_sum(logits_car_weighted, 0), [-1]) # (256,)
                 return tf.cond(tf.rank(logits_car_masked)<2,
                         lambda: tf.zeros([tf.shape(logits)[-1]], dtype=tf.float32),
-                        lambda: tf.concat([logits_car_aggre, tf.reshape(weight_car_masked_sum*area_car, [-1])], axis=0))
+                        lambda: tf.concat([logits_car_aggre, tf.reshape(weight_car_masked_sum/(area_car+1e-10), [-1])], axis=0))
             logits_weightsum_sample = tf.map_fn(per_car, seg_one_hot_sample, dtype=tf.float32) # [?, 256+1]
             logits_sample = tf.slice(logits_weightsum_sample, [0, 0], [-1, last_dim]) # [?, 256]
             weightsum_sample = tf.slice(logits_weightsum_sample, [0, last_dim], [-1, 1]) # [?, 1]
