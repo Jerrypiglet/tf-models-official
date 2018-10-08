@@ -41,7 +41,7 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
       samples[common.IMAGE_NAME], name=is_training_prefix+common.IMAGE_NAME)
   samples['seg'] = tf.identity(samples['seg'], name=is_training_prefix+'seg')
   masks = tf.identity(samples['mask'], name=is_training_prefix+'not_ignore_mask_in_loss')
-  masks_rescaled_float = tf.identity(samples['mask_rescaled_float'], name=is_training_prefix+'mask_rescaled_float')
+  masks_rescaled_float = samples['mask_rescaled_float']
 
   if FLAGS.val_split != 'test':
     samples['vis'] = tf.identity(samples['vis'], name=is_training_prefix+'vis')
@@ -339,8 +339,9 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
   # label_id_map = tf.identity(label_id_map, name=is_training_prefix+'pose_shape_label_id_map')
 
   masks_map_filtered_rescaled = logits_cars_to_map(masks_float, rescale=True)
+  masks_map_filtered_rescaled = tf.identity(masks_map_filtered_rescaled, name=is_training_prefix+'mask_rescaled_float')
   for output in dataset.output_names:
-      weightsum_map = logits_cars_to_map(tf.reciprocal(outputs_to_weightsum_N[output]), rescale=True)
+      weightsum_map = logits_cars_to_map(tf.reciprocal(outputs_to_weightsum_N[output]+1e-10), rescale=True)
       outputs_to_weights_map_exp = tf.exp(outputs_to_weights_map[output])
       outputs_to_weights_map[output] = tf.multiply(masks_map_filtered_rescaled, tf.multiply(outputs_to_weights_map_exp, weightsum_map))
       # outputs_to_weights_map[output] = weightsum_map
