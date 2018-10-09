@@ -292,7 +292,7 @@ def _get_logits_mP(FLAGS,
         scope_suffix=output+'_logits',
         is_training=is_training,
         fine_tune_batch_norm=fine_tune_batch_norm,
-        if_bn = False,
+        if_bn = True,
         activation=None)
 
     if output == 'x' and FLAGS.if_uvflow:
@@ -637,7 +637,7 @@ def get_branch_logits(features,
       [slim.conv2d],
       weights_regularizer=slim.l2_regularizer(weight_decay),
       weights_initializer=tf.truncated_normal_initializer(stddev=0.01),
-      normalizer_fn=slim.batch_norm if if_bn else None,
+      # normalizer_fn=slim.batch_norm if if_bn else None,
       reuse=reuse):
     with slim.arg_scope([slim.batch_norm], **batch_norm_params):
         with tf.variable_scope(LOGITS_SCOPE_NAME, LOGITS_SCOPE_NAME, [features]):
@@ -654,7 +654,8 @@ def get_branch_logits(features,
                     kernel_size=kernel_size,
                     rate=rate,
                     activation_fn=activation,
-                    scope=scope))
+                    scope=scope,
+                    normalizer_fn=slim.batch_norm if (if_bn and i != len(atrous_rates)-1) else None))
 
           return tf.add_n(branch_logits)
 
