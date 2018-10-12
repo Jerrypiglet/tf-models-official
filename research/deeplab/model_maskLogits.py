@@ -654,8 +654,7 @@ def get_branch_logits(features,
                     kernel_size=kernel_size,
                     rate=rate,
                     activation_fn=activation,
-                    scope=scope,
-                    normalizer_fn=slim.batch_norm if (if_bn and i != len(atrous_rates)-1) else None))
+                    scope=scope))
 
           return tf.add_n(branch_logits)
 
