@@ -150,6 +150,7 @@ def get_summaries(FLAGS, graph, summaries, dataset, config, first_clone_scope):
 
           label_outputs = graph.get_tensor_by_name(pattern%'label_pose_shape_map')
           logit_outputs = graph.get_tensor_by_name(pattern%'prob_logits_pose_shape_map')
+          label_depth = graph.get_tensor_by_name(pattern%'depth')
           for output_idx, output in enumerate(dataset.output_names):
               if not(FLAGS.if_shape) and 'q' in output:
                   continue
@@ -160,6 +161,12 @@ def get_summaries(FLAGS, graph, summaries, dataset, config, first_clone_scope):
               summary_label_output= tf.multiply(summary_mask_float_filtered, summary_label_output)
               summary_label_output_uint8, pixel_scaling = scale_to_255(summary_label_output)
               summaries.add(tf.summary.image('output'+label_postfix+'/%s_label' % output, tf.gather(summary_label_output_uint8, gather_list)))
+
+              if output == 'z':
+                  summary_label_output= tf.multiply(summary_mask_float_filtered, label_depth)
+                  summary_label_output_uint8, _ = scale_to_255(summary_label_output, pixel_scaling)
+                  summaries.add(tf.summary.image('output'+label_postfix+'/%s_depth_label' % output, tf.gather(summary_label_output_uint8, gather_list)))
+
 
               summary_logits_output = tf.gather(logit_outputs, [output_idx], axis=3)
               summary_logits_output = tf.multiply(summary_mask_float_filtered, summary_logits_output)

@@ -287,6 +287,12 @@ def main(unused_argv):
       FLAGS.dataset, FLAGS.val_split, dataset_dir=FLAGS.dataset_dir)
   print '#### The data has size:', dataset.num_samples, dataset_val.num_samples
 
+  dataset.height = FLAGS.train_crop_size[0]
+  dataset.width = FLAGS.train_crop_size[1]
+  dataset_val.height = FLAGS.train_crop_size[0]
+  dataset_val.width = FLAGS.train_crop_size[1]
+
+
   codes = np.load('./deeplab/codes.npy')
 
   with tf.Graph().as_default() as graph:
@@ -382,8 +388,7 @@ def main(unused_argv):
           clones, optimizer)
       print '------ total_loss', total_loss
       for loss_item in tf.get_collection(tf.GraphKeys.LOSSES, first_clone_scope):
-          print loss_item
-      total_loss = tf.check_numerics(total_loss, 'Loss is inf or nan.')
+          print loss_item# total_loss = tf.check_numerics(total_loss, 'Loss is inf or nan.')
       summaries.add(tf.summary.scalar('total_loss/train', total_loss))
 
       # Modify the gradients for biases and last layer variables.
@@ -447,11 +452,11 @@ def main(unused_argv):
 
 
         # # print 'loss: ', loss
-        # first_clone_test = graph.get_tensor_by_name(
-                # ('%s/%s:0' % (first_clone_scope, 'z')).strip('/'))
-        # test = sess.run(outputs_to_weights['z'])
-        # # print test
-        # print 'test: ', test.shape, np.max(test), np.min(test), np.mean(test), test.dtype
+        first_clone_test = graph.get_tensor_by_name(
+                ('%s/%s:0' % (first_clone_scope, 'depth')).strip('/'))
+        test = sess.run(first_clone_test)
+        # print test
+        print 'test: ', test.shape, np.max(test), np.min(test), np.mean(test), test.dtype
 
         # mask_rescaled_float = graph.get_tensor_by_name('%s:0'%'mask_rescaled_float')
         # test_out, test_out2 = sess.run([pose_dict_N, xyz])
@@ -607,7 +612,7 @@ def main(unused_argv):
         #     ignore_missing_vars=True),
         summary_op=summary_op,
         save_summaries_secs=FLAGS.save_summaries_secs,
-        save_interval_secs=FLAGS.save_interval_secs)
+        save_interval_secs=FLAGS.save_interval_secs if not(FLAGS.if_debug) else 0)
 
 
 if __name__ == '__main__':

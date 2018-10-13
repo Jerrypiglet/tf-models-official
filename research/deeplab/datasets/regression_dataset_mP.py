@@ -77,8 +77,10 @@ DatasetDescriptor = collections.namedtuple(
      # 'ignore_label',  # Ignore label value.
      'shape_dims',
      'shape_bins',
-     'height',
-     'width',
+     # 'height',
+     # 'width',
+     'height_ori',
+     'width_ori',
      'pose_range',
      'bin_nums',
      'output_names',
@@ -100,10 +102,10 @@ _APOLLOSCAPE_INFORMATION = DatasetDescriptor(
     num_classes=7+2,
     shape_dims = SHAPE_DIMS,
     shape_bins = SHAPE_BINS,
-    # ignore_label=255.,
-    # height=544,
-    height=272,
-    width=680,
+    height_ori=678,
+    width_ori=1692,
+    # height = 272,
+    # width = 680,
     # pose_range = [[-1., 1.],
     #     [-1., 1.],
     #     [-1., 1.],
@@ -166,8 +168,10 @@ def get_dataset(FLAGS, dataset_name, split_name, dataset_dir):
   bin_nums = _DATASETS_INFORMATION[dataset_name].bin_nums
   output_names = _DATASETS_INFORMATION[dataset_name].output_names
   # ignore_label = _DATASETS_INFORMATION[dataset_name].ignore_label
-  height = _DATASETS_INFORMATION[dataset_name].height
-  width = _DATASETS_INFORMATION[dataset_name].width
+  # height = _DATASETS_INFORMATION[dataset_name].height
+  # width = _DATASETS_INFORMATION[dataset_name].width
+  height_ori = _DATASETS_INFORMATION[dataset_name].height_ori
+  width_ori = _DATASETS_INFORMATION[dataset_name].width_ori
 
   file_pattern = _FILE_PATTERN
   file_pattern = os.path.join(dataset_dir, file_pattern % split_name)
@@ -194,6 +198,10 @@ def get_dataset(FLAGS, dataset_name, split_name, dataset_dir):
               (), tf.string, default_value=''),
           'vis/format': tf.FixedLenFeature(
               (), tf.string, default_value='png'),
+          'depth/encoded': tf.FixedLenFeature(
+              (), tf.string, default_value=''),
+          'depth/format': tf.FixedLenFeature(
+              (), tf.string, default_value='png'),
           'seg/encoded': tf.FixedLenFeature(
               (), tf.string, default_value=''),
           'seg/format': tf.FixedLenFeature(
@@ -212,6 +220,11 @@ def get_dataset(FLAGS, dataset_name, split_name, dataset_dir):
               image_key='vis/encoded',
               format_key='vis/format',
               channels=3),
+          'depth': tfexample_decoder.Image(
+              image_key='depth/encoded',
+              format_key='depth/format',
+              channels=1,
+              dtype=tf.uint16),
           'seg': tfexample_decoder.Image(
               image_key='seg/encoded',
               format_key='seg/format',
@@ -278,7 +291,9 @@ def get_dataset(FLAGS, dataset_name, split_name, dataset_dir):
       SHAPE_BINS=SHAPE_BINS,
       POSE_BINS=POSE_BINS,
       name=dataset_name,
-      height=height,
-      width=width,
+      # height=height,
+      # width=width,
+      height_ori=height_ori,
+      width_ori=width_ori,
       multi_label=True,
       if_depth=FLAGS.if_depth)

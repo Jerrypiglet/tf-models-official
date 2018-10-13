@@ -45,6 +45,7 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
 
   if FLAGS.val_split != 'test':
     samples['vis'] = tf.identity(samples['vis'], name=is_training_prefix+'vis')
+    samples['depth'] = tf.identity(samples['depth'], name=is_training_prefix+'depth')
     # samples['pose_map'] = tf.identity(samples['pose_map'], name=is_training_prefix+'pose_map')
     # samples['shape_map'] = tf.identity(samples['shape_map'], name=is_training_prefix+'shape_map')
     samples['pose_dict'] = tf.identity(samples['pose_dict'], name=is_training_prefix+'pose_dict')

@@ -47,6 +47,16 @@ def euler_angles_to_quaternions(angle):
     q = tf.concat([q0, q1, q2, q3], axis=-1)
     return q
 
+def set_shape_and_resize(tensorlist, height_ori, width_ori, height, width):
+    tensorlist_out = []
+    for idx in range(len(tensorlist)):
+        tensorlist[idx].set_shape([height_ori, width_ori, tensorlist[idx].get_shape()[2]])
+        tensor_resized = tf.squeeze(
+                tf.image.resize_nearest_neighbor(tf.expand_dims(tensorlist[idx], 0), [height, width], align_corners=True), 0)
+        tensorlist_out.append(tensor_resized)
+    return tensorlist, tensorlist_out
+
+
 def _get_data(dataset, model_options, data_provider, dataset_split, codes_cons):
   """Gets data from data provider.
 
@@ -66,13 +76,15 @@ def _get_data(dataset, model_options, data_provider, dataset_split, codes_cons):
   """
 
   if dataset_split != common.TEST_SET:
-    image, image_name, vis, height, width, seg, shape_id_map_gt, pose_dict, rotuvd_dict, bbox_dict, shape_id_dict = data_provider.get([common.IMAGE, common.IMAGE_NAME, 'vis', common.HEIGHT, common.WIDTH, 'seg', 'shape_id_map', 'pose_dict', 'rotuvd_dict', 'bbox_dict', 'shape_id_dict'])
-    vis = tf.reshape(vis, [dataset.height, dataset.width, 3])
+    image, image_name, vis, depth, height, width, seg, shape_id_map_gt, pose_dict, rotuvd_dict, bbox_dict, shape_id_dict = data_provider.get([common.IMAGE, common.IMAGE_NAME, 'vis', 'depth', common.HEIGHT, common.WIDTH, 'seg', 'shape_id_map', 'pose_dict', 'rotuvd_dict', 'bbox_dict', 'shape_id_dict'])
+    # vis = tf.reshape(vis, [dataset.height, dataset.width, 3])
+    _, [vis, depth] = set_shape_and_resize([vis, depth], dataset.height_ori, dataset.width_ori, dataset.height, dataset.width)
+    depth = tf.to_float(depth) / (1./350.*255.*255.)
   else:
     image, image_name, height, width, seg = data_provider.get([common.IMAGE, common.IMAGE_NAME, common.HEIGHT, common.WIDTH, 'seg'])
 
-  image = tf.reshape(image, [dataset.height, dataset.width,3])
-  seg = tf.reshape(seg, [dataset.height, dataset.width, 1])
+  _, [image, seg] = set_shape_and_resize([image, seg], dataset.height_ori, dataset.width_ori, dataset.height, dataset.width)
+
   seg_float = tf.cast(seg, tf.float32)
   mask = tf.greater(seg, 0)
   mask_float = tf.cast(mask, tf.float32)
@@ -163,7 +175,7 @@ def _get_data(dataset, model_options, data_provider, dataset_split, codes_cons):
         tf.gather(rotuvd_dict_quat_dinvd, [5], axis=1) - tf.gather(bbox_c_dict, [1], axis=1),
         tf.gather(rotuvd_dict_quat_dinvd, [6], axis=1)], axis=1)
 
-    return image, vis, image_name, height, width, seg_rescaled_float, seg_float, mask, mask_rescaled_float, pose_dict_quat_dinvd, rotuvd_dict_quat_dinvd, bbox_dict, bbox_c_dict, quat_deltauv_dinvd_dict, shape_dict, shape_id_dict, idxs
+    return image, vis, depth, image_name, height, width, seg_rescaled_float, seg_float, mask, mask_rescaled_float, pose_dict_quat_dinvd, rotuvd_dict_quat_dinvd, bbox_dict, bbox_c_dict, quat_deltauv_dinvd_dict, shape_dict, shape_id_dict, idxs
   else:
     return image, image_name, height, width, seg_float, mask
 
@@ -227,17 +239,15 @@ def get(dataset,
       shuffle=is_training)
   codes_cons = tf.constant(np.transpose(codes), dtype=tf.float32)
   if dataset_split != common.TEST_SET:
-    image, vis, image_name, height, width, seg_rescaled, seg, mask, mask_rescaled_float, pose_dict, rotuvd_dict, bbox_dict,  bbox_c_dict, quat_deltauv_dinvd_dict, shape_dict, shape_id_dict, idxs = _get_data(dataset, model_options, data_provider, dataset_split, codes_cons)
+    image, vis, depth, image_name, height, width, seg_rescaled, seg, mask, mask_rescaled_float, pose_dict, rotuvd_dict, bbox_dict,  bbox_c_dict, quat_deltauv_dinvd_dict, shape_dict, shape_id_dict, idxs = _get_data(dataset, model_options, data_provider, dataset_split, codes_cons)
   else:
     image, image_name, height, width, seg, mask = _get_data(dataset, model_options, data_provider, dataset_split, codes_cons)
-
-  # pose_dict.set_shape([None, 7])
-  # shape_dict.set_shape([None, 10])
 
   if dataset_split != common.TEST_SET:
     sample = {
       common.IMAGE: image,
       'vis': vis,
+      'depth': depth,
       common.IMAGE_NAME: image_name,
       common.HEIGHT: height,
       common.WIDTH: width,
