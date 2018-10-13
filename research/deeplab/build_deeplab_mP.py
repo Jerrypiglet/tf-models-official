@@ -95,6 +95,7 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
     logits_map = tf.stack(logits_samples_list, axis=0) # (3, 272, 680, 17)
     return logits_map
 
+  ## ---- get logits
   outputs_to_logits, outputs_to_logits_map, outputs_to_weights_map, outputs_to_areas_N, outputs_to_weightsum_N = model.single_scale_logits(
     FLAGS,
     samples[common.IMAGE],
@@ -110,7 +111,7 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
     fine_tune_feature_extractor=FLAGS.fine_tune_feature_extractor and is_training)
   print outputs_to_logits
 
-  # Get regressed logits for all outputs
+  ## ---- Get regressed logits for all outputs and masks, weights
   reg_logits_list = []
 
   for output in dataset.output_names:
@@ -128,6 +129,11 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
           print '||||||||REG logits for '+output
   reg_logits_concat = tf.concat(reg_logits_list, axis=1) # [car_num_total, 17]
   reg_logits_concat = tf.where(tf.is_nan(reg_logits_concat), tf.zeros_like(reg_logits_concat)+1e-5, reg_logits_concat) # Hack to process NaN!!!!!!
+  prob_logits_pose = tf.gather(reg_logits_concat, [0, 1, 2, 3, 4, 5, 6], axis=1)
+  prob_logits_pose = tf.identity(prob_logits_pose, name=is_training_prefix+'prob_logits_pose')
+  if FLAGS.if_uvflow:
+      prob_logits_pose_xy_from_uv = train_utils.rotuvd_dict_N_2_quat_xy_dinvd_dict_N(FLAGS, prob_logits_pose)
+
   reg_logits_mask = tf.logical_not(tf.is_nan(tf.reduce_sum(reg_logits_concat, axis=1, keepdims=True)))
   areas_masked = outputs_to_areas_N[dataset.output_names[0]]
   masks_float = tf.to_float(tf.not_equal(areas_masked, 0.)) # N; filtered small objects (with zero area after resizing)
@@ -143,9 +149,6 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
   #     scaled_prob_logits = tf.identity(scaled_prob_logits, name=is_training_prefix+'scaled_prob_logits_pose_shape_map')
   # return samples['idxs']
 
-  ## Regression loss for pose
-  balance_rot_reg_loss = 10.
-  balance_trans_reg_loss = 1.
   pose_dict_N = tf.gather_nd(samples['pose_dict'], idx_xys) # [N, 7]
   pose_dict_N = tf.identity(pose_dict_N, is_training_prefix+'pose_dict_N')
   rotuvd_dict_N = tf.gather_nd(samples['rotuvd_dict'], idx_xys) # [N, 7]
@@ -165,34 +168,11 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
   masks_float = masks_float * z_N_within # [N, 1] # filtering depth outof range
   weights_normalized = masks_float * weights_normalized
   count_valid = tf.reduce_sum(masks_float)+1e-10
-  pixels_valid = tf.reduce_sum(weights_normalized * masks_float)+1e-10
+  # pixels_valid = tf.reduce_sum(weights_normalized * masks_float)+1e-10
 
-  def rotuvd_dict_N_2_quat_xy_dinvd_dict_N(rotuvd_dict_N_input): # u, v in original frame (not halfed)
-      u = tf.gather(rotuvd_dict_N_input, [4], axis=1)
-      v = tf.gather(rotuvd_dict_N_input, [5], axis=1)
-      d = tf.gather(rotuvd_dict_N_input, [6], axis=1)
-      F1 = 463.08880615234375
-      W = 338.8421325683594
-      F2 = 462.87689208984375
-      H = 271.9969482421875
-      K_T = tf.constant([[1./F1, 0., -W/F1], [0, 1./F2, -H/F2], [0., 0., 1.]])
-      if FLAGS.if_depth:
-        uvd = tf.concat([u*d, v*d, d], axis=1)
-      else:
-        uvd = tf.concat([u/d, v/d, 1/d], axis=1)
-      xyz = tf.transpose(tf.matmul(K_T, tf.transpose(uvd))) # x, y, depth; [N, 3]
-      quat_xy_dinvd_dict_N_output = tf.concat([tf.gather(rotuvd_dict_N_input, [0,1,2,3], axis=1), tf.gather(xyz, [0,1], axis=1), d], axis=1)
-      return quat_xy_dinvd_dict_N_output
-
-
-  prob_logits_pose = tf.gather(reg_logits_concat, [0, 1, 2, 3, 4, 5, 6], axis=1)
-  prob_logits_pose = tf.identity(prob_logits_pose, name=is_training_prefix+'prob_logits_pose')
-  if FLAGS.if_uvflow:
-      prob_logits_pose_xy_from_uv = rotuvd_dict_N_2_quat_xy_dinvd_dict_N(prob_logits_pose)
-      # prob_logits_pose_xy_from_uv = rotuvd_dict_N_2_quat_xy_dinvd_dict_N(rotuvd_dict_N)
-  # return pose_dict_N, rotuvd_dict_N_2_quat_xy_dinvd_dict_N(rotuvd_dict_N)
-
-
+  ## ---- Regression loss for pose
+  balance_rot_reg_loss = 10.
+  balance_trans_reg_loss = 1.
   _, prob_logits_pose, rot_q_angle_error, trans_sqrt_error, depth_diff_abs_error, depth_relative_error, trans_loss_error, rot_q_loss_error, trans_diff_metric_abs = train_utils.add_my_pose_loss_cars(
           FLAGS,
           prob_logits_pose,
@@ -221,7 +201,7 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
   depth_diff_abs_error = tf.identity(depth_diff_abs_error, name=is_training_prefix+'depth_diff_abs_error')
   depth_relative_error = tf.identity(depth_relative_error, name=is_training_prefix+'depth_relative_error')
 
-  ## Regression loss for shape
+  ## ---- Regression loss for shape
   balance_shape_loss = 1.
   shape_dict_N = tf.gather_nd(samples['shape_dict'], idx_xys)
   _, prob_logits_shape = train_utils.add_l1_regression_loss_cars(
@@ -242,39 +222,43 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
       pose_shape_dict_N = tf.concat([pose_dict_N, shape_dict_N], axis=1)
 
   masks_map_filtered = tf.identity(logits_cars_to_map(masks_float), name=is_training_prefix+'masks_map_filtered')
+  # masks_map_filtered_rescaled = tf.image.resize_nearest_neighbor(masks_map_filtered, [tf.shape(outputs_to_logits_map['z'])[1], tf.shape(outputs_to_logits_map['z'])[2]], align_corners=True)
+  masks_map_filtered_rescaled = tf.identity(logits_cars_to_map(masks_float, rescale=True), name=is_training_prefix+'mask_rescaled_float')
+  pixels_valid_filtered = tf.reduce_sum(masks_map_filtered_rescaled)+1e-10
+
   if FLAGS.save_summaries_images:
     prob_logits_pose_shape_map = logits_cars_to_map(prob_logits_pose_shape)
     prob_logits_pose_shape_map = tf.identity(prob_logits_pose_shape_map, name=is_training_prefix+'prob_logits_pose_shape_map')
     label_pose_shape_map = logits_cars_to_map(pose_shape_dict_N)
     label_pose_shape_map = tf.identity(label_pose_shape_map, name=is_training_prefix+'label_pose_shape_map')
 
-    if FLAGS.if_uvflow and not(FLAGS.if_depth_only):
-        label_uv_map = tf.gather(label_pose_shape_map, [4, 5], axis=3) # (-1, 272, 680, 2)
-        label_uv_map = tf.identity(tf.multiply(masks_map_filtered, label_uv_map), name=is_training_prefix+'label_uv_map')
-        v_coords = tf.range(tf.shape(label_uv_map)[1])
-        u_coords = tf.range(tf.shape(label_uv_map)[2])
-        Vs, Us = tf.meshgrid(v_coords, u_coords)
-        features_Ys = tf.tile(tf.expand_dims(tf.expand_dims(tf.transpose(Vs + tf.shape(label_uv_map)[1]), -1), 0), [tf.shape(label_uv_map)[0], 1, 1, 1]) # Adding half height because of the crop!
-        features_Xs = tf.tile(tf.expand_dims(tf.expand_dims(tf.transpose(Us), -1), 0), [tf.shape(label_uv_map)[0], 1, 1, 1])
-        coords_UVs_concat = tf.to_float(tf.concat([features_Xs, features_Ys], axis=3))
-        label_uv_flow_map = tf.multiply(masks_map_filtered, label_uv_map - coords_UVs_concat)
-        label_uv_flow_map = tf.identity(label_uv_flow_map, name=is_training_prefix+'label_uv_flow_map')
+  ## ---- uv losses
+  if FLAGS.if_uvflow and not(FLAGS.if_depth_only):
+    label_uv_map = tf.gather(label_pose_shape_map, [4, 5], axis=3) # (-1, 272, 680, 2)
+    label_uv_map = tf.identity(tf.multiply(masks_map_filtered, label_uv_map), name=is_training_prefix+'label_uv_map')
+    v_coords = tf.range(tf.shape(label_uv_map)[1])
+    u_coords = tf.range(tf.shape(label_uv_map)[2])
+    Vs, Us = tf.meshgrid(v_coords, u_coords)
+    features_Ys = tf.tile(tf.expand_dims(tf.expand_dims(tf.transpose(Vs + tf.shape(label_uv_map)[1]), -1), 0), [tf.shape(label_uv_map)[0], 1, 1, 1]) # Adding half height because of the crop!
+    features_Xs = tf.tile(tf.expand_dims(tf.expand_dims(tf.transpose(Us), -1), 0), [tf.shape(label_uv_map)[0], 1, 1, 1])
+    coords_UVs_concat = tf.to_float(tf.concat([features_Xs, features_Ys], axis=3))
+    label_uv_flow_map = tf.multiply(masks_map_filtered, label_uv_map - coords_UVs_concat)
+    label_uv_flow_map = tf.identity(label_uv_flow_map, name=is_training_prefix+'label_uv_flow_map')
 
-        logits_uv_map = tf.concat([outputs_to_logits_map['x'], outputs_to_logits_map['y']], axis=3)
-        masks_map_filtered_rescaled = tf.image.resize_nearest_neighbor(masks_map_filtered, [tf.shape(logits_uv_map)[1], tf.shape(logits_uv_map)[2]], align_corners=True)
-        coords_UVs_concat_rescaled = tf.image.resize_nearest_neighbor(coords_UVs_concat, [tf.shape(logits_uv_map)[1], tf.shape(logits_uv_map)[2]], align_corners=True)
-        logits_uv_map = tf.identity(tf.multiply(masks_map_filtered_rescaled, logits_uv_map), name=is_training_prefix+'logits_uv_map')
-        logits_uv_flow_map = tf.identity(tf.multiply(masks_map_filtered_rescaled, logits_uv_map - coords_UVs_concat_rescaled), name=is_training_prefix+'logits_uv_flow_map')
+    logits_uv_map = tf.concat([outputs_to_logits_map['x'], outputs_to_logits_map['y']], axis=3)
+    coords_UVs_concat_rescaled = tf.image.resize_nearest_neighbor(coords_UVs_concat, [tf.shape(logits_uv_map)[1], tf.shape(logits_uv_map)[2]], align_corners=True)
+    logits_uv_map = tf.identity(tf.multiply(masks_map_filtered_rescaled, logits_uv_map), name=is_training_prefix+'logits_uv_map')
+    logits_uv_flow_map = tf.identity(tf.multiply(masks_map_filtered_rescaled, logits_uv_map - coords_UVs_concat_rescaled), name=is_training_prefix+'logits_uv_flow_map')
 
-        balance_uv_flow = 1.
-        label_uv_map_rescaled = tf.image.resize_nearest_neighbor(label_uv_flow_map, [tf.shape(logits_uv_map)[1], tf.shape(logits_uv_map)[2]], align_corners=True)
-        pixels_valid_filtered = tf.reduce_sum(masks_map_filtered_rescaled)+1e-10
-        uv_map_diff = tf.multiply(tf.abs(logits_uv_flow_map - label_uv_map_rescaled), masks_map_filtered_rescaled)
-        loss_reg_uv_map = tf.reduce_sum(uv_map_diff) / pixels_valid_filtered * balance_uv_flow # L1 loss for uv flow
-        loss_reg_uv_map = tf.identity(loss_reg_uv_map, name=is_training_prefix+'loss_reg_uv_map')
-        if is_training and not(FLAGS.if_depth_only):
-            tf.losses.add_loss(loss_reg_uv_map, loss_collection=tf.GraphKeys.LOSSES)
+    balance_uv_flow = 1.
+    label_uv_map_rescaled = tf.image.resize_nearest_neighbor(label_uv_flow_map, [tf.shape(logits_uv_map)[1], tf.shape(logits_uv_map)[2]], align_corners=True)
+    uv_map_diff = tf.multiply(tf.abs(logits_uv_flow_map - label_uv_map_rescaled), masks_map_filtered_rescaled)
+    loss_reg_uv_map = tf.reduce_sum(uv_map_diff) / pixels_valid_filtered * balance_uv_flow # L1 loss for uv flow
+    loss_reg_uv_map = tf.identity(loss_reg_uv_map, name=is_training_prefix+'loss_reg_uv_map')
+    if is_training and not(FLAGS.if_depth_only):
+        tf.losses.add_loss(loss_reg_uv_map, loss_collection=tf.GraphKeys.LOSSES)
 
+  ## ---- CLS losses
   label_id_list = []
   loss_slice_crossentropy_list = []
   for idx_output, output in enumerate(dataset.output_names):
@@ -305,14 +289,12 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
         # label_id_slice = tf.round((label_slice - bin_centers[0]) / bin_size_list[idx_output])
         print bin_bounds_list[idx_output]
         label_id_slice = math_ops._bucketize(label_slice, bin_bounds_list[idx_output]) - 1
-        # label_id_slice = tf.clip_by_value(label_id_slice, 0, dataset.bin_nums[idx_output]-1)
+        label_id_slice = tf.clip_by_value(label_id_slice, 0, dataset.bin_nums[idx_output]-1)
         tf.assert_greater_equal(label_id_slice, 0, message='label_id not all >=0!')
         tf.assert_less_equal(label_id_slice, dataset.bin_nums[idx_output]-1, message='label_id not all <=dataset.bin_nums[idx_output]-1!')
         if output == 'z':
             label_id_slice = tf.identity(label_id_slice, name=is_training_prefix+'label_id_slice')
             label_slice = tf.identity(label_slice, name=is_training_prefix+'label_log_slice')
-        print '\\\\\\\\\\', label_id_slice.dtype, label_id_slice.get_shape()
-        # label_id_list.append(label_id_slice)
         gt_idx = tf.one_hot(tf.reshape(label_id_slice, [-1]), depth=dataset.bin_nums[idx_output], axis=-1)
         if FLAGS.if_log_depth:
             alpha = 15
@@ -328,19 +310,63 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
         else:
             neg_log = -1. * tf.nn.log_softmax(outputs_to_logits[output])
             loss_slice_crossentropy = tf.reduce_sum(tf.multiply(gt_idx, neg_log), axis=1, keepdims=True)
-        loss_slice_crossentropy= tf.reduce_sum(tf.multiply(weights_normalized, loss_slice_crossentropy)) / pixels_valid * balance_cls_loss
+        loss_slice_crossentropy= tf.reduce_sum(tf.multiply(weights_normalized, loss_slice_crossentropy)) / pixels_valid_filtered * balance_cls_loss
         loss_slice_crossentropy = tf.identity(loss_slice_crossentropy, name=is_training_prefix+'loss_slice_cls_'+output)
         loss_slice_crossentropy_list.append(loss_slice_crossentropy)
         if is_training:
-            # tf.losses.add_loss(loss_slice_crossentropy, loss_collection=None)
-            tf.losses.add_loss(loss_slice_crossentropy, loss_collection=tf.GraphKeys.LOSSES)
+            tf.losses.add_loss(loss_slice_crossentropy, loss_collection=None)
+            # tf.losses.add_loss(loss_slice_crossentropy, loss_collection=tf.GraphKeys.LOSSES)
   loss_crossentropy = tf.identity(tf.add_n(loss_slice_crossentropy_list), name=is_training_prefix+'loss_cls_ALL')
-  # label_id = tf.concat(label_id_list, axis=1)
-  # label_id_map = logits_cars_to_map(label_id)
-  # label_id_map = tf.identity(label_id_map, name=is_training_prefix+'pose_shape_label_id_map')
 
-  masks_map_filtered_rescaled = logits_cars_to_map(masks_float, rescale=True)
-  masks_map_filtered_rescaled = tf.identity(masks_map_filtered_rescaled, name=is_training_prefix+'mask_rescaled_float')
+  ## ---- Dense depth loss
+  idx_output = 6
+  output = 'z'
+  depth_rescaled = tf.image.resize_nearest_neighbor(samples['depth'], [masks_map_filtered_rescaled.get_shape()[1], masks_map_filtered_rescaled.get_shape()[2]], align_corners=True)
+  depth_rescaled_mask = tf.to_float(tf.where(tf.logical_and(depth_rescaled>np.exp(bin_bounds_list[idx_output][0]), depth_rescaled<np.exp(bin_bounds_list[idx_output][-1])),
+          tf.ones_like(depth_rescaled), tf.zeros_like(depth_rescaled))) * masks_map_filtered_rescaled
+  # depth_rescaled_mask = masks_map_filtered_rescaled
+  depth_rescaled_mask = tf.identity(depth_rescaled_mask, name=is_training_prefix+'depth_rescaled_mask_map')
+  pixels_valid_filtered_depth_rescaled = tf.reduce_sum(depth_rescaled_mask)+1e-10
+  depth_rescaled = tf.multiply(depth_rescaled_mask, depth_rescaled)
+  depth_rescaled = tf.identity(depth_rescaled, name=is_training_prefix+'depth_rescaled_label_map')
+  print '... adding Dense cls loss for Depth.'
+  bin_centers = bin_centers_list[idx_output]
+  label_slice = tf.where(tf.equal(depth_rescaled_mask, 1.), tf.log(depth_rescaled), tf.zeros_like(depth_rescaled))
+  label_id_slice = tf.clip_by_value(math_ops._bucketize(label_slice, bin_bounds_list[idx_output]) - 1, 0, dataset.bin_nums[idx_output]-1)
+  label_id_slice = tf.identity(label_id_slice, name=is_training_prefix+'depth_rescaled_label_id_map')
+  if FLAGS.if_log_depth:
+      if FLAGS.cls_method == 'multi-cls' or FLAGS.cls_method == 'dorn':
+          gt_idx = tf.one_hot(tf.reshape(label_id_slice, [-1]), depth=dataset.bin_nums[idx_output], axis=-1)
+          if FLAGS.cls_method == 'multi-cls':
+            alpha = 15
+            weight = [np.exp(-alpha * np.power(bin_centers - x, 2)) for x in bin_centers] # binary multi-class cls loss
+          if FLAGS.cls_method == 'dorn':
+            weight = np.zeros((dataset.bin_nums[idx_output], dataset.bin_nums[idx_output])) # DORN loss
+            for i in range(dataset.bin_nums[idx_output]): weight[i,:i] = 1
+          weight = tf.constant(np.asarray(weight,dtype=np.float32))
+          lab_l = tf.reshape(tf.matmul(gt_idx, weight), [-1, tf.shape(label_id_slice)[1], tf.shape(label_id_slice)[2], dataset.bin_nums[idx_output]])
+          err_dist = tf.nn.sigmoid_cross_entropy_with_logits(logits=outputs_to_logits_map[output], labels=lab_l)
+          loss_slice_crossentropy = tf.reduce_mean(err_dist, -1, keepdims=True)
+      elif FLAGS.cls_method == 'cls':
+          gt_idx = tf.one_hot(tf.squeeze(label_id_slice, -1), depth=dataset.bin_nums[idx_output], axis=-1)
+          neg_log = -1. * tf.nn.log_softmax(outputs_to_logits_map[output])
+          loss_slice_crossentropy = tf.multiply(gt_idx, neg_log)
+      print '-- [LOSS]: '+FLAGS.cls_method
+  else:
+      raise ValueError('cls_method not supported!')
+  loss_slice_crossentropy = tf.identity(tf.multiply(depth_rescaled_mask, loss_slice_crossentropy), name=is_training_prefix+'depth_rescaled_cls_error_map')
+  loss_slice_crossentropy = tf.reduce_sum(loss_slice_crossentropy) / pixels_valid_filtered_depth_rescaled * balance_cls_loss
+  loss_slice_crossentropy = tf.identity(loss_slice_crossentropy, name=is_training_prefix+'loss_slice_cls_dense'+output)
+  if is_training:
+    # tf.losses.add_loss(loss_slice_crossentropy, loss_collection=None)
+    tf.losses.add_loss(loss_slice_crossentropy, loss_collection=tf.GraphKeys.LOSSES)
+  prob_logits_depth = train_utils.logits_cls_map_to_logits_probReg_map(
+          outputs_to_logits_map[output],
+          bin_centers_tensors[outputs_to_indices[output]]) # [car_num_total, 1]
+  prob_logits_depth = tf.identity(tf.multiply(depth_rescaled_mask, tf.exp(prob_logits_depth)), name=is_training_prefix+'depth_rescaled_logit_map')
+  loss_slice_l1 = tf.identity(tf.abs(prob_logits_depth - depth_rescaled), name=is_training_prefix+'depth_rescaled_reg_error_map')
+
+  ## --- Visualize weight map
   for output in dataset.output_names:
       weightsum_map = logits_cars_to_map(tf.reciprocal(outputs_to_weightsum_N[output]+1e-10), rescale=True)
       outputs_to_weights_map_exp = tf.exp(outputs_to_weights_map[output])
@@ -348,6 +374,7 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
       # outputs_to_weights_map[output] = weightsum_map
       outputs_to_weights_map[output] = tf.identity(outputs_to_weights_map[output], name=is_training_prefix+'%s_weights_map'%output)
 
+  ## --- Shape summaries
   if FLAGS.if_summary_shape_metrics and FLAGS.if_shape:
       shape_sim_mat = np.loadtxt('./deeplab/dataset-api/car_instance/sim_mat.txt')
       assert shape_sim_mat.shape[0] == shape_sim_mat.shape[1]

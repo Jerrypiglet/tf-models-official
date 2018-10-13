@@ -123,9 +123,8 @@ _APOLLOSCAPE_INFORMATION = DatasetDescriptor(
         [0., 50], # y
         # [-0., 0.], # WHATEVRR: no cls for u
         # [-0., 0.], # WHATEVER: no cls for v
-        [1.5, 350.]], # for depth
-        # [np.exp(11.5), np.exp(13.5)]], # for depth
-        # [0., 0.25]], # for inv depth
+        # [1.5, 350.]], # for depth
+        [1.1, 350.]], # for Dense depth
     bin_nums = [POSE_BINS]*4 + [1, 1, POSE_BINS] + [SHAPE_BINS]*SHAPE_DIMS, # uv flow
     # bin_nums = [POSE_BINS]*7 + [SHAPE_BINS]*SHAPE_DIMS, # xy
     output_names = ['q1', 'q2', 'q3', 'q4', 'x', 'y', 'z'] + ['shape_%d'%dim for dim in range(SHAPE_DIMS)],

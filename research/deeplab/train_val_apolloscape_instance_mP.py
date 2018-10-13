@@ -227,6 +227,10 @@ flags.DEFINE_boolean('if_uvflow', False,
 flags.DEFINE_boolean('if_depth_only', False,
         'True: regression to depth only.')
 
+flags.DEFINE_enum('cls_method', 'multi-cls', ['cls', 'multi-cls', 'dorn'],
+                  'classification method.')
+
+
 
 # Dataset settings.
 flags.DEFINE_string('dataset', 'apolloscape',
@@ -452,11 +456,18 @@ def main(unused_argv):
 
 
         # # print 'loss: ', loss
-        first_clone_test = graph.get_tensor_by_name(
-                ('%s/%s:0' % (first_clone_scope, 'depth')).strip('/'))
-        test = sess.run(first_clone_test)
-        # print test
-        print 'test: ', test.shape, np.max(test), np.min(test), np.mean(test), test.dtype
+        if train_step_fn.step % 20 == 0:
+            first_clone_test = graph.get_tensor_by_name(
+                    ('%s/%s:0' % (first_clone_scope, 'depth_rescaled_logit_map')).strip('/'))
+            first_clone_test2 = graph.get_tensor_by_name(
+                    ('%s/%s:0' % (first_clone_scope, 'depth_rescaled_label_map')).strip('/'))
+            first_clone_test3 = graph.get_tensor_by_name(
+                    ('%s/%s:0' % (first_clone_scope, 'depth_rescaled_cls_error_map')).strip('/'))
+            test1, test2, test3 = sess.run([first_clone_test, first_clone_test2, first_clone_test3])
+            # print test
+            for test0 in [test1, test2, test3]:
+                test = test0[test0!=0.]
+                print 'test: ', test.shape, np.max(test), np.min(test), np.mean(test), test.dtype
 
         # mask_rescaled_float = graph.get_tensor_by_name('%s:0'%'mask_rescaled_float')
         # test_out, test_out2 = sess.run([pose_dict_N, xyz])
@@ -539,8 +550,8 @@ def main(unused_argv):
             print '++++ label_id_slice', label_id_slice.T, np.min(label_id_slice), np.max(label_id_slice)
             print '++++ label_log_slice', label_log_slice.T, np.min(label_log_slice), np.max(label_log_slice)
             print '++++ label_explog_slice', np.exp(label_log_slice).T, np.min(np.exp(label_log_slice)), np.max(np.exp(label_log_slice))
-            if np.min(label_id_slice)<0 or np.max(label_id_slice)>=64:
-                programPause = raw_input("!!!!!!!!!!!!!!!!!np.min(label_id_slice)<0 or np.max(label_id_slice)>=64")
+            # if np.min(label_id_slice)<0 or np.max(label_id_slice)>=64:
+                # programPause = raw_input("!!!!!!!!!!!!!!!!!np.min(label_id_slice)<0 or np.max(label_id_slice)>=64")
 
             if FLAGS.if_pause:
                 programPause = raw_input("Press the <ENTER> key to continue...")
@@ -612,7 +623,7 @@ def main(unused_argv):
         #     ignore_missing_vars=True),
         summary_op=summary_op,
         save_summaries_secs=FLAGS.save_summaries_secs,
-        save_interval_secs=FLAGS.save_interval_secs if not(FLAGS.if_debug) else 0)
+        save_interval_secs=FLAGS.save_interval_secs if not(FLAGS.if_debug) else 300)
 
 
 if __name__ == '__main__':

@@ -22,6 +22,23 @@ from deeplab.core import preprocess_utils
 
 slim = tf.contrib.slim
 
+def rotuvd_dict_N_2_quat_xy_dinvd_dict_N(FLAGS, rotuvd_dict_N_input): # u, v in original frame (not halfed)
+  u = tf.gather(rotuvd_dict_N_input, [4], axis=1)
+  v = tf.gather(rotuvd_dict_N_input, [5], axis=1)
+  d = tf.gather(rotuvd_dict_N_input, [6], axis=1)
+  F1 = 463.08880615234375
+  W = 338.8421325683594
+  F2 = 462.87689208984375
+  H = 271.9969482421875
+  K_T = tf.constant([[1./F1, 0., -W/F1], [0, 1./F2, -H/F2], [0., 0., 1.]])
+  if FLAGS.if_depth:
+    uvd = tf.concat([u*d, v*d, d], axis=1)
+  else:
+    uvd = tf.concat([u/d, v/d, 1/d], axis=1)
+  xyz = tf.transpose(tf.matmul(K_T, tf.transpose(uvd))) # x, y, depth; [N, 3]
+  quat_xy_dinvd_dict_N_output = tf.concat([tf.gather(rotuvd_dict_N_input, [0,1,2,3], axis=1), tf.gather(xyz, [0,1], axis=1), d], axis=1)
+  return quat_xy_dinvd_dict_N_output
+
 def get_avg_tensor_from_scopes(num_clones, pattern_train_postfix, graph, config, tensor_name, return_concat=False):
     tensor_list = []
     for clone_idx in range(num_clones):
@@ -191,6 +208,18 @@ def logits_cls_to_logits_probReg(logits, bin_vals):
     prob = tf.contrib.layers.softmax(logits)
     prob = tf.multiply(prob, bin_vals_expand)
     prob_logits = tf.reduce_sum(prob, axis=1, keepdims=True)
+
+    # DORN
+    # acts = tf.reduce_sum(tf.cast(tf.nn.sigmoid(logits) >= 0.5, tf.int32),-1)
+    # prob_logits = tf.reduce_sum(tf.multiply(tf.one_hot(acts, tf.shape(bin_vals)[1]), bin_vals_expand),-1, keepdims=True)
+    return prob_logits
+
+def logits_cls_map_to_logits_probReg_map(logits, bin_vals):
+    bin_vals_expand = tf.tile(tf.expand_dims(tf.expand_dims(bin_vals, 0), 0), [tf.shape(logits)[0], tf.shape(logits)[1], tf.shape(logits)[2], 1])
+
+    prob = tf.contrib.layers.softmax(logits)
+    prob = tf.multiply(prob, bin_vals_expand)
+    prob_logits = tf.reduce_sum(prob, axis=-1, keepdims=True)
 
     # DORN
     # acts = tf.reduce_sum(tf.cast(tf.nn.sigmoid(logits) >= 0.5, tf.int32),-1)

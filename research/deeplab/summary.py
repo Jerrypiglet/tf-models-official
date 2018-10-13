@@ -150,22 +150,41 @@ def get_summaries(FLAGS, graph, summaries, dataset, config, first_clone_scope):
 
           label_outputs = graph.get_tensor_by_name(pattern%'label_pose_shape_map')
           logit_outputs = graph.get_tensor_by_name(pattern%'prob_logits_pose_shape_map')
-          label_depth = graph.get_tensor_by_name(pattern%'depth')
+
+          label_depth = graph.get_tensor_by_name(pattern%'depth_rescaled_label_map')
+          label_id_depth = graph.get_tensor_by_name(pattern%'depth_rescaled_label_id_map')
+          mask_depth = graph.get_tensor_by_name(pattern%'depth_rescaled_mask_map')
+          logit_depth = graph.get_tensor_by_name(pattern%'depth_rescaled_logit_map')
+          error_depth_cls = graph.get_tensor_by_name(pattern%'depth_rescaled_cls_error_map')
+          error_depth_reg = graph.get_tensor_by_name(pattern%'depth_rescaled_reg_error_map')
           for output_idx, output in enumerate(dataset.output_names):
               if not(FLAGS.if_shape) and 'q' in output:
                   continue
               if FLAGS.if_depth_only and output != 'z':
                   continue
-              # # Scale up summary image pixel values for better visualization.
               summary_label_output = tf.gather(label_outputs, [output_idx], axis=3)
               summary_label_output= tf.multiply(summary_mask_float_filtered, summary_label_output)
               summary_label_output_uint8, pixel_scaling = scale_to_255(summary_label_output)
               summaries.add(tf.summary.image('output'+label_postfix+'/%s_label' % output, tf.gather(summary_label_output_uint8, gather_list)))
 
-              if output == 'z':
-                  summary_label_output= tf.multiply(summary_mask_float_filtered, label_depth)
-                  summary_label_output_uint8, _ = scale_to_255(summary_label_output, pixel_scaling)
-                  summaries.add(tf.summary.image('output'+label_postfix+'/%s_depth_label' % output, tf.gather(summary_label_output_uint8, gather_list)))
+              if output == 'z': # for dense depth map
+                  label_depth_output_uint8, pixel_scaling = scale_to_255(tf.multiply(mask_depth, label_depth))
+                  summaries.add(tf.summary.image('dense_depth'+label_postfix+'/%s_depth_label' % output, tf.gather(label_depth_output_uint8, gather_list)))
+
+                  # label_id_depth_output_uint8, _ = scale_to_255(tf.multiply(mask_depth, tf.to_float(label_id_depth)))
+                  # summaries.add(tf.summary.image('dense_depth'+label_postfix+'/%s_depth_label_id' % output, tf.gather(label_id_depth_output_uint8, gather_list)))
+
+                  logit_depth_output_uint8, _ = scale_to_255(logit_depth, pixel_scaling)
+                  summaries.add(tf.summary.image('dense_depth'+label_postfix+'/%s_depth_logit' % output, tf.gather(logit_depth_output_uint8, gather_list)))
+
+                  mask_depth_output_uint8, _ = scale_to_255(mask_depth)
+                  summaries.add(tf.summary.image('dense_depth'+label_postfix+'/%s_depth_mask' % output, tf.gather(mask_depth_output_uint8, gather_list)))
+
+                  error_depth_output_uint8, _ = scale_to_255(error_depth_cls)
+                  summaries.add(tf.summary.image('dense_depth'+label_postfix+'/%s_depth_error_cls' % output, tf.gather(error_depth_output_uint8, gather_list)))
+
+                  error_depth_output_uint8, _ = scale_to_255(error_depth_reg, pixel_scaling)
+                  summaries.add(tf.summary.image('dense_depth'+label_postfix+'/%s_depth_error_reg' % output, tf.gather(error_depth_output_uint8, gather_list)))
 
 
               summary_logits_output = tf.gather(logit_outputs, [output_idx], axis=3)
