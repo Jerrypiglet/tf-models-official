@@ -84,12 +84,13 @@ DatasetDescriptor = collections.namedtuple(
      'pose_range',
      'bin_nums',
      'output_names',
+     'output_names_summary',
     ]
 )
 
 SHAPE_DIMS = 10
 SHAPE_BINS = 32
-POSE_BINS = 64
+POSE_BINS = 128
 
 _APOLLOSCAPE_INFORMATION = DatasetDescriptor(
     splits_to_sizes={
@@ -119,15 +120,17 @@ _APOLLOSCAPE_INFORMATION = DatasetDescriptor(
         [-1., 1.],
         [-1., 1.],
         [-1., 1.],
-        [-100., 100.], # x
-        [0., 50], # y
-        # [-0., 0.], # WHATEVRR: no cls for u
-        # [-0., 0.], # WHATEVER: no cls for v
+        # [-100., 100.], # x
+        # [0., 50], # y
+        [-0., 0.], # WHATEVRR: no cls for u
+        [-0., 0.], # WHATEVER: no cls for v
         # [1.5, 350.]], # for depth
-        [1.1, 350.]], # for Dense depth
-    bin_nums = [POSE_BINS]*4 + [1, 1, POSE_BINS] + [SHAPE_BINS]*SHAPE_DIMS, # uv flow
+        [1.1, 350.], # for Dense depth
+        [0., 0.]], # WHATEVER: no cls for Dense depth offset
+    bin_nums = [POSE_BINS]*4 + [1, 1, POSE_BINS, 1] + [SHAPE_BINS]*SHAPE_DIMS, # uv flow
     # bin_nums = [POSE_BINS]*7 + [SHAPE_BINS]*SHAPE_DIMS, # xy
-    output_names = ['q1', 'q2', 'q3', 'q4', 'x', 'y', 'z'] + ['shape_%d'%dim for dim in range(SHAPE_DIMS)],
+    output_names = ['q1', 'q2', 'q3', 'q4', 'x', 'y', 'z_log_dense', 'z_log_offset'] + ['shape_%d'%dim for dim in range(SHAPE_DIMS)],
+    output_names_summary = ['q1', 'q2', 'q3', 'q4', 'x', 'y', 'z_object'] + ['shape_%d'%dim for dim in range(SHAPE_DIMS)],
 )
 
 _DATASETS_INFORMATION = {
@@ -166,6 +169,7 @@ def get_dataset(FLAGS, dataset_name, split_name, dataset_dir):
   pose_range = _DATASETS_INFORMATION[dataset_name].pose_range
   bin_nums = _DATASETS_INFORMATION[dataset_name].bin_nums
   output_names = _DATASETS_INFORMATION[dataset_name].output_names
+  output_names_summary = _DATASETS_INFORMATION[dataset_name].output_names_summary
   # ignore_label = _DATASETS_INFORMATION[dataset_name].ignore_label
   # height = _DATASETS_INFORMATION[dataset_name].height
   # width = _DATASETS_INFORMATION[dataset_name].width
@@ -285,6 +289,7 @@ def get_dataset(FLAGS, dataset_name, split_name, dataset_dir):
       bin_nums=bin_nums,
       SHAPE_DIMS=SHAPE_DIMS,
       output_names=output_names,
+      output_names_summary=output_names_summary,
       num_classes=num_classes,
       # shape_dims=shape_dims,
       SHAPE_BINS=SHAPE_BINS,

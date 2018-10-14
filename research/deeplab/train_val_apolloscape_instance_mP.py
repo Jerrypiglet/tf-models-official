@@ -230,8 +230,6 @@ flags.DEFINE_boolean('if_depth_only', False,
 flags.DEFINE_enum('cls_method', 'multi-cls', ['cls', 'multi-cls', 'dorn'],
                   'classification method.')
 
-
-
 # Dataset settings.
 flags.DEFINE_string('dataset', 'apolloscape',
                     'Name of the segmentation dataset.')
@@ -313,7 +311,7 @@ def main(unused_argv):
       bin_size_list = [(r[1]-r[0])/(b-1 if b!=1 else 1) for r, b in zip(np.vstack((pose_range, shape_range)), dataset.bin_nums)]
       bin_bounds_list = [[c_elem-s/2. for c_elem in c] + [c[-1]+s/2.] for c, s in zip(bin_centers_list, bin_size_list)]
       assert bin_bounds_list[6][0] > 0, 'Need more bins to make the first bound of log depth positive! (Or do we?)'
-      for output, pose_range, bin_size, bin_centers, bin_bounds in zip(dataset.output_names[:7], pose_range[:7], bin_size_list[:7], bin_centers_list[:7], bin_bounds_list[:7]):
+      for output, pose_range, bin_size, bin_centers, bin_bounds in zip(dataset.output_names, pose_range, bin_size_list, bin_centers_list, bin_bounds_list)[:8]:
           print output + '_poserange_binsize', pose_range, bin_size
           print output + '_bin_centers', bin_centers, len(bin_centers)
           print output + '_bin_bounds', bin_bounds, len(bin_bounds)
@@ -362,7 +360,7 @@ def main(unused_argv):
 
       # Define the model and create clones.
       model_fn = _build_deeplab
-      model_args = (FLAGS, inputs_queue.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_centers_tensors, bin_centers_list, bin_bounds_list, bin_size_list, dataset, codes, True)
+      model_args = (FLAGS, inputs_queue.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_centers_tensors, bin_centers_list, bin_bounds_list, bin_size_list, dataset, codes, config.inputs_device(), True)
       clones = model_deploy.create_clones(config, model_fn, args=model_args)
 
       # Gather update_ops from the first clone. These contain, for example,
@@ -390,7 +388,7 @@ def main(unused_argv):
     with tf.device(config.variables_device()):
       total_loss, grads_and_vars = model_deploy.optimize_clones(
           clones, optimizer)
-      print '------ total_loss', total_loss
+      print '-- [TOTAL LOSS]: ', total_loss
       for loss_item in tf.get_collection(tf.GraphKeys.LOSSES, first_clone_scope):
           print loss_item# total_loss = tf.check_numerics(total_loss, 'Loss is inf or nan.')
       summaries.add(tf.summary.scalar('total_loss/train', total_loss))
@@ -423,7 +421,7 @@ def main(unused_argv):
     with tf.device('/device:GPU:%d'%(FLAGS.num_clones+1)):
         if FLAGS.if_val:
           ## Construct the validation graph; takes one GPU.
-          image_names, z_logits, outputs_to_weights, seg_one_hots_list, weights_normalized, areas_masked, car_nums, car_nums_list, idx_xys, reg_logits_pose_xy_from_uv, pose_dict_N, prob_logits_pose, rotuvd_dict_N, masks_float, label_uv_flow_map, logits_uv_flow_map = _build_deeplab(FLAGS, inputs_queue_val.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_centers_tensors, bin_centers_list, bin_bounds_list, bin_size_list, dataset_val, codes, is_training=False)
+          image_names, z_logits, outputs_to_weights, seg_one_hots_list, weights_normalized, areas_masked, car_nums, car_nums_list, idx_xys, reg_logits_pose_xy_from_uv, pose_dict_N, prob_logits_pose, rotuvd_dict_N, masks_float, label_uv_flow_map, logits_uv_flow_map = _build_deeplab(FLAGS, inputs_queue_val.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_centers_tensors, bin_centers_list, bin_bounds_list, bin_size_list, dataset_val, codes, config.inputs_device(), is_training=False)
           # pose_dict_N, xyz = _build_deeplab(FLAGS, inputs_queue_val.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_vals, bin_range, dataset_val, codes, is_training=False)
     if FLAGS.num_clones > 1:
         pattern_train = first_clone_scope + '/%s:0'
@@ -505,25 +503,29 @@ def main(unused_argv):
             trans_sqrt_error = graph.get_tensor_by_name(pattern_val%'trans_sqrt_error')
             trans_loss_error = graph.get_tensor_by_name(pattern_val%'trans_loss_error')
             trans_diff_metric_abs = graph.get_tensor_by_name(pattern_val%'trans_diff_metric_abs')
-            label_id_slice = graph.get_tensor_by_name(pattern_val%'label_id_slice')
-            label_log_slice = graph.get_tensor_by_name(pattern_val%'label_log_slice')
-            summary_loss_slice_reg_vector_z = graph.get_tensor_by_name((pattern%'loss_slice_reg_vector_').replace(':0', '')+'z'+':0')
+            # label_id_slice = graph.get_tensor_by_name(pattern_val%'label_id_slice')
+            # label_log_slice = graph.get_tensor_by_name(pattern_val%'label_log_slice')
+            # summary_loss_slice_reg_vector_z = graph.get_tensor_by_name((pattern%'loss_slice_reg_vector_').replace(':0', '')+'z'+':0')
             if FLAGS.if_depth_only:
-                summary_loss_slice_reg_vector_x = summary_loss_slice_reg_vector_z
-                summary_loss_slice_reg_vector_y = summary_loss_slice_reg_vector_z
-                label_uv_map = summary_loss_slice_reg_vector_z
-                logits_uv_map = summary_loss_slice_reg_vector_z
+                # summary_loss_slice_reg_vector_x = summary_loss_slice_reg_vector_z
+                # summary_loss_slice_reg_vector_y = summary_loss_slice_reg_vector_z
+                label_uv_map = trans_diff_metric_abs
+                logits_uv_map = trans_diff_metric_abs
             else:
-                summary_loss_slice_reg_vector_x = graph.get_tensor_by_name((pattern%'loss_slice_reg_vector_').replace(':0', '')+'x'+':0')
-                summary_loss_slice_reg_vector_y = graph.get_tensor_by_name((pattern%'loss_slice_reg_vector_').replace(':0', '')+'y'+':0')
+                # summary_loss_slice_reg_vector_x = graph.get_tensor_by_name((pattern%'loss_slice_reg_vector_').replace(':0', '')+'x'+':0')
+                # summary_loss_slice_reg_vector_y = graph.get_tensor_by_name((pattern%'loss_slice_reg_vector_').replace(':0', '')+'y'+':0')
                 label_uv_map = graph.get_tensor_by_name(pattern%'label_uv_flow_map')
                 logits_uv_map = graph.get_tensor_by_name(pattern%'logits_uv_flow_map')
-            _, test_out, test_out2, test_out3, test_out4, test_out5_areas, test_out5, test_out6, test_out7, test_out8, test_out9, test_out10, test_out11, test_out12, test_out13, test_out14, test_out15, test_out_regx, test_out_regy, test_out_regz, trans_sqrt_error, trans_diff_metric_abs, trans_loss_error, label_id_slice, label_log_slice  = sess.run([summary_op, image_names, z_logits, outputs_to_weights['z'], mask_rescaled_float, areas_masked, weights_normalized, prob_logits_pose, pose_dict_N, car_nums, car_nums_list, idx_xys, rotuvd_dict_N, masks_float, reg_logits_pose_xy_from_uv, label_uv_map, logits_uv_map, summary_loss_slice_reg_vector_x, summary_loss_slice_reg_vector_y, summary_loss_slice_reg_vector_z, trans_sqrt_error, trans_diff_metric_abs, trans_loss_error, label_id_slice, label_log_slice])
+            _, test_out, test_out2, test_out3, test_out3_1, test_out3_2, test_out4, test_out5_areas, test_out5, test_out6, test_out7, test_out8, test_out9, test_out10, test_out11, test_out12, test_out13, test_out14, test_out15, trans_sqrt_error, trans_diff_metric_abs, trans_loss_error = sess.run([summary_op, image_names, z_logits, outputs_to_weights['z_object'], outputs_to_weights['z_log_dense'], outputs_to_weights['z_log_offset'], mask_rescaled_float, areas_masked, weights_normalized, prob_logits_pose, pose_dict_N, car_nums, car_nums_list, idx_xys, rotuvd_dict_N, masks_float, reg_logits_pose_xy_from_uv, label_uv_map, logits_uv_map, trans_sqrt_error, trans_diff_metric_abs, trans_loss_error])
             # test_out_regx, test_out_regy, test_out_regz, trans_sqrt_error, trans_diff_metric_abs = sess.run([)
             print test_out
             print test_out2.shape
             test_out3 = test_out3[test_out4!=0.]
             print 'outputs_to_weights[z] masked: ', test_out3.shape, np.max(test_out3), np.min(test_out3), np.mean(test_out3), test_out3.dtype
+            test_out3_1 = test_out3_1[test_out4!=0.]
+            print 'outputs_to_weights[z dense] masked: ', test_out3_1.shape, np.max(test_out3_1), np.min(test_out3_1), np.mean(test_out3_1), test_out3_1.dtype
+            test_out3_2 = test_out3_2[test_out4!=0.]
+            print 'outputs_to_weights[z offset] masked: ', test_out3_2.shape, np.max(test_out3_2), np.min(test_out3_2), np.mean(test_out3_2), test_out3_2.dtype
             print 'areas: ', test_out5_areas.T, test_out5_areas.shape, np.sum(test_out5_areas)
             print 'masks: ', test_out12.T
 
@@ -540,16 +542,16 @@ def main(unused_argv):
                     print '-- label_uv_map: ', test_out14.shape, np.max(test_out14[:, :, :, 0]), np.min(test_out14[:, :, :, 0]), np.max(test_out14[:, :, :, 1]), np.min(test_out14[:, :, :, 1])
                     print '-- logits_uv_map: ', test_out15.shape, np.max(test_out15[:, :, :, 0]), np.min(test_out15[:, :, :, 0]), np.max(test_out15[:, :, :, 1]), np.min(test_out15[:, :, :, 1])
             print '-- car_nums: ', test_out8, test_out9, test_out10.T
-            if not(FLAGS.if_depth_only):
-                print '-- slice reg x: ', test_out_regx.T, np.max(test_out_regx), test_out_regx.shape
-                print '-- slice reg y: ', test_out_regy.T, np.max(test_out_regy), test_out_regy.shape
-            print '-- slice reg z: ', test_out_regz.T, np.max(test_out_regz), test_out_regz.shape
+            # if not(FLAGS.if_depth_only):
+            #     print '-- slice reg x: ', test_out_regx.T, np.max(test_out_regx), test_out_regx.shape
+            #     print '-- slice reg y: ', test_out_regy.T, np.max(test_out_regy), test_out_regy.shape
+            # print '-- slice reg z: ', test_out_regz.T, np.max(test_out_regz), test_out_regz.shape
             print '-- trans_sqrt_error: ', trans_sqrt_error.T, np.max(trans_sqrt_error), trans_sqrt_error.shape
             print '-- trans_diff_metric_abs: ', np.hstack((trans_diff_metric_abs, test_out5_areas, trans_sqrt_error)), np.max(trans_diff_metric_abs, axis=0), trans_diff_metric_abs.shape
 
-            print '++++ label_id_slice', label_id_slice.T, np.min(label_id_slice), np.max(label_id_slice)
-            print '++++ label_log_slice', label_log_slice.T, np.min(label_log_slice), np.max(label_log_slice)
-            print '++++ label_explog_slice', np.exp(label_log_slice).T, np.min(np.exp(label_log_slice)), np.max(np.exp(label_log_slice))
+            # print '++++ label_id_slice', label_id_slice.T, np.min(label_id_slice), np.max(label_id_slice)
+            # print '++++ label_log_slice', label_log_slice.T, np.min(label_log_slice), np.max(label_log_slice)
+            # print '++++ label_explog_slice', np.exp(label_log_slice).T, np.min(np.exp(label_log_slice)), np.max(np.exp(label_log_slice))
             # if np.min(label_id_slice)<0 or np.max(label_id_slice)>=64:
                 # programPause = raw_input("!!!!!!!!!!!!!!!!!np.min(label_id_slice)<0 or np.max(label_id_slice)>=64")
 

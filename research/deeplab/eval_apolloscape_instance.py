@@ -109,6 +109,9 @@ flags.DEFINE_boolean('fine_tune_batch_norm', True,
 # For `xception_65`, use atrous_rates = [12, 24, 36] if output_stride = 8, or
 # rates = [6, 12, 18] if output_stride = 16. For `mobilenet_v2`, use None. Note
 # one could use different atrous_rates/output_stride during evaluation/evaluation.
+flags.DEFINE_multi_integer('train_crop_size', [513, 513],
+                           'Image crop size [height, width] during training.')
+
 flags.DEFINE_multi_integer('atrous_rates', None,
                            'Atrous rates for atrous spatial pyramid pooling.')
 
@@ -132,6 +135,9 @@ flags.DEFINE_boolean('if_depth_only', False,
 
 flags.DEFINE_boolean('if_summary_shape_metrics', True,
                      'Save image metrics to summary.')
+
+flags.DEFINE_enum('cls_method', 'multi-cls', ['cls', 'multi-cls', 'dorn'],
+                  'classification method.')
 
 # Dataset settings.
 flags.DEFINE_string('dataset', 'apolloscape',
@@ -167,6 +173,8 @@ def main(unused_argv):
   dataset = regression_dataset.get_dataset(FLAGS,
       FLAGS.dataset, FLAGS.val_split, dataset_dir=FLAGS.dataset_dir)
   print '#### The data has size:', dataset.num_samples
+  dataset.height = FLAGS.train_crop_size[0]
+  dataset.width = FLAGS.train_crop_size[1]
 
   with tf.Graph().as_default() as graph:
     codes = np.load('./deeplab/codes.npy')
@@ -190,7 +198,7 @@ def main(unused_argv):
 
     model_options = common.ModelOptions(
             outputs_to_num_classes=outputs_to_num_classes,
-            crop_size=[dataset.height, dataset.width],
+            crop_size=[FLAGS.train_crop_size[0], FLAGS.train_crop_size[1]],
             atrous_rates=FLAGS.atrous_rates,
             output_stride=FLAGS.output_stride)
 
@@ -206,7 +214,7 @@ def main(unused_argv):
 
     # Create the global step on the device storing the variables.
       ## Construct the validation graph; takes one GPU.
-    _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, bin_centers_tensors, bin_centers_list, bin_bounds_list, bin_size_list, dataset, codes, is_training=False)
+    _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, bin_centers_tensors, bin_centers_list, bin_bounds_list, bin_size_list, dataset, codes, '/cpu:0',is_training=False)
 
     if FLAGS.if_print_tensors:
         for op in tf.get_default_graph().get_operations():

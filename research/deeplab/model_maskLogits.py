@@ -147,15 +147,15 @@ def single_scale_logits(FLAGS,
   """
 
   # Compute the height, width for the output logits.
-  logits_output_stride = (
-      model_options.decoder_output_stride or model_options.output_stride)
+  # logits_output_stride = (
+  #     model_options.decoder_output_stride or model_options.output_stride)
 
-  logits_height = scale_dimension(
-      tf.shape(images)[1],
-      1.0 / logits_output_stride)
-  logits_width = scale_dimension(
-      tf.shape(images)[2],
-      1.0 / logits_output_stride)
+  # logits_height = scale_dimension(
+  #     tf.shape(images)[1],
+  #     1.0 / logits_output_stride)
+  # logits_width = scale_dimension(
+  #     tf.shape(images)[2],
+  #     1.0 / logits_output_stride)
 
   # seg_one_hots_N_rescaled = tf.image.resize_nearest_neighbor(seg_one_hots_N,
       # [logits_height, logits_width], align_corners=True)
@@ -303,65 +303,122 @@ def _get_logits_mP(FLAGS,
         print '||||||||added grids to y'
 
     outputs_to_logits_map[output] = logits
+    outputs_to_weights_map[output] = weights # [batch_size, H', W', 1]
 
-    # Working
-    with tf.variable_scope('per_car_logits_aggre_2'):
-        num_samples = tf.shape(logits)[0]
-        init_array = tf.TensorArray(tf.float32, size=num_samples, infer_shape=False) # https://stackoverflow.com/questions/43270849/tensorflow-map-fn-tensorarray-has-inconsistent-shapes
-        def loop_body_per_sample(i, ta):
-            logits_sample = tf.gather(logits, i) # (68, 170, 32)
-            weight_sample = tf.gather(weights, i) # (68, 170, 1), in [0., 1.]
-            seg_map_sample = tf.gather(seg_maps, i) # (68, 170, 1)
-            car_num_sample = tf.gather(car_nums, i) # ()
+    if output in ['z_log_dense', 'z_log_offset']:
+        continue
 
-            seg_one_hot_sample = tf.one_hot(tf.cast(tf.squeeze(seg_map_sample), tf.int32), depth=car_num_sample+1) # (68, 170, ?+1)
-            seg_one_hot_sample = tf.transpose(tf.slice(seg_one_hot_sample, [0, 0, 1], [-1, -1, -1]), [2, 0, 1]) # (?, 68, 170)
+    # with tf.variable_scope('per_car_logits_aggre_'+output):
+    #     num_samples = tf.shape(logits)[0]
+    #     init_array = tf.TensorArray(tf.float32, size=num_samples, infer_shape=False) # https://stackoverflow.com/questions/43270849/tensorflow-map-fn-tensorarray-has-inconsistent-shapes
+    #     def loop_body_per_sample(i, ta)3:
+    #         logits_sample = tf.gather(logits, i) # (68, 170, 32)
+    #         weight_sample = tf.gather(weights, i) # (68, 170, 1), in [0., 1.]
+    #         seg_map_sample = tf.gather(seg_maps, i) # (68, 170, 1)
+    #         car_num_sample = tf.gather(car_nums, i) # ()
 
-            def per_car(seg_one_hot_car):
-                seg_one_hot_car_bool = tf.cast(seg_one_hot_car, tf.bool)
-                logits_car_masked = tf.boolean_mask(logits_sample, seg_one_hot_car_bool)
-                weight_car_masked = tf.boolean_mask(weight_sample, seg_one_hot_car_bool) # [-1, 1]
+    #         seg_one_hot_sample = tf.one_hot(tf.cast(tf.squeeze(seg_map_sample), tf.int32), depth=car_num_sample+1) # (68, 170, ?+1)
+    #         seg_one_hot_sample = tf.transpose(tf.slice(seg_one_hot_sample, [0, 0, 1], [-1, -1, -1]), [2, 0, 1]) # (?, 68, 170)
 
-                # weight_sum = tf.reduce_sum(weight_car_masked)+1e-10
-                # weight_car_normlized = weight_car_masked / weight_sum
+    #         def per_car(seg_one_hot_car):
+    #             seg_one_hot_car_bool = tf.cast(seg_one_hot_car, tf.bool)
+    #             logits_car_masked = tf.boolean_mask(logits_sample, seg_one_hot_car_bool)
+    #             weight_car_masked = tf.boolean_mask(weight_sample, seg_one_hot_car_bool) # [-1, 1]
 
-                weight_car_masked_ones = tf.ones_like(weight_car_masked)
-                weight_sum_ones = tf.reduce_sum(weight_car_masked_ones)+1e-10
-                weight_car_normlized_ones = weight_car_masked_ones / weight_sum_ones
+    #             # weight_sum = tf.reduce_sum(weight_car_masked)+1e-10
+    #             # weight_car_normlized = weight_car_masked / weight_sum
 
-                weight_car_masked_sum = tf.reduce_sum(tf.exp(weight_car_masked)) + 1e-10
-                weight_car_normlized = tf.exp(weight_car_masked) / weight_car_masked_sum
+    #             weight_car_masked_ones = tf.ones_like(weight_car_masked)
+    #             weight_sum_ones = tf.reduce_sum(weight_car_masked_ones)+1e-10
+    #             weight_car_normlized_ones = weight_car_masked_ones / weight_sum_ones
 
-                area_car = tf.to_float(tf.reduce_sum(seg_one_hot_car))
+    #             weight_car_masked_sum = tf.reduce_sum(tf.exp(weight_car_masked)) + 1e-10
+    #             weight_car_normlized = tf.exp(weight_car_masked) / weight_car_masked_sum
 
-                logits_car_weighted = tf.multiply(logits_car_masked, weight_car_normlized) # [-1, 256]
-                logits_car_aggre = tf.reshape(tf.reduce_sum(logits_car_weighted, 0), [-1]) # (256,)
-                return tf.cond(tf.equal(tf.size(weight_car_masked), 0),
-                        lambda: tf.zeros([tf.shape(logits)[-1]+2], dtype=tf.float32),
-                        lambda: tf.concat([logits_car_aggre, tf.reshape(area_car, [-1]), tf.reshape(weight_car_masked_sum/area_car, [-1])], axis=0))
-            logits_area_weightsum_sample = tf.map_fn(per_car, seg_one_hot_sample, dtype=tf.float32) # [?, 256+1]
-            logits_sample = tf.slice(logits_area_weightsum_sample, [0, 0], [-1, last_dim]) # [?, 256]
-            areas_sample = tf.slice(logits_area_weightsum_sample, [0, last_dim], [-1, 1]) # [?, 1]
-            weightsum_sample = tf.slice(logits_area_weightsum_sample, [0, last_dim+1], [-1, 1]) # [?, 1]
-            logits_areas_weightsum_sample = tf.concat([logits_sample, areas_sample, weightsum_sample], axis=-1)
-            logits_areas_weightsum_sample.set_shape([None, last_dim+2])
+    #             area_car = tf.to_float(tf.reduce_sum(seg_one_hot_car))
 
-            return i + 1, ta.write(i, logits_areas_weightsum_sample)
+    #             logits_car_weighted = tf.multiply(logits_car_masked, weight_car_normlized) # [-1, 256]
+    #             logits_car_aggre = tf.reshape(tf.reduce_sum(logits_car_weighted, 0), [-1]) # (256,)
+    #             return tf.cond(tf.equal(tf.size(weight_car_masked), 0),
+    #                     lambda: tf.zeros([tf.shape(logits)[-1]+2], dtype=tf.float32),
+    #                     lambda: tf.concat([logits_car_aggre, tf.reshape(area_car, [-1]), tf.reshape(weight_car_masked_sum/area_car, [-1])], axis=0))
+    #         logits_area_weightsum_sample = tf.map_fn(per_car, seg_one_hot_sample, dtype=tf.float32) # [?, 256+1]
+    #         logits_sample = tf.slice(logits_area_weightsum_sample, [0, 0], [-1, last_dim]) # [?, 256]
+    #         areas_sample = tf.slice(logits_area_weightsum_sample, [0, last_dim], [-1, 1]) # [?, 1]
+    #         weightsum_sample = tf.slice(logits_area_weightsum_sample, [0, last_dim+1], [-1, 1]) # [?, 1]
+    #         logits_areas_weightsum_sample = tf.concat([logits_sample, areas_sample, weightsum_sample], axis=-1)
+    #         logits_areas_weightsum_sample.set_shape([None, last_dim+2])
 
-        _, logits_areas_all = tf.while_loop(lambda i, ta: i < num_samples, loop_body_per_sample, [0, init_array])
+    #         return i + 1, ta.write(i, logits_areas_weightsum_sample)
+
+    #     _, logits_areas_all = tf.while_loop(lambda i, ta: i < num_samples, loop_body_per_sample, [0, init_array])
+
+    # logits_areas_N = tf.reshape(logits_areas_all.concat(), [-1, last_dim+2])
+    # logits_N = tf.slice(logits_areas_N, [0, 0], [-1, last_dim])
+    # areas_N = tf.slice(logits_areas_N, [0, last_dim], [-1, 1])
+    # weightsum_N = tf.slice(logits_areas_N, [0, last_dim+1], [-1, 1])
+
+    logits_N, weightsum_N, areas_N = _aggre_logits(output, logits, weights, seg_maps, car_nums, last_dim)
+
+    outputs_to_logits_N[output] = logits_N # [N, 32]
+    print logits.get_shape(), features_Xs.get_shape(), logits.get_shape(), outputs_to_logits_N[output].get_shape(), '+++++++++++++', output # (2, 68, 170, 64) (2, 68, 170, 1) (2, 68, 170, 64) (?, 64)
+    outputs_to_areas_N[output] = areas_N # [N, 1]
+    outputs_to_weightsum_N[output] = weightsum_N # [N, 1]
+
+  return outputs_to_logits_N, outputs_to_logits_map, outputs_to_weights_map, outputs_to_areas_N, outputs_to_weightsum_N
+
+def _aggre_logits(output, logits, weights, seg_maps, car_nums, last_dim):
+  with tf.variable_scope('per_car_logits_aggre_'+output):
+    num_samples = tf.shape(logits)[0]
+    init_array = tf.TensorArray(tf.float32, size=num_samples, infer_shape=False) # https://stackoverflow.com/questions/43270849/tensorflow-map-fn-tensorarray-has-inconsistent-shapes
+    def loop_body_per_sample(i, ta):
+        logits_sample = tf.gather(logits, i) # (68, 170, 32)
+        weight_sample = tf.gather(weights, i) # (68, 170, 1), in [0., 1.]
+        seg_map_sample = tf.gather(seg_maps, i) # (68, 170, 1)
+        car_num_sample = tf.gather(car_nums, i) # ()
+
+        seg_one_hot_sample = tf.one_hot(tf.cast(tf.squeeze(seg_map_sample), tf.int32), depth=car_num_sample+1) # (68, 170, ?+1)
+        seg_one_hot_sample = tf.transpose(tf.slice(seg_one_hot_sample, [0, 0, 1], [-1, -1, -1]), [2, 0, 1]) # (?, 68, 170)
+
+        def per_car(seg_one_hot_car):
+            seg_one_hot_car_bool = tf.cast(seg_one_hot_car, tf.bool)
+            logits_car_masked = tf.boolean_mask(logits_sample, seg_one_hot_car_bool)
+            weight_car_masked = tf.boolean_mask(weight_sample, seg_one_hot_car_bool) # [-1, 1]
+
+            # weight_sum = tf.reduce_sum(weight_car_masked)+1e-10
+            # weight_car_normlized = weight_car_masked / weight_sum
+
+            weight_car_masked_ones = tf.ones_like(weight_car_masked)
+            weight_sum_ones = tf.reduce_sum(weight_car_masked_ones)+1e-10
+            weight_car_normlized_ones = weight_car_masked_ones / weight_sum_ones
+
+            weight_car_masked_sum = tf.reduce_sum(tf.exp(weight_car_masked)) + 1e-10
+            weight_car_normlized = tf.exp(weight_car_masked) / weight_car_masked_sum
+
+            area_car = tf.to_float(tf.reduce_sum(seg_one_hot_car))
+
+            logits_car_weighted = tf.multiply(logits_car_masked, weight_car_normlized) # [-1, 256]
+            logits_car_aggre = tf.reshape(tf.reduce_sum(logits_car_weighted, 0), [-1]) # (256,)
+            return tf.cond(tf.equal(tf.size(weight_car_masked), 0),
+                    lambda: tf.zeros([tf.shape(logits)[-1]+2], dtype=tf.float32),
+                    lambda: tf.concat([logits_car_aggre, tf.reshape(area_car, [-1]), tf.reshape(weight_car_masked_sum/area_car, [-1])], axis=0))
+        logits_area_weightsum_sample = tf.map_fn(per_car, seg_one_hot_sample, dtype=tf.float32) # [?, 256+1]
+        logits_sample = tf.slice(logits_area_weightsum_sample, [0, 0], [-1, last_dim]) # [?, 256]
+        areas_sample = tf.slice(logits_area_weightsum_sample, [0, last_dim], [-1, 1]) # [?, 1]
+        weightsum_sample = tf.slice(logits_area_weightsum_sample, [0, last_dim+1], [-1, 1]) # [?, 1]
+        logits_areas_weightsum_sample = tf.concat([logits_sample, areas_sample, weightsum_sample], axis=-1)
+        logits_areas_weightsum_sample.set_shape([None, last_dim+2])
+
+        return i + 1, ta.write(i, logits_areas_weightsum_sample)
+
+    _, logits_areas_all = tf.while_loop(lambda i, ta: i < num_samples, loop_body_per_sample, [0, init_array])
 
     logits_areas_N = tf.reshape(logits_areas_all.concat(), [-1, last_dim+2])
     logits_N = tf.slice(logits_areas_N, [0, 0], [-1, last_dim])
     areas_N = tf.slice(logits_areas_N, [0, last_dim], [-1, 1])
     weightsum_N = tf.slice(logits_areas_N, [0, last_dim+1], [-1, 1])
 
-    outputs_to_logits_N[output] = logits_N # [N, 32]
-    print logits.get_shape(), features_Xs.get_shape(), logits.get_shape(), outputs_to_logits_N[output].get_shape(), '+++++++++++++', output # (2, 68, 170, 64) (2, 68, 170, 1) (2, 68, 170, 64) (?, 64)
-    outputs_to_weights_map[output] = weights # [batch_size, H', W', 1]
-    outputs_to_areas_N[output] = areas_N # [N, 1]
-    outputs_to_weightsum_N[output] = weightsum_N # [N, 1]
-
-  return outputs_to_logits_N, outputs_to_logits_map, outputs_to_weights_map, outputs_to_areas_N, outputs_to_weightsum_N
+    return logits_N, weightsum_N, areas_N
 
 
 def extract_features(images,
