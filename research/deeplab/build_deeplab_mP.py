@@ -146,8 +146,8 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
   # reg_logits_mask = tf.logical_not(tf.is_nan(tf.reduce_sum(reg_logits_concat, axis=1, keepdims=True)))
   areas_masked = outputs_to_areas_N[dataset.output_names[0]]
   masks_float = tf.to_float(tf.not_equal(areas_masked, 0.)) # N; filtered small objects (with zero area after resizing)
-  # weights_normalized = areas_masked # weights equals area; will be divided by num of all pixels later
-  weights_normalized = tf.ones_like(areas_masked) # NOT weights equals area
+  weights_normalized = areas_masked # weights equals area; will be divided by num of all pixels later
+  # weights_normalized = tf.ones_like(areas_masked) # NOT weights equals area
 
   # if FLAGS.val_split == 'test':
   #     scaled_prob_logits_pose = train_utils.scale_for_l1_loss(
@@ -355,13 +355,16 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
           pose_dict_N,
           masks_float,
           weights_normalized,
+          # / tf.log(tf.slice(rotuvd_dict_N, [0, 6], [-1, 1])),
           balance_rot=balance_rot_reg_loss,
           balance_trans=balance_trans_reg_loss,
           upsample_logits=FLAGS.upsample_logits,
           name=is_training_prefix + 'loss_reg',
           is_training_prefix = is_training_prefix,
           loss_collection=tf.GraphKeys.LOSSES if is_training else None,
-          if_depth=FLAGS.if_depth)
+          if_depth=FLAGS.if_depth,
+          logits_depth_N_log=logits_N_log,
+          labels_depth_N_log=tf.log(tf.clip_by_value(tf.slice(rotuvd_dict_N, [0, 6], [-1, 1]), 1.5, 350.)))
   if not(FLAGS.if_depth_only):
       rot_q_loss_error_map = tf.identity(logits_cars_to_map(rot_q_loss_error), name=is_training_prefix+'rot_q_loss_error_map')
       rot_q_angle_error_map = tf.identity(logits_cars_to_map(rot_q_angle_error), name=is_training_prefix+'rot_q_angle_error_map')
