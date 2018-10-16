@@ -1,3 +1,6 @@
 [submodule "tensorflow"]
 	path = research/syntaxnet/tensorflow
 	url = https://github.com/tensorflow/tensorflow.git
+[submodule "research/deeplab/dgcnn"]
+	path = research/deeplab/dgcnn
+	url = https://github.com/WangYueFt/dgcnn.git
