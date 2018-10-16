@@ -161,7 +161,7 @@ def _bytes_list_feature(values):
       bytes_list=tf.train.BytesList(value=[norm2bytes(values)]))
 
 
-def image_posedict_to_tfexample(is_training, image_data, vis_data, seg_data, shape_id_map_data, filename, height, width, pose_dict, rotuvd_dict, bbox_dict, shape_id_dict):
+def image_posedict_to_tfexample(is_training, image_data, vis_data, depth_data, seg_data, shape_id_map_data, filename, height, width, pose_dict, rotuvd_dict, bbox_dict, shape_id_dict):
   """Converts one image/posemap pair to tf example.
 
   Args:
@@ -179,6 +179,7 @@ def image_posedict_to_tfexample(is_training, image_data, vis_data, seg_data, sha
       return tf.train.Example(features=tf.train.Features(feature={
           'image/encoded': _bytes_list_feature(image_data),
           'vis/encoded': _bytes_list_feature(vis_data),
+          'depth/encoded': _bytes_list_feature(depth_data),
           'seg/encoded': _bytes_list_feature(seg_data),
           'shape_id_map/encoded': _bytes_list_feature(shape_id_map_data),
           'image/filename': _bytes_list_feature(filename),

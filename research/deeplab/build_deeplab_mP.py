@@ -156,22 +156,25 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
               print prob_logits.get_shape(), '++++++++1'
 
 
-              prob_logits = tf.multiply(outputs_to_logits[output], masks_float)
-              prob_logits_batch = _pad_N_to_batch(prob_logits, 49, samples['car_nums'])
-              print prob_logits_batch.get_shape(), '++++++++2'
-              prob_logits = pointnet.get_model(prob_logits_batch, None, \
-                is_training=is_training, bn_decay=bn_decay, cat_num=None, \
-                part_num=prob_logits_batch.get_shape()[2], batch_size=prob_logits_batch.get_shape()[0], num_point=49, weight_decay=None)
-              print prob_logits.get_shape(), '++++++++3'
-              prob_logits = _unpadding(prob_logits, append_left_idx=False)
-              print prob_logits.get_shape(), '++++++++4'
-              cls_logits = tf.multiply(prob_logits, masks_float)
+              logits_masked = tf.multiply(outputs_to_logits[output], masks_float)
+              logits_batch = _pad_N_to_batch(logits_masked, 49, samples['car_nums'])
+              print logits_batch.get_shape(), '++++++++2'
+              with tf.variable_scope('pointnet_scope'):
+                  pointnet_logits = pointnet.get_model(logits_batch, None, \
+                    is_training=is_training, bn_decay=bn_decay, cat_num=None, \
+                    part_num=logits_batch.get_shape()[2], batch_size=logits_batch.get_shape()[0], num_point=49, weight_decay=None)
+              # tf.losses.mean_squared_error(tf.zeros_like(pointnet_logits), pointnet_logits)
+              print pointnet_logits.get_shape(), '++++++++3'
+              pointnet_logits_unpadded = _unpadding(pointnet_logits, append_left_idx=False)
+              print pointnet_logits_unpadded.get_shape(), '++++++++4'
+              cls_logits = tf.multiply(pointnet_logits_unpadded, masks_float)
+              # tf.losses.mean_squared_error(tf.zeros_like(cls_logits), cls_logits)
 
               prob_logits = train_utils.logits_cls_to_logits_probReg(
                   cls_logits,
                   bin_centers_tensors[outputs_to_indices[output]]) # [car_num_total, 1]
               prob_logits = tf.exp(prob_logits)
-              outputs_to_logits['z_afterpointnet'] = prob_logits
+              outputs_to_logits['z_afterpointnet'] = cls_logits
               print '++++ exp logits for z!'
           reg_logits_list.append(prob_logits)
           print '||||||||CLS logits for '+output
@@ -363,7 +366,7 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
         # label_id_list.append(label_id_slice)
         gt_idx = tf.one_hot(tf.reshape(label_id_slice, [-1]), depth=dataset.bin_nums[idx_output], axis=-1)
 
-        for output2 in ['z', 'z_afterpointnet']:
+        for output2 in ['z_afterpointnet']:
             if FLAGS.if_log_depth:
                 alpha = 15
                 weight = [np.exp(-alpha * np.power(bin_centers - x, 2)) for x in bin_centers] # binary multi-class cls loss
@@ -373,12 +376,12 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
 
                 weight = tf.constant(np.asarray(weight,dtype=np.float32))
                 lab_l = tf.matmul(gt_idx, weight)
-                err_dist = tf.nn.sigmoid_cross_entropy_with_logits(logits=outputs_to_logits[output], labels=lab_l)
+                err_dist = tf.nn.sigmoid_cross_entropy_with_logits(logits=outputs_to_logits[output2], labels=lab_l)
                 loss_slice_crossentropy = tf.reduce_mean(err_dist, 1, keepdims=True)
             else:
-                neg_log = -1. * tf.nn.log_softmax(outputs_to_logits[output])
+                neg_log = -1. * tf.nn.log_softmax(outputs_to_logits[output2])
                 loss_slice_crossentropy = tf.reduce_sum(tf.multiply(gt_idx, neg_log), axis=1, keepdims=True)
-            loss_slice_crossentropy= tf.reduce_sum(tf.multiply(weights_normalized, loss_slice_crossentropy)) / pixels_valid * balance_cls_loss # TMPPPPPPPP!!!!
+            loss_slice_crossentropy= tf.reduce_sum(tf.multiply(weights_normalized, loss_slice_crossentropy)) / pixels_valid * balance_cls_loss
             loss_slice_crossentropy = tf.identity(loss_slice_crossentropy, name=is_training_prefix+'loss_slice_cls_'+output)
             loss_slice_crossentropy_list.append(loss_slice_crossentropy)
             if is_training:

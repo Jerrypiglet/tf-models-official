@@ -37,6 +37,7 @@ import ntpath
 import h5py
 from scipy.io import savemat
 import matplotlib.pyplot as plt
+import imageio
 
 FLAGS = tf.app.flags.FLAGS
 dataset_folders = ['3d_car_instance_sample', 'full', 'combined']
@@ -49,8 +50,8 @@ if FLAGS.if_test:
 else:
     dataset_subfolders = ['', '/train', '/train']
 dataset_folder_index = 2
-# dataset_folder = dataset_folders[dataset_folder_index] + dataset_subfolders[dataset_folder_index]
-dataset_folder = dataset_folders[dataset_folder_index]
+dataset_folder = dataset_folders[dataset_folder_index] + dataset_subfolders[dataset_folder_index]
+# dataset_folder = dataset_folders[dataset_folder_index]
 print '===== dataset_folder: ', dataset_folder
 
 tf.app.flags.DEFINE_string('apolloscape_root',
@@ -58,7 +59,7 @@ tf.app.flags.DEFINE_string('apolloscape_root',
                            'Apolloscape dataset root folder.')
 tf.app.flags.DEFINE_string(
     'output_dir',
-    './apolloscape/%s/tfrecord_02_posedict_half'%dataset_folder,
+    './apolloscape/%s/tfrecord_05_half'%dataset_folder,
     'Path to save converted SSTable of TensorFlow examples.')
 tf.app.flags.DEFINE_string(
     'splits_dir',
@@ -69,14 +70,15 @@ _NUM_SHARDS = 5
 
 # A map from data type to folder name that saves the data.
 _FOLDERS_MAP = {
-    'image': 'pose_maps_02_2',
-    'seg': 'pose_maps_02_2',
-    'shape_id_map': 'pose_maps_02_2',
-    'vis': 'pose_maps_02_2',
-    'pose_dict': 'pose_maps_02_2',
-    'rotuvd_dict': 'pose_maps_02_2',
-    'bbox_dict': 'pose_maps_02_2',
-    'shape_id_dict': 'pose_maps_02_2',
+    'image': 'pose_maps_05',
+    'seg': 'pose_maps_05',
+    'shape_id_map': 'pose_maps_05',
+    'vis': 'pose_maps_05',
+    'depth': 'pose_maps_05',
+    'pose_dict': 'pose_maps_05',
+    'rotuvd_dict': 'pose_maps_05',
+    'bbox_dict': 'pose_maps_05',
+    'shape_id_dict': 'pose_maps_05',
 }
 
 # A map from data type to filename postfix.
@@ -85,6 +87,7 @@ _POSTFIX_MAP = {
     'seg': '_seg_half',
     'shape_id_map': '_shape_id_half',
     'vis': '_vis_half',
+    'depth': '_depth_map_half',
     # 'image': '_rescaled',
     # 'seg': '_seg',
     # 'vis': '_vis',
@@ -98,6 +101,7 @@ _POSTFIX_MAP = {
 _DATA_FORMAT_MAP = {
     'image': 'png',
     'vis': 'png',
+    'depth': 'png',
     'seg': 'png',
     'shape_id_map': 'png',
     'pose_dict': 'npy',
@@ -148,6 +152,7 @@ def _convert_dataset(dataset_split):
   seg_files = _get_files('seg', dataset_split)
   if dataset_split != 'test':
       vis_files = _get_files('vis', dataset_split)
+      depth_files = _get_files('depth', dataset_split)
       shape_id_map_files = _get_files('shape_id_map', dataset_split)
       pose_dict_files = _get_files('pose_dict', dataset_split)
       rotuvd_dict_files = _get_files('rotuvd_dict', dataset_split)
@@ -158,8 +163,8 @@ def _convert_dataset(dataset_split):
   num_per_shard = int(math.ceil(num_images / float(_NUM_SHARDS)))
   print len(image_files), len(seg_files)
   if dataset_split != 'test':
-      print len(vis_files), len(pose_dict_files), len(shape_id_dict_files), len(shape_id_map_files), 'Three list lengths.'
-      assert len(image_files) == len(vis_files) == len(seg_files) == len(pose_dict_files) == len(rotuvd_dict_files) == len(bbox_dict_files) == len(shape_id_dict_files) == len(shape_id_map_files), 'Three list lengths not equal!'
+      print len(vis_files), len(pose_dict_files), len(shape_id_dict_files), len(shape_id_map_files), len(depth_files), 'Three list lengths.'
+      assert len(image_files) == len(vis_files) == len(depth_files) == len(seg_files) == len(pose_dict_files) == len(rotuvd_dict_files) == len(bbox_dict_files) == len(shape_id_dict_files) == len(shape_id_map_files), 'Three list lengths not equal!'
       print 'num_images, num_segs, num_pose_dicts, num_per_shard: ', num_images, len(seg_files), len(pose_dict_files), num_per_shard
   import random
   indices = range(num_images)
@@ -168,6 +173,7 @@ def _convert_dataset(dataset_split):
   seg_files = [seg_files[indice] for indice in indices]
   if dataset_split != 'test':
       vis_files = [vis_files[indice] for indice in indices]
+      depth_files = [depth_files[indice] for indice in indices]
       shape_id_map_files = [shape_id_map_files[indice] for indice in indices]
       pose_dict_files = [pose_dict_files[indice] for indice in indices]
       rotuvd_dict_files = [rotuvd_dict_files[indice] for indice in indices]
@@ -208,6 +214,7 @@ def _convert_dataset(dataset_split):
         else:
             assert return_id(image_files[i]) == return_id(seg_files[i]), 'File name mismatch!'
 
+        print image_files[i]
         image_data = tf.gfile.FastGFile(image_files[i], 'rb').read()
         height, width = image_reader.read_image_dims(image_data)
         seg_data = tf.gfile.FastGFile(seg_files[i], 'rb').read()
@@ -216,6 +223,9 @@ def _convert_dataset(dataset_split):
         if dataset_split != 'test':
             # Read the semantic segmentation annotation.
             vis_data = tf.gfile.FastGFile(vis_files[i], 'rb').read()
+            depth_data = tf.gfile.FastGFile(depth_files[i], 'rb').read()
+            # depth_data_raw = imageio.imread(depth_files[i])
+            # depth_data = depth_data_raw.astype(np.float32)/256./256.*350.
             pose_dict_data = np.load(pose_dict_files[i])
             rotuvd_dict_data = np.load(rotuvd_dict_files[i])
             bbox_dict_data = np.load(bbox_dict_files[i])
@@ -240,6 +250,7 @@ def _convert_dataset(dataset_split):
         mask_array = seg_array>0
         if dataset_split != 'test':
             shape_id_array = np.int32(plt.imread(shape_id_map_files[i]) * 255.)
+            # print shape_id_array.shape, seg_array.shape
             assert np.min(shape_id_array)==0, '2'
             max_shape_id = np.max(shape_id_array[mask_array])
             print max_shape_id
@@ -255,7 +266,7 @@ def _convert_dataset(dataset_split):
         filename = '%s-%s'%(dataset_split, os.path.basename(re_match.group(1)))
         if dataset_split != 'test':
             example = build_data.image_posedict_to_tfexample(True,
-                    image_data, vis_data, seg_data, shape_id_map_data, filename,
+                    image_data, vis_data, depth_data, seg_data, shape_id_map_data, filename,
                     height, width, pose_dict_data, rotuvd_dict_data, bbox_dict_data, shape_id_dict_data)
         else:
             example = build_data.image_posedict_to_tfexample(False,

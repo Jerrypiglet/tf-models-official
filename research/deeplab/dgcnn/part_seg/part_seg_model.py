@@ -72,7 +72,7 @@ def get_model(point_cloud, input_label, is_training, cat_num, part_num, \
   adj = tf_util.pairwise_distance(tf.squeeze(out5, axis=-2))
   nn_idx = tf_util.knn(adj, k=k)
   print '++++', out5.get_shape()
-  edge_feature = tf_util.get_edge_feature(out5, nn_idx=nn_idx, k=k)
+  edge_feature = tf_util.get_edge_feature(out5, nn_idx=nn_idx, squeeze_axis=2, k=k)
 
   out6 = tf_util.conv2d(edge_feature, 64, [1,1],
                        padding='VALID', stride=[1,1],
@@ -87,22 +87,23 @@ def get_model(point_cloud, input_label, is_training, cat_num, part_num, \
                        bn=True, is_training=is_training, weight_decay=weight_decay,
                        scope='adj_conv7', bn_decay=bn_decay, is_dist=True)
 
-  out8 = tf_util.conv2d(tf.concat([out3, out5, out7], axis=-1), 1024, [1, 1], 
+  out8 = tf_util.conv2d(tf.concat([out3, out5, out7], axis=-1), 1024, [1, 1],
                        padding='VALID', stride=[1,1],
                        bn=True, is_training=is_training,
                        scope='adj_conv13', bn_decay=bn_decay, is_dist=True)
 
   out_max = tf_util.max_pool2d(out8, [num_point, 1], padding='VALID', scope='maxpool')
 
-  one_hot_label_expand = tf.reshape(input_label, [batch_size, 1, 1, cat_num])
-  one_hot_label_expand = tf_util.conv2d(one_hot_label_expand, 128, [1, 1], 
-                       padding='VALID', stride=[1,1],
-                       bn=True, is_training=is_training,
-                       scope='one_hot_label_expand', bn_decay=bn_decay, is_dist=True)
-  out_max = tf.concat(axis=3, values=[out_max, one_hot_label_expand])
+  if input_label is not None:
+      one_hot_label_expand = tf.reshape(input_label, [batch_size, 1, 1, cat_num])
+      one_hot_label_expand = tf_util.conv2d(one_hot_label_expand, 128, [1, 1],
+                           padding='VALID', stride=[1,1],
+                           bn=True, is_training=is_training,
+                           scope='one_hot_label_expand', bn_decay=bn_decay, is_dist=True)
+      out_max = tf.concat(axis=3, values=[out_max, one_hot_label_expand])
   expand = tf.tile(out_max, [1, num_point, 1, 1])
 
-  concat = tf.concat(axis=3, values=[expand, 
+  concat = tf.concat(axis=3, values=[expand,
                                      net_max_1,
                                      net_mean_1,
                                      out3,
@@ -118,11 +119,11 @@ def get_model(point_cloud, input_label, is_training, cat_num, part_num, \
             bn=True, is_training=is_training, scope='seg/conv1', weight_decay=weight_decay, is_dist=True)
   net2 = tf_util.dropout(net2, keep_prob=0.6, is_training=is_training, scope='seg/dp1')
   net2 = tf_util.conv2d(net2, 256, [1,1], padding='VALID', stride=[1,1], bn_decay=bn_decay,
-            bn=True, is_training=is_training, scope='seg/conv2', weight_decay=3gt, is_dist=True)
+            bn=True, is_training=is_training, scope='seg/conv2', weight_decay=weight_decay, is_dist=True)
   net2 = tf_util.dropout(net2, keep_prob=0.6, is_training=is_training, scope='seg/dp2')
   net2 = tf_util.conv2d(net2, 128, [1,1], padding='VALID', stride=[1,1], bn_decay=bn_decay,
             bn=True, is_training=is_training, scope='seg/conv3', weight_decay=weight_decay, is_dist=True)
-  net2 = tf_util.conv2d(net2, part_num, [1,1], padding='VALID', stride=[1,1], activation_fn=None, 
+  net2 = tf_util.conv2d(net2, part_num, [1,1], padding='VALID', stride=[1,1], activation_fn=None,
             bn=False, scope='seg/conv4', weight_decay=weight_decay, is_dist=True)
 
   net2 = tf.reshape(net2, [batch_size, num_point, part_num])
@@ -134,7 +135,7 @@ def get_loss(seg_pred, seg):
   per_instance_seg_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=seg_pred, labels=seg), axis=1)
   seg_loss = tf.reduce_mean(per_instance_seg_loss)
   per_instance_seg_pred_res = tf.argmax(seg_pred, 2)
-  
+
   return seg_loss, per_instance_seg_loss, per_instance_seg_pred_res
 
 

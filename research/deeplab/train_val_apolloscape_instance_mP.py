@@ -388,7 +388,8 @@ def main(unused_argv):
           clones, optimizer)
       print '------ total_loss', total_loss
       for loss_item in tf.get_collection(tf.GraphKeys.LOSSES, first_clone_scope):
-          print loss_item# total_loss = tf.check_numerics(total_loss, 'Loss is inf or nan.')
+          print loss_item
+      # total_loss = tf.check_numerics(total_loss, 'Loss is inf or nan.')
       summaries.add(tf.summary.scalar('total_loss/train', total_loss))
 
       # Modify the gradients for biases and last layer variables.
@@ -399,14 +400,27 @@ def main(unused_argv):
 
       # Keep trainable variables for last layers ONLY.
       # weight_scopes = [output_name+'_weights' for output_name in dataset.output_names] + ['decoder_weights']
-      # grads_and_vars = train_utils.filter_gradients(weight_scopes, grads_and_vars)
-      # print '==== variables_to_train: ', [grad_and_var[1].op.name for grad_and_var in grads_and_vars]
+      grads_and_vars = train_utils.filter_gradients(['pointnet_scope'], grads_and_vars)
+      print '==== variables_to_train: %d'%len(grads_and_vars), [grad_and_var[1].op.name for grad_and_var in grads_and_vars]
 
-      grad_mult = train_utils.get_model_gradient_multipliers(
-          last_layers, FLAGS.last_layer_gradient_multiplier)
-      if grad_mult:
-        grads_and_vars = slim.learning.multiply_gradients(
-            grads_and_vars, grad_mult)
+      if FLAGS.if_print_tensors:
+        training_vars = [grad_and_var[1].op.name.encode('ascii','ignore') for grad_and_var in grads_and_vars]
+        trainable_vars = [v.name.encode('ascii','ignore').replace(':0', '') for v in tf.trainable_variables()]
+        print '---- [TRAINING VARS] ----'
+        print training_vars
+        print '---- [TRAINABLE VARS] ----'
+        print trainable_vars
+        print '- set2 - set2'
+        print set(set2) - set(set1)
+        print '---- [TENSORS] ----'
+        for op in tf.get_default_graph().get_operations():
+            print str(op.name)
+
+      # grad_mult = train_utils.get_model_gradient_multipliers(
+      #     last_layers, FLAGS.last_layer_gradient_multiplier)
+      # if grad_mult:
+      #   grads_and_vars = slim.learning.multiply_gradients(
+      #       grads_and_vars, grad_mult)
 
       # Create gradient update op.
       grad_updates = optimizer.apply_gradients(
@@ -572,11 +586,6 @@ def main(unused_argv):
     # print '===== ', len(list(set(trainables) - set(alls)))
     # print '===== ', len(list(set(alls) - set(trainables))), list(set(alls) - set(trainables))
     # print summaries
-    print '+++++++++++', len([v.name for v in tf.trainable_variables()])
-
-    if FLAGS.if_print_tensors:
-        for op in tf.get_default_graph().get_operations():
-            print str(op.name)
 
     init_assign_op, init_feed_dict = train_utils.model_init(
         FLAGS.restore_logdir,
