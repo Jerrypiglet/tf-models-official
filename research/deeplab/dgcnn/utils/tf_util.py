@@ -45,9 +45,9 @@ def _variable_with_weight_decay(name, shape, stddev, wd, use_xavier=True):
   else:
     initializer = tf.truncated_normal_initializer(stddev=stddev)
   var = _variable_on_cpu(name, shape, initializer)
-  if wd is not None:
-    weight_decay = tf.multiply(tf.nn.l2_loss(var), wd, name='weight_loss')
-    tf.add_to_collection('losses', weight_decay)
+  # if wd is not None:
+  #   weight_decay = tf.multiply(tf.nn.l2_loss(var), wd, name='weight_loss')
+  #   tf.add_to_collection('losses', weight_decay)
   return var
 
 
@@ -649,9 +649,9 @@ def pairwise_distance(point_cloud):
     pairwise distance: (batch_size, num_points, num_points)
   """
   og_batch_size = point_cloud.get_shape().as_list()[0]
-  # point_cloud = tf.squeeze(point_cloud)
-  # if og_batch_size == 1:
-  #   point_cloud = tf.expand_dims(point_cloud, 0)
+  point_cloud = tf.squeeze(point_cloud)
+  if og_batch_size == 1:
+    point_cloud = tf.expand_dims(point_cloud, 0)
 
   point_cloud_transpose = tf.transpose(point_cloud, perm=[0, 2, 1])
   point_cloud_inner = tf.matmul(point_cloud, point_cloud_transpose)
@@ -675,7 +675,7 @@ def knn(adj_matrix, k=20):
   return nn_idx
 
 
-def get_edge_feature(point_cloud, nn_idx, k=20):
+def get_edge_feature(point_cloud, nn_idx, squeeze_axis, k=20):
   """Construct edge feature for each point
   Args:
     point_cloud: (batch_size, num_points, 1, num_dims)
@@ -686,7 +686,8 @@ def get_edge_feature(point_cloud, nn_idx, k=20):
     edge features: (batch_size, num_points, k, num_dims)
   """
   og_batch_size = point_cloud.get_shape().as_list()[0]
-  point_cloud = tf.squeeze(point_cloud, 2)
+  print point_cloud.get_shape()
+  point_cloud = tf.squeeze(point_cloud, [squeeze_axis])
   # if og_batch_size == 1:
   #   point_cloud = tf.expand_dims(point_cloud, 0)
 
