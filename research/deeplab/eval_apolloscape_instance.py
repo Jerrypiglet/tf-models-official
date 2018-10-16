@@ -214,11 +214,11 @@ def main(unused_argv):
       ## Construct the validation graph; takes one GPU.
     _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, bin_centers_tensors, bin_centers_list, bin_bounds_list, bin_size_list, dataset, codes, is_training=False)
 
-    if FLAGS.if_print_tensors:
-        for op in tf.get_default_graph().get_operations():
-            if 'step' in op.name:
-                print str(op.name)
-                return
+    # if FLAGS.if_print_tensors:
+    #     for op in tf.get_default_graph().get_operations():
+    #         if 'step' in op.name:
+    #             print str(op.name)
+    #             return
 
     # Add summaries for images, labels, semantic predictions
     pattern = 'val-%s:0'
@@ -277,6 +277,7 @@ def main(unused_argv):
     summaries = tf.summary.merge_all()
 
     depth_diff_abs_error_list = []
+
 
     def _process_batch(sess, batch):
         # Label and outputs for pose and shape

@@ -6,6 +6,13 @@ from deeplab import model_maskLogits as model
 from deeplab.utils import train_utils_mP as train_utils
 import numpy as np
 
+import sys, os
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(BASE_DIR)
+sys.path.append(os.path.dirname(BASE_DIR))
+sys.path.append(os.path.join(BASE_DIR, 'dgcnn/part_seg'))
+import part_seg_model as pointnet
+
 def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, bin_centers_tensors, bin_centers_list, bin_bounds_list, bin_size_list, dataset, codes, is_training=True):
   """Builds a clone of DeepLab.
 
@@ -27,6 +34,19 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
       is_training_prefix = ''
   else:
       is_training_prefix = 'val-'
+
+  # PointNet params
+  BN_INIT_DECAY = 0.5
+  BN_DECAY_DECAY_RATE = 0.5
+  BN_DECAY_DECAY_STEP = 20000.
+  BN_DECAY_CLIP = 0.99
+  bn_momentum = tf.train.exponential_decay(
+          BN_INIT_DECAY,
+          tf.train.get_or_create_global_step(),
+          BN_DECAY_DECAY_STEP,
+          BN_DECAY_DECAY_RATE,
+          staircase=True)
+  bn_decay = tf.minimum(BN_DECAY_CLIP, 1 - bn_momentum)
 
   # Add name to input and label nodes so we can add to summary.
   model_options = common.ModelOptions(
@@ -65,6 +85,15 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
           unpadded_list.append(unpadded)
         unpadded = tf.concat(unpadded_list, axis=0) # (car_num_total=?_1+...+?_bs, D)
         return unpadded
+
+    def _pad_N_to_batch(pose_N, pad_to, car_nums):
+        pose_N_list = tf.split(pose_N, car_nums)
+        pose_N_list_padded = []
+        for pose_n in pose_N_list:
+            pose_n_padded = tf.concat([pose_n, tf.zeros([pad_to - tf.shape(pose_n)[0], tf.shape(pose_n)[1]], dtype=tf.float32)], axis=0)
+            pose_n_padded.set_shape([pad_to, pose_n.get_shape()[1]])
+            pose_N_list_padded.append(pose_n_padded)
+        return tf.stack(pose_N_list_padded, axis=0)
 
     idx_xys = _unpadding(samples['idxs'], True) # [N, 2]
 
@@ -119,6 +148,15 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
               outputs_to_logits[output],
               bin_centers_tensors[outputs_to_indices[output]]) # [car_num_total, 1]
           if output == 'z' and FLAGS.if_log_depth:
+              print prob_logits.get_shape(), '++++++++1'
+              prob_logits_batch = _pad_N_to_batch(prob_logits, 49, samples['car_nums'])
+              print prob_logits_batch.get_shape(), '++++++++2'
+              prob_logits = pointnet.get_model(prob_logits_batch, None, \
+                is_training=is_training, bn_decay=bn_decay, cat_num=None, \
+                part_num=prob_logits_batch.get_shape()[2], batch_size=prob_logits_batch.get_shape()[0], num_point=49, weight_decay=0.)
+              print prob_logits.get_shape(), '++++++++3'
+              prob_logits = _unpadding(prob_logits, append_left_idx=False)
+              print prob_logits.get_shape(), '++++++++4'
               prob_logits = tf.exp(prob_logits)
               print '++++ exp logits for z!'
           reg_logits_list.append(prob_logits)

@@ -451,12 +451,12 @@ def main(unused_argv):
             sess.run(global_step)
 
 
-        # # print 'loss: ', loss
-        first_clone_test = graph.get_tensor_by_name(
-                ('%s/%s:0' % (first_clone_scope, 'depth')).strip('/'))
-        test = sess.run(first_clone_test)
-        # print test
-        print 'test: ', test.shape, np.max(test), np.min(test), np.mean(test), test.dtype
+        # # # print 'loss: ', loss
+        # first_clone_test = graph.get_tensor_by_name(
+        #         ('%s/%s:0' % (first_clone_scope, 'depth')).strip('/'))
+        # test = sess.run(first_clone_test)
+        # # print test
+        # print 'test: ', test.shape, np.max(test), np.min(test), np.mean(test), test.dtype
 
         # mask_rescaled_float = graph.get_tensor_by_name('%s:0'%'mask_rescaled_float')
         # test_out, test_out2 = sess.run([pose_dict_N, xyz])
