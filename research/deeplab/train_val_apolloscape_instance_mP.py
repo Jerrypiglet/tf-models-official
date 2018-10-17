@@ -400,7 +400,7 @@ def main(unused_argv):
 
       # Keep trainable variables for last layers ONLY.
       # weight_scopes = [output_name+'_weights' for output_name in dataset.output_names] + ['decoder_weights']
-      grads_and_vars = train_utils.filter_gradients(['pointnet_scope'], grads_and_vars)
+      # grads_and_vars = train_utils.filter_gradients(['pointnet_scope'], grads_and_vars)
       print '==== variables_to_train: %d'%len(grads_and_vars), [grad_and_var[1].op.name for grad_and_var in grads_and_vars]
 
       if FLAGS.if_print_tensors or FLAGS.if_debug:

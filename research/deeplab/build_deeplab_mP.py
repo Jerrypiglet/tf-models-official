@@ -366,7 +366,7 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
         # label_id_list.append(label_id_slice)
         gt_idx = tf.one_hot(tf.reshape(label_id_slice, [-1]), depth=dataset.bin_nums[idx_output], axis=-1)
 
-        for output2 in ['z_afterpointnet']:
+        for output2 in ['z', 'z_afterpointnet']:
             if FLAGS.if_log_depth:
                 alpha = 15
                 weight = [np.exp(-alpha * np.power(bin_centers - x, 2)) for x in bin_centers] # binary multi-class cls loss
