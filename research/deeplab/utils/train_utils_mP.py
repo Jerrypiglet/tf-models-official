@@ -90,7 +90,7 @@ def smooth_l1_loss(predictions, labels, weights, name='', loss_collection=tf.Gra
     # return loss_sum / (tf.reduce_sum(tf.to_float(masks))+1.)
     return loss_sum
 
-def add_my_pose_loss_cars(FLAGS, prob_logits, labels, prob_logits_in_metric, labels_in_metric, masks_float, weights_normalized, balance_rot=1., balance_trans=1., upsample_logits=True, name=None, is_training_prefix='', loss_collection=None, if_depth=False):
+def add_my_pose_loss_cars(FLAGS, prob_logits, labels, prob_logits_in_metric, labels_in_metric, masks_float, weights_normalized, balance_rot=1., balance_trans=1., upsample_logits=True, name=None, is_training_prefix='', loss_collection=None, if_depth=False, log_depth_logits=None, log_depth_labels=None):
     """ Loss for discrete pose from Peng Wang (http://icode.baidu.com/repos/baidu/personal-code/video_seg_transfer/blob/with_db:Networks/mx_losses.py)
     prob_logits, labels: [car_num, D]"""
 
@@ -120,10 +120,12 @@ def add_my_pose_loss_cars(FLAGS, prob_logits, labels, prob_logits_in_metric, lab
     # trans_loss = tf.reduce_sum(
     #         tf.multiply(tf.square(tf.multiply(trans - trans_gt, tf.square(trans_dim_weights))) / 2., weights_normalized)
     #         ) / pixels_valid * balance_trans # L2
-    trans_loss_error = tf.multiply(tf.abs(tf.multiply(trans - trans_gt, trans_dim_weights)), weights_normalized)
+
+    trans_loss_error = tf.multiply(tf.abs(tf.multiply(log_depth_logits - log_depth_labels, trans_dim_weights)), weights_normalized)
+    # trans_loss_error = tf.multiply(tf.abs(tf.multiply(trans - trans_gt, trans_dim_weights)), weights_normalized)
     trans_loss = tf.reduce_sum(trans_loss_error) / pixels_valid * balance_trans # L1
     trans_loss = tf.identity(trans_loss, name=name+'_trans')
-    # tf.losses.add_loss(trans_loss, loss_collection=loss_collection)
+    tf.losses.add_loss(trans_loss, loss_collection=loss_collection)
 
     if not(if_depth):
         trans_in_metric_with_depth = tf.concat([tf.gather(trans_in_metric, [0, 1], axis=1), 1./tf.gather(trans_in_metric, [2], axis=1)], axis=1)
