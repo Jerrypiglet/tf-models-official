@@ -338,7 +338,7 @@ def _get_logits_mP(FLAGS,
                 logits_car_aggre = tf.reshape(tf.reduce_sum(logits_car_weighted, 0), [-1]) # (256,)
                 return tf.cond(tf.equal(tf.size(weight_car_masked), 0),
                         lambda: tf.zeros([tf.shape(logits)[-1]+2], dtype=tf.float32),
-                        lambda: tf.concat([logits_car_aggre, tf.reshape(area_car, [-1]), tf.reshape(weight_car_masked_sum/area_car, [-1])], axis=0))
+                        lambda: tf.concat([logits_car_aggre, tf.reshape(area_car, [-1]), tf.reshape(weight_car_masked_sum/(area_car+1e-10), [-1])], axis=0))
             logits_area_weightsum_sample = tf.map_fn(per_car, seg_one_hot_sample, dtype=tf.float32) # [?, 256+1]
             logits_sample = tf.slice(logits_area_weightsum_sample, [0, 0], [-1, last_dim]) # [?, 256]
             areas_sample = tf.slice(logits_area_weightsum_sample, [0, last_dim], [-1, 1]) # [?, 1]
@@ -637,7 +637,7 @@ def get_branch_logits(features,
       [slim.conv2d],
       weights_regularizer=slim.l2_regularizer(weight_decay),
       weights_initializer=tf.truncated_normal_initializer(stddev=0.01),
-      # normalizer_fn=slim.batch_norm if if_bn else None,
+      normalizer_fn=slim.batch_norm if if_bn else None,
       reuse=reuse):
     with slim.arg_scope([slim.batch_norm], **batch_norm_params):
         with tf.variable_scope(LOGITS_SCOPE_NAME, LOGITS_SCOPE_NAME, [features]):
