@@ -403,7 +403,7 @@ def main(unused_argv):
       grads_and_vars = train_utils.filter_gradients(['pointnet_scope'], grads_and_vars)
       print '==== variables_to_train: %d'%len(grads_and_vars), [grad_and_var[1].op.name for grad_and_var in grads_and_vars]
 
-      if FLAGS.if_print_tensors:
+      if FLAGS.if_print_tensors or FLAGS.if_debug:
         training_vars = [grad_and_var[1].op.name.encode('ascii','ignore') for grad_and_var in grads_and_vars]
         trainable_vars = [v.name.encode('ascii','ignore').replace(':0', '') for v in tf.trainable_variables()]
         print '---- [TRAINING VARS] ----'
