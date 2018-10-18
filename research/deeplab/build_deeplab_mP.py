@@ -158,23 +158,23 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
               print prob_logits.get_shape(), '++++++++1'
 
 
-              logits_masked = tf.multiply(outputs_to_logits[output], masks_float)
-              logits_batch = _pad_N_to_batch(logits_masked, 49, samples['car_nums'])
-              print logits_batch.get_shape(), '++++++++2'
-              with tf.variable_scope('pointnet_scope'):
-                  pointnet_logits = pointnet.get_model(logits_batch, None, \
-                    is_training=is_training, cat_num=None, \
-                    part_num=logits_batch.get_shape()[2], batch_size=logits_batch.get_shape()[0], num_point=49, weight_decay=None, bn_decay=bn_decay)
-              print pointnet_logits.get_shape(), '++++++++3'
-              pointnet_logits_unpadded = _unpadding(pointnet_logits, append_left_idx=False)
-              print pointnet_logits_unpadded.get_shape(), '++++++++4'
-              cls_logits = tf.multiply(pointnet_logits_unpadded, masks_float)
+              # logits_masked = tf.multiply(outputs_to_logits[output], masks_float)
+              # logits_batch = _pad_N_to_batch(logits_masked, 49, samples['car_nums'])
+              # print logits_batch.get_shape(), '++++++++2'
+              # with tf.variable_scope('pointnet_scope'):
+              #     pointnet_logits = pointnet.get_model(logits_batch, None, \
+              #       is_training=is_training, cat_num=None, \
+              #       part_num=logits_batch.get_shape()[2], batch_size=logits_batch.get_shape()[0], num_point=49, weight_decay=None, bn_decay=bn_decay)
+              # print pointnet_logits.get_shape(), '++++++++3'
+              # pointnet_logits_unpadded = _unpadding(pointnet_logits, append_left_idx=False)
+              # print pointnet_logits_unpadded.get_shape(), '++++++++4'
+              # cls_logits = tf.multiply(pointnet_logits_unpadded, masks_float)
 
-              prob_logits = train_utils.logits_cls_to_logits_probReg(
-                  cls_logits,
-                  bin_centers_tensors[outputs_to_indices[output]]) # [car_num_total, 1]
+              # prob_logits = train_utils.logits_cls_to_logits_probReg(
+              #     cls_logits,
+              #     bin_centers_tensors[outputs_to_indices[output]]) # [car_num_total, 1]
               prob_logits = tf.exp(prob_logits)
-              outputs_to_logits['z_afterpointnet'] = cls_logits
+              # outputs_to_logits['z_afterpointnet'] = cls_logits
               print '++++ exp logits for z!'
           reg_logits_list.append(prob_logits)
           print '||||||||CLS logits for '+output
@@ -244,34 +244,34 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
   # return pose_dict_N, rotuvd_dict_N_2_quat_xy_dinvd_dict_N(rotuvd_dict_N)
 
   ## TMP: applying pointnet on xyz
-  # xy_prob_logits_pose_z = tf.concat([tf.gather(pose_dict_N, [4, 5], axis=1), tf.log(tf.clip_by_value(tf.gather(prob_logits_pose, [6], axis=1), 1.5, 350.))], axis=1)
-  # logits_masked = tf.multiply(xy_prob_logits_pose_z, masks_float)
-  # logits_batch = _pad_N_to_batch(logits_masked, 49, samples['car_nums'])
-  # print logits_batch.get_shape(), '++++++++2'
-  # with tf.variable_scope('pointnet_scope'):
-  #     pointnet_logits = pointnet.get_model(logits_batch, None, \
-  #       is_training=is_training, bn_decay=bn_decay, cat_num=None, \
-  #       part_num=logits_batch.get_shape()[2], batch_size=logits_batch.get_shape()[0], num_point=49, weight_decay=None)
-  # # tf.losses.mean_squared_error(tf.zeros_like(pointnet_logits), pointnet_logits)
-  # print pointnet_logits.get_shape(), '++++++++3'
-  # pointnet_logits_unpadded = _unpadding(pointnet_logits, append_left_idx=False)
-  # print pointnet_logits_unpadded.get_shape(), '++++++++4'
-  # cls_logits = tf.multiply(pointnet_logits_unpadded, masks_float)
-  # # tf.losses.mean_squared_error(tf.zeros_like(cls_logits), cls_logits)
-  # prob_logits_pose_afterpointnet = tf.concat([tf.gather(prob_logits_pose, [0, 1, 2, 3, 4, 5], axis=1), tf.exp(tf.gather(cls_logits, [2], axis=1))], axis=1)
-  # prob_logits_pose_xy_from_uv_afterpointnet = tf.concat([tf.gather(prob_logits_pose_xy_from_uv, [0, 1, 2, 3, 4, 5], axis=1), tf.exp(tf.gather(cls_logits, [2], axis=1))], axis=1)
+  xy_prob_logits_pose_z = tf.concat([tf.gather(pose_dict_N, [4, 5], axis=1), tf.clip_by_value(tf.gather(prob_logits_pose, [6], axis=1), 1.5, 350.)], axis=1)
+  logits_masked = tf.multiply(xy_prob_logits_pose_z, masks_float)
+  logits_batch = _pad_N_to_batch(logits_masked, 49, samples['car_nums'])
+  print logits_batch.get_shape(), '++++++++2'
+  with tf.variable_scope('pointnet_scope'):
+      pointnet_logits = pointnet.get_model(logits_batch, None, \
+        is_training=is_training, bn_decay=bn_decay, cat_num=None, \
+        part_num=logits_batch.get_shape()[2], batch_size=logits_batch.get_shape()[0], num_point=49, weight_decay=None)
+  # tf.losses.mean_squared_error(tf.zeros_like(pointnet_logits), pointnet_logits)
+  print pointnet_logits.get_shape(), '++++++++3'
+  pointnet_logits_unpadded = _unpadding(pointnet_logits, append_left_idx=False)
+  print pointnet_logits_unpadded.get_shape(), '++++++++4'
+  cls_logits = tf.multiply(pointnet_logits_unpadded, masks_float)
+  # tf.losses.mean_squared_error(tf.zeros_like(cls_logits), cls_logits)
+  prob_logits_pose_afterpointnet = tf.concat([tf.gather(prob_logits_pose, [0, 1, 2, 3, 4, 5], axis=1), tf.gather(cls_logits, [2], axis=1)], axis=1)
+  prob_logits_pose_xy_from_uv_afterpointnet = tf.concat([tf.gather(prob_logits_pose_xy_from_uv, [0, 1, 2, 3, 4, 5], axis=1), tf.gather(cls_logits, [2], axis=1)], axis=1)
 
 
   _, prob_logits_pose, rot_q_angle_error, trans_sqrt_error, depth_diff_abs_error, depth_relative_error, trans_loss_error, rot_q_loss_error, trans_diff_metric_abs = train_utils.add_my_pose_loss_cars(
           FLAGS,
-          prob_logits_pose,
-          # prob_logits_pose_afterpointnet,
+          # prob_logits_pose,
+          prob_logits_pose_afterpointnet,
           rotuvd_dict_N if FLAGS.if_uvflow else pose_dict_N,
-          prob_logits_pose_xy_from_uv if FLAGS.if_uvflow else prob_logits_pose,
-          # prob_logits_pose_xy_from_uv_afterpointnet if FLAGS.if_uvflow else prob_logits_pose,
+          # prob_logits_pose_xy_from_uv if FLAGS.if_uvflow else prob_logits_pose,
+          prob_logits_pose_xy_from_uv_afterpointnet if FLAGS.if_uvflow else prob_logits_pose,
           pose_dict_N,
           masks_float,
-          weights_normalized,
+          weights_normalized / (tf.log(tf.clip_by_value(tf.gather(pose_dict_N, [6], axis=1), 1.5, 350.)) + 1e-10),
           balance_rot=balance_rot_reg_loss,
           balance_trans=balance_trans_reg_loss,
           upsample_logits=FLAGS.upsample_logits,
@@ -279,8 +279,9 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
           is_training_prefix = is_training_prefix,
           loss_collection=tf.GraphKeys.LOSSES if is_training else None,
           if_depth=FLAGS.if_depth,
-          log_depth_logits=tf.gather(cls_logits, [2], axis=1),
-          log_depth_labels=tf.log(tf.clip_by_value(tf.gather(pose_dict_N, [6], axis=1), 1.5, 350.)))
+          log_depth_logits=tf.log(tf.gather(prob_logits_pose_afterpointnet, [6], axis=1)),
+          # log_depth_logits=tf.gather(cls_logits, [2], axis=1),
+          log_depth_labels = tf.log(tf.clip_by_value(tf.gather(pose_dict_N, [6], axis=1), 1.5, 350.)))
   if not(FLAGS.if_depth_only):
       rot_q_loss_error_map = tf.identity(logits_cars_to_map(rot_q_loss_error), name=is_training_prefix+'rot_q_loss_error_map')
       rot_q_angle_error_map = tf.identity(logits_cars_to_map(rot_q_angle_error), name=is_training_prefix+'rot_q_angle_error_map')
@@ -388,8 +389,9 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
         # label_id_list.append(label_id_slice)
         gt_idx = tf.one_hot(tf.reshape(label_id_slice, [-1]), depth=dataset.bin_nums[idx_output], axis=-1)
 
-        for output2 in ['z', 'z_afterpointnet']:
-        # for output2 in ['z']:
+        # for output2 in ['z', 'z_afterpointnet']:
+        # for output2 in ['z_afterpointnet']:
+        for output2 in ['z']:
             if FLAGS.if_log_depth:
                 alpha = 15
                 weight = [np.exp(-alpha * np.power(bin_centers - x, 2)) for x in bin_centers] # binary multi-class cls loss
@@ -405,9 +407,10 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
                 neg_log = -1. * tf.nn.log_softmax(outputs_to_logits[output2])
                 loss_slice_crossentropy = tf.reduce_sum(tf.multiply(gt_idx, neg_log), axis=1, keepdims=True)
             loss_slice_crossentropy= tf.reduce_sum(tf.multiply(weights_normalized, loss_slice_crossentropy)) / pixels_valid * balance_cls_loss
-            loss_slice_crossentropy = tf.identity(loss_slice_crossentropy, name=is_training_prefix+'loss_slice_cls_'+output)
+            loss_slice_crossentropy = tf.identity(loss_slice_crossentropy, name=is_training_prefix+'loss_slice_cls_'+output2)
             loss_slice_crossentropy_list.append(loss_slice_crossentropy)
             if is_training:
+                # and output2 == 'z_afterpointnet':
                 # tf.losses.add_loss(loss_slice_crossentropy, loss_collection=None)
                 tf.losses.add_loss(loss_slice_crossentropy, loss_collection=tf.GraphKeys.LOSSES)
   loss_crossentropy = tf.identity(tf.add_n(loss_slice_crossentropy_list), name=is_training_prefix+'loss_cls_ALL')

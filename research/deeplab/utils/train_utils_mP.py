@@ -121,7 +121,7 @@ def add_my_pose_loss_cars(FLAGS, prob_logits, labels, prob_logits_in_metric, lab
     #         tf.multiply(tf.square(tf.multiply(trans - trans_gt, tf.square(trans_dim_weights))) / 2., weights_normalized)
     #         ) / pixels_valid * balance_trans # L2
 
-    trans_loss_error = tf.multiply(tf.abs(tf.multiply(log_depth_logits - log_depth_labels, trans_dim_weights)), weights_normalized)
+    trans_loss_error = tf.multiply(tf.abs(log_depth_logits - log_depth_labels), weights_normalized)
     # trans_loss_error = tf.multiply(tf.abs(tf.multiply(trans - trans_gt, trans_dim_weights)), weights_normalized)
     trans_loss = tf.reduce_sum(trans_loss_error) / pixels_valid * balance_trans # L1
     trans_loss = tf.identity(trans_loss, name=name+'_trans')
@@ -307,7 +307,7 @@ def model_init(restore_logdir,
   if tf.train.latest_checkpoint(restore_logdir) and restore_logged:
     tf_initial_checkpoint = tf.train.latest_checkpoint(restore_logdir)
     tf.logging.info('==== Ignoring initialization; restoring from logged checkpoint: %s'%tf_initial_checkpoint)
-    exclude_list = []
+    exclude_list = ['pointnet_scope']
 
   tf.logging.info('==== Initializing model from path: %s', tf_initial_checkpoint)
 

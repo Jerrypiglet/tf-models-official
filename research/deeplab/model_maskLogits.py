@@ -637,7 +637,7 @@ def get_branch_logits(features,
       [slim.conv2d],
       weights_regularizer=slim.l2_regularizer(weight_decay),
       weights_initializer=tf.truncated_normal_initializer(stddev=0.01),
-      normalizer_fn=slim.batch_norm if if_bn else None,
+      # normalizer_fn=slim.batch_norm if if_bn else None,
       reuse=reuse):
     with slim.arg_scope([slim.batch_norm], **batch_norm_params):
         with tf.variable_scope(LOGITS_SCOPE_NAME, LOGITS_SCOPE_NAME, [features]):
