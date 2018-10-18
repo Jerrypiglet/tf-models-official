@@ -279,7 +279,7 @@ def _get_logits_mP(FLAGS,
       scope_suffix=output+'_weights',
       is_training=is_training,
       fine_tune_batch_norm=fine_tune_batch_norm,
-      if_bn = True) # (batch_size, 68, 170, 1)
+      if_bn = False) # (batch_size, 68, 170, 1)
 
     logits = get_branch_logits(
         features_concat,
@@ -292,7 +292,7 @@ def _get_logits_mP(FLAGS,
         scope_suffix=output+'_logits',
         is_training=is_training,
         fine_tune_batch_norm=fine_tune_batch_norm,
-        if_bn = True,
+        if_bn =False,
         activation=None)
 
     if output == 'x' and FLAGS.if_uvflow:

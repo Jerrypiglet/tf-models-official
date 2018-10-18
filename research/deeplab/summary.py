@@ -205,7 +205,7 @@ def get_summaries(FLAGS, graph, summaries, dataset, config, first_clone_scope):
 
           add_shape_metrics = ['loss_all_shape_id_cls_metric', 'loss_reg_shape'] if FLAGS.if_summary_shape_metrics else []
           add_uv_metrics = ['loss_reg_uv_map'] if (FLAGS.if_uvflow and not(FLAGS.if_depth_only)) else []
-          add_trans_metrics = ['loss_reg_Zdepth_metric', 'loss_reg_Zdepth_relative_metric', 'loss_reg_trans', 'loss_slice_cls_z'] if FLAGS.if_depth_only else ['loss_reg_rot_quat_metric', 'loss_reg_rot_quat', 'loss_reg_trans_metric', 'loss_reg_Zdepth_metric', 'loss_reg_Zdepth_relative_metric', 'loss_reg_x_metric', 'loss_reg_y_metric', 'loss_reg_trans']
+          add_trans_metrics = ['loss_reg_Zdepth_metric', 'loss_reg_Zdepth_relative_metric', 'loss_reg_trans', 'loss_slice_cls_z', 'loss_slice_cls_z_1'] if FLAGS.if_depth_only else ['loss_reg_rot_quat_metric', 'loss_reg_rot_quat', 'loss_reg_trans_metric', 'loss_reg_Zdepth_metric', 'loss_reg_Zdepth_relative_metric', 'loss_reg_x_metric', 'loss_reg_y_metric', 'loss_reg_trans']
           for loss_name in ['loss_cls_ALL'] + add_shape_metrics + add_uv_metrics + add_trans_metrics:
               if pattern == pattern_val:
                 summary_loss_avg = graph.get_tensor_by_name(pattern%loss_name)
