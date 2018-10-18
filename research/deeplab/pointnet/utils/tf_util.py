@@ -7,7 +7,7 @@ Date: November 2016
 import numpy as np
 import tensorflow as tf
 
-def _variable_on_cpu(name, shape, initializer, use_fp16=False):
+def _variable_on_cpu(name, shape, initializer, use_fp16=False, trainable=True):
   """Helper to create a Variable stored on CPU memory.
   Args:
     name: name of the variable
@@ -18,7 +18,7 @@ def _variable_on_cpu(name, shape, initializer, use_fp16=False):
   """
   with tf.device('/cpu:0'):
     dtype = tf.float16 if use_fp16 else tf.float32
-    var = tf.get_variable(name, shape, initializer=initializer, dtype=dtype)
+    var = tf.get_variable(name, shape, initializer=initializer, dtype=dtype, trainable=trainable)
   return var
 
 def _variable_with_weight_decay(name, shape, stddev, wd, use_xavier=True):
@@ -43,9 +43,9 @@ def _variable_with_weight_decay(name, shape, stddev, wd, use_xavier=True):
   else:
     initializer = tf.truncated_normal_initializer(stddev=stddev)
   var = _variable_on_cpu(name, shape, initializer)
-  if wd is not None:
-    weight_decay = tf.multiply(tf.nn.l2_loss(var), wd, name='weight_loss')
-    tf.add_to_collection('losses', weight_decay)
+  # if wd is not None:
+  #   weight_decay = tf.multiply(tf.nn.l2_loss(var), wd, name='weight_loss')
+  #   tf.add_to_collection('losses', weight_decay)
   return var
 
 
@@ -450,12 +450,9 @@ def avg_pool3d(inputs,
 
 
 
-
-
+# def batch_norm_dist_template(inputs, is_training, scope, moments_dims, bn_decay):
 def batch_norm_template(inputs, is_training, scope, moments_dims, bn_decay):
-  """ Batch normalization on convolutional maps and beyond...
-  Ref.: http://stackoverflow.com/questions/33949786/how-could-i-use-batch-normalization-in-tensorflow
-
+  """ The batch normalization for distributed training.
   Args:
       inputs:        Tensor, k-D input ... x C could be BC or BHWC or BDHWC
       is_training:   boolean tf.Varialbe, true indicates training phase
@@ -467,40 +464,80 @@ def batch_norm_template(inputs, is_training, scope, moments_dims, bn_decay):
   """
   with tf.variable_scope(scope, reuse=tf.AUTO_REUSE) as sc:
     num_channels = inputs.get_shape()[-1].value
-    beta = tf.Variable(tf.constant(0.0, shape=[num_channels]),
-                       name='beta', trainable=True)
-    gamma = tf.Variable(tf.constant(1.0, shape=[num_channels]),
-                        name='gamma', trainable=True)
-    batch_mean, batch_var = tf.nn.moments(inputs, moments_dims, name='moments')
-    # decay = bn_decay if bn_decay is not None else 0.9
-    decay = 0.9
-    ema = tf.train.ExponentialMovingAverage(decay=decay)
-    # Operator that maintains moving averages of variables.
-    # ema_apply_op = tf.cond(is_training,
-    #                        lambda: ema.apply([batch_mean, batch_var]),
-    #                        lambda: tf.no_op())
+    beta = _variable_on_cpu('beta', [num_channels], initializer=tf.zeros_initializer())
+    gamma = _variable_on_cpu('gamma', [num_channels], initializer=tf.ones_initializer())
 
-    ema_apply_op = ema.apply([batch_mean, batch_var]) if is_training else tf.no_op()
+    pop_mean = _variable_on_cpu('pop_mean', [num_channels], initializer=tf.zeros_initializer(), trainable=False)
+    pop_var = _variable_on_cpu('pop_var', [num_channels], initializer=tf.ones_initializer(), trainable=False)
 
-    # Update moving average and return current batch's avg and var.
-    def mean_var_with_update():
-      with tf.control_dependencies([ema_apply_op]):
-        return tf.identity(batch_mean), tf.identity(batch_var)
+    def train_bn_op():
+      batch_mean, batch_var = tf.nn.moments(inputs, moments_dims, name='moments')
+      decay = bn_decay if bn_decay is not None else 0.9
+      train_mean = tf.assign(pop_mean, pop_mean * decay + batch_mean * (1 - decay))
+      train_var = tf.assign(pop_var, pop_var * decay + batch_var * (1 - decay))
+      with tf.control_dependencies([train_mean, train_var]):
+        return tf.nn.batch_normalization(inputs, batch_mean, batch_var, beta, gamma, 1e-3)
 
-    # ema.average returns the Variable holding the average of var.
-    # mean, var = tf.cond(is_training,
-    #                     mean_var_with_update,
-    #                     lambda: (ema.average(batch_mean), ema.average(batch_var)))
+    def test_bn_op():
+      return tf.nn.batch_normalization(inputs, pop_mean, pop_var, beta, gamma, 1e-3)
 
-    if is_training:
-        mean, var = mean_var_with_update()
-    else:
-        mean, var = (ema.average(batch_mean), ema.average(batch_var))
-    print mean, var
-    programPause = raw_input("Press the <ENTER> key to continue...")
-    # print inputs, mean, var, beta, gamma, batch_mean, batch_var, ema, decay
-    normed = tf.nn.batch_normalization(inputs, mean, var, beta, gamma, 1e-3)
-  return normed
+    # print is_training, is_training.dtype
+    # normed = tf.cond(is_training,
+    #                  train_bn_op,
+    #                  test_bn_op)
+
+    normed = train_bn_op() if is_training else test_bn_op()
+    return normed
+
+
+# def batch_norm_template(inputs, is_training, scope, moments_dims, bn_decay):
+#   """ Batch normalization on convolutional maps and beyond...
+#   Ref.: http://stackoverflow.com/questions/33949786/how-could-i-use-batch-normalization-in-tensorflow
+
+#   Args:
+#       inputs:        Tensor, k-D input ... x C could be BC or BHWC or BDHWC
+#       is_training:   boolean tf.Varialbe, true indicates training phase
+#       scope:         string, variable scope
+#       moments_dims:  a list of ints, indicating dimensions for moments calculation
+#       bn_decay:      float or float tensor variable, controling moving average weight
+#   Return:
+#       normed:        batch-normalized maps
+#   """
+#   with tf.variable_scope(scope, reuse=tf.AUTO_REUSE) as sc:
+#     num_channels = inputs.get_shape()[-1].value
+#     beta = tf.Variable(tf.constant(0.0, shape=[num_channels]),
+#                        name='beta', trainable=True)
+#     gamma = tf.Variable(tf.constant(1.0, shape=[num_channels]),
+#                         name='gamma', trainable=True)
+#     batch_mean, batch_var = tf.nn.moments(inputs, moments_dims, name='moments')
+#     decay = bn_decay if bn_decay is not None else 0.9
+#     ema = tf.train.ExponentialMovingAverage(decay=decay)
+#     # Operator that maintains moving averages of variables.
+#     # ema_apply_op = tf.cond(is_training,
+#     #                        lambda: ema.apply([batch_mean, batch_var]),
+#     #                        lambda: tf.no_op())
+
+#     ema_apply_op = ema.apply([batch_mean, batch_var]) if is_training else tf.no_op()
+
+#     # Update moving average and return current batch's avg and var.
+#     def mean_var_with_update():
+#       with tf.control_dependencies([ema_apply_op]):
+#         return tf.identity(batch_mean), tf.identity(batch_var)
+
+#     # ema.average returns the Variable holding the average of var.
+#     # mean, var = tf.cond(is_training,
+#     #                     mean_var_with_update,
+#     #                     lambda: (ema.average(batch_mean), ema.average(batch_var)))
+
+#     if is_training:
+#         mean, var = mean_var_with_update()
+#     else:
+#         mean, var = (ema.average(batch_mean), ema.average(batch_var))
+#     print mean, var
+#     # programPause = raw_input("Press the <ENTER> key to continue...")
+#     # print inputs, mean, var, beta, gamma, batch_mean, batch_var, ema, decay
+#     normed = tf.nn.batch_normalization(inputs, mean, var, beta, gamma, 1e-3)
+#   return normed
 
 
 def batch_norm_for_fc(inputs, is_training, bn_decay, scope):

@@ -26,7 +26,7 @@ def get_transform_K(inputs, is_training, bn_decay=None, K = 3):
     net = tf_util.fully_connected(net, 512, bn=True, is_training=is_training, scope='tfc1', bn_decay=bn_decay)
     net = tf_util.fully_connected(net, 256, bn=True, is_training=is_training, scope='tfc2', bn_decay=bn_decay)
 
-    with tf.variable_scope('transform_feat') as sc:
+    with tf.variable_scope('transform_feat', reuse=tf.AUTO_REUSE) as sc:
         weights = tf.get_variable('weights', [256, K*K], initializer=tf.constant_initializer(0.0), dtype=tf.float32)
         biases = tf.get_variable('biases', [K*K], initializer=tf.constant_initializer(0.0), dtype=tf.float32) + tf.constant(np.eye(K).flatten(), dtype=tf.float32)
         transform = tf.matmul(net, weights)
@@ -35,9 +35,6 @@ def get_transform_K(inputs, is_training, bn_decay=None, K = 3):
     #transform = tf_util.fully_connected(net, 3*K, activation_fn=None, scope='tfc3')
     transform = tf.reshape(transform, [batch_size, K, K])
     return transform
-
-
-
 
 
 def get_transform(point_cloud, is_training, bn_decay=None, K = 3):
@@ -60,7 +57,7 @@ def get_transform(point_cloud, is_training, bn_decay=None, K = 3):
     net = tf_util.fully_connected(net, 128, bn=True, is_training=is_training, scope='tfc1', bn_decay=bn_decay)
     net = tf_util.fully_connected(net, 128, bn=True, is_training=is_training, scope='tfc2', bn_decay=bn_decay)
 
-    with tf.variable_scope('transform_XYZ') as sc:
+    with tf.variable_scope('transform_XYZ', reuse=tf.AUTO_REUSE) as sc:
         assert(K==3)
         weights = tf.get_variable('weights', [128, 3*K], initializer=tf.constant_initializer(0.0), dtype=tf.float32)
         biases = tf.get_variable('biases', [3*K], initializer=tf.constant_initializer(0.0), dtype=tf.float32) + tf.constant([1,0,0,0,1,0,0,0,1], dtype=tf.float32)
@@ -73,7 +70,7 @@ def get_transform(point_cloud, is_training, bn_decay=None, K = 3):
 
 
 def get_model(point_cloud, input_label, is_training, cat_num, part_num, \
-		batch_size, num_point, weight_decay, bn_decay):
+		batch_size, num_point, weight_decay, bn_decay=None):
     """ ConvNet baseline, input is BxNx3 gray image """
     end_points = {}
 
@@ -92,7 +89,7 @@ def get_model(point_cloud, input_label, is_training, cat_num, part_num, \
                          bn=True, is_training=is_training, scope='conv3', bn_decay=bn_decay)
 
 
-    with tf.variable_scope('transform_net2') as sc:
+    with tf.variable_scope('transform_net2', reuse=tf.AUTO_REUSE) as sc:
         K = 128
         transform = get_transform_K(out3, is_training, bn_decay, K)
 

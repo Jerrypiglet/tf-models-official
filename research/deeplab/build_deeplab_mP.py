@@ -11,7 +11,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(BASE_DIR)
 sys.path.append(os.path.dirname(BASE_DIR))
 # sys.path.append(os.path.join(BASE_DIR, 'dgcnn/part_seg'))
-# import part_seg_model as dgcnn
+# import part_seg_model as pointnet
 sys.path.append(os.path.join(BASE_DIR, 'pointnet/part_seg'))
 import pointnet_part_seg as pointnet
 
