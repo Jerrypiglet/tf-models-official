@@ -196,10 +196,10 @@ def get_summaries(FLAGS, graph, summaries, dataset, config, first_clone_scope):
                   mask_depth_output_uint8, _ = scale_to_255(mask_depth)
                   summaries.add(tf.summary.image('dense_depth'+label_postfix+'/z_depth_mask', tf.gather(mask_depth_output_uint8, gather_list)))
 
-                  error_depth_output_uint8, _ = scale_to_255(error_depth_cls)
+                  error_depth_output_uint8, _ = scale_to_255(error_depth_cls, pixel_scaling=None, batch_scale=True)
                   summaries.add(tf.summary.image('dense_depth'+label_postfix+'/z_depth_dense_error_cls', tf.gather(error_depth_output_uint8, gather_list)))
 
-                  error_depth_output_uint8, _ = scale_to_255(error_depth_reg, pixel_scaling)
+                  error_depth_output_uint8, _ = scale_to_255(error_depth_reg, pixel_scaling=None, batch_scale=True)
                   summaries.add(tf.summary.image('dense_depth'+label_postfix+'/z_depth_dense_error_reg', tf.gather(error_depth_output_uint8, gather_list)))
 
                   label_depth_output_uint8, pixel_scaling = scale_to_255(tf.multiply(mask_depth, depth_log_offset_rescaled_label_map))
