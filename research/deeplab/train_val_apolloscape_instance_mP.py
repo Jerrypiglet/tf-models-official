@@ -203,6 +203,9 @@ flags.DEFINE_float('max_scale_factor', 1.0,
 flags.DEFINE_float('scale_factor_step_size', 0.,
                    'Scale factor step size for data augmentation.')
 
+flags.DEFINE_boolean('if_zoom', True,
+        'True: zoom into 1/4 height to 1/2 height.')
+
 # For `xception_65`, use atrous_rates = [12, 24, 36] if output_stride = 8, or
 # rates = [6, 12, 18] if output_stride = 16. For `mobilenet_v2`, use None. Note
 # one could use different atrous_rates/output_stride during training/evaluation.
@@ -389,7 +392,7 @@ def main(unused_argv):
       print '------ total_loss', total_loss
       for loss_item in tf.get_collection(tf.GraphKeys.LOSSES, first_clone_scope):
           print loss_item
-      programPause = raw_input("Press the <ENTER> key to continue...")
+      # programPause = raw_input("Press the <ENTER> key to continue...")
       total_loss = tf.check_numerics(total_loss, 'Loss is inf or nan.')
       summaries.add(tf.summary.scalar('total_loss/train', total_loss))
 
@@ -401,7 +404,7 @@ def main(unused_argv):
 
       # Keep trainable variables for last layers ONLY.
       # weight_scopes = [output_name+'_weights' for output_name in dataset.output_names] + ['decoder_weights']
-      grads_and_vars = train_utils.filter_gradients(['pointnet_scope'], grads_and_vars)
+      # grads_and_vars = train_utils.filter_gradients(['pointnet_scope'], grads_and_vars)
       print '==== variables_to_train: %d'%len(grads_and_vars), [grad_and_var[1].op.name for grad_and_var in grads_and_vars]
 
       if FLAGS.if_print_tensors or FLAGS.if_debug:

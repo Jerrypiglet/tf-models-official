@@ -54,6 +54,7 @@ Alan L. Yuille (* equal contribution)
 import tensorflow as tf
 from deeplab.core import feature_extractor
 from deeplab.utils import train_utils_mP as train_utils
+from deeplab import common
 
 slim = tf.contrib.slim
 
@@ -117,7 +118,8 @@ def single_scale_logits(FLAGS,
                        weight_decay=0.0001,
                        is_training=False,
                        fine_tune_batch_norm=False,
-                       fine_tune_feature_extractor=True, reuse=False):
+                       fine_tune_feature_extractor=True, reuse=False,
+                       outputs_to_num_classes=None):
   """Gets the logits for multi-scale inputs.
 
   The returned logits are all downsampled (due to max-pooling layers)
@@ -174,7 +176,8 @@ def single_scale_logits(FLAGS,
         reuse=tf.AUTO_REUSE, # support for auto-reuse if variable exists!
         is_training=is_training,
         fine_tune_batch_norm=fine_tune_batch_norm,
-        fine_tune_feature_extractor=fine_tune_feature_extractor)
+        fine_tune_feature_extractor=fine_tune_feature_extractor,
+        outputs_to_num_classes=outputs_to_num_classes)
 
   return outputs_to_logits, outputs_to_logits_map, outputs_to_weights_map, outputs_to_areas_N, outputs_to_weightsum_N
 
@@ -190,7 +193,8 @@ def _get_logits_mP(FLAGS,
                 reuse=None,
                 is_training=False,
                 fine_tune_batch_norm=False,
-                fine_tune_feature_extractor=True):
+                fine_tune_feature_extractor=True,
+                outputs_to_num_classes=None):
   """Gets the logits by atrous/image spatial pyramid pooling.
 
   Args:
@@ -213,12 +217,14 @@ def _get_logits_mP(FLAGS,
       is_training=is_training,
       fine_tune_batch_norm=fine_tune_batch_norm,
       fine_tune_feature_extractor=fine_tune_feature_extractor) # (1, 34, 85, 256), ..,  (1, 34, 85, 2048)
+  print '||||||||||||||| features_aspp ', features_aspp.get_shape()
 
   if model_options.decoder_output_stride is not None:
     decoder_height = scale_dimension(model_options.crop_size[0],
               1.0 / model_options.decoder_output_stride)
     decoder_width = scale_dimension(model_options.crop_size[1],
               1.0 / model_options.decoder_output_stride)
+
 
     features = refine_by_decoder(
         features_aspp,
@@ -255,6 +261,71 @@ def _get_logits_mP(FLAGS,
     features_weight_concat = tf.concat([features_weight,
         tf.to_float(features_Xs) * model_options.decoder_output_stride,
         tf.to_float(features_Ys) * model_options.decoder_output_stride], axis=3)
+
+
+    if FLAGS.if_zoom:
+        zoom_height_start = images.get_shape()[1].value // 4
+        zoom_height_end = zoom_height_start * 2
+        print zoom_height_start, zoom_height_end, zoom_height_end-zoom_height_start
+        images_zoom = tf.slice(images, [0, zoom_height_start, 0, 0],
+                [-1, zoom_height_end-zoom_height_start, -1, -1])
+                # [-1, 176, -1, -1])
+
+        # print images_zoom.get_shape()
+
+        model_options_zoom = common.ModelOptions(
+                outputs_to_num_classes=outputs_to_num_classes,
+                crop_size=[images_zoom.get_shape()[1].value, images_zoom.get_shape()[2].value],
+                atrous_rates=FLAGS.atrous_rates,
+                output_stride=FLAGS.output_stride/2)
+        # with tf.variable_scope('feature_zoom'):
+        features_aspp_zoom, end_points_zoom, _ = extract_features(
+          images_zoom,
+          model_options_zoom,
+          weight_decay=weight_decay,
+          reuse=reuse,
+          is_training=is_training,
+          fine_tune_batch_norm=fine_tune_batch_norm,
+          fine_tune_feature_extractor=fine_tune_feature_extractor)
+        print '||||||||||||||| features_aspp_zoom ', features_aspp_zoom.get_shape()
+
+        decoder_height_zoom = scale_dimension(model_options_zoom.crop_size[0],
+                  1.0 / model_options_zoom.decoder_output_stride)
+        decoder_width_zoom = scale_dimension(model_options.crop_size[1],
+                  1.0 / model_options_zoom.decoder_output_stride)
+        features_zoom = refine_by_decoder(
+            features_aspp_zoom,
+            end_points_zoom,
+            decoder_height=decoder_height_zoom,
+            decoder_width=decoder_width_zoom,
+            decoder_use_separable_conv=model_options.decoder_use_separable_conv,
+            model_variant=model_options.model_variant,
+            weight_decay=weight_decay,
+            reuse=reuse,
+            is_training=is_training,
+            fine_tune_batch_norm=fine_tune_batch_norm,
+            decoder_scope_posefix='-zoom')
+
+        print '== Zoom Features_aspp, features:', features_aspp_zoom.get_shape(), features_zoom.get_shape()
+
+        features_weight_zoom = refine_by_decoder(
+            features_aspp_zoom,
+            end_points_zoom,
+            decoder_height=decoder_height_zoom,
+            decoder_width=decoder_width_zoom,
+            decoder_use_separable_conv=model_options.decoder_use_separable_conv,
+            model_variant=model_options.model_variant,
+            weight_decay=weight_decay,
+            reuse=reuse,
+            is_training=is_training,
+            fine_tune_batch_norm=fine_tune_batch_norm,
+            decoder_scope=WEIGHTS_DECODER_SCOPE,
+            decoder_scope_posefix='-zoom')
+
+        features_zoom_padded = tf.concat([tf.zeros_like(features_zoom), features_zoom, tf.zeros_like(features_zoom), tf.zeros_like(features_zoom)], axis=1)
+        features_weight_zoom_padded = tf.concat([tf.zeros_like(features_weight_zoom), features_weight_zoom, tf.zeros_like(features_weight_zoom), tf.zeros_like(features_weight_zoom)], axis=1)
+
+        features = tf.add(features, features_zoom_padded)
 
   outputs_to_logits_N = {}
   outputs_to_logits_map = {}
@@ -370,7 +441,8 @@ def extract_features(images,
                      reuse=None,
                      is_training=False,
                      fine_tune_batch_norm=False,
-                     fine_tune_feature_extractor=True):
+                     fine_tune_feature_extractor=True,
+                     output_stride=None):
   """Extracts features by the particular model_variant.
 
   Args:
@@ -390,7 +462,7 @@ def extract_features(images,
   """
   features, end_points = feature_extractor.extract_features(
       images,
-      output_stride=model_options.output_stride,
+      output_stride=model_options.output_stride if output_stride is None else output_stride,
       multi_grid=model_options.multi_grid,
       model_variant=model_options.model_variant,
       depth_multiplier=model_options.depth_multiplier,
@@ -491,7 +563,8 @@ def refine_by_decoder(features,
                       activation_fn=tf.nn.relu,
                       decoder_scope=DECODER_SCOPE,
                       weights_initializer=None,
-                      decoder_depth=256):
+                      decoder_depth=256,
+                      decoder_scope_posefix=''):
   """Adds the decoder to obtain sharper segmentation results.
 
   Args:
@@ -529,7 +602,7 @@ def refine_by_decoder(features,
       stride=1,
       reuse=reuse):
     with slim.arg_scope([slim.batch_norm], **batch_norm_params):
-      with tf.variable_scope(decoder_scope, decoder_scope, [features]):
+      with tf.variable_scope(decoder_scope+decoder_scope_posefix, decoder_scope, [features]):
         feature_list = feature_extractor.networks_to_feature_maps[
             model_variant][feature_extractor.DECODER_END_POINTS]
         if feature_list is None:

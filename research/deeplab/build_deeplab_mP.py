@@ -138,7 +138,8 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
     weight_decay=FLAGS.weight_decay,
     is_training=is_training,
     fine_tune_batch_norm=FLAGS.fine_tune_batch_norm and is_training,
-    fine_tune_feature_extractor=FLAGS.fine_tune_feature_extractor and is_training)
+    fine_tune_feature_extractor=FLAGS.fine_tune_feature_extractor and is_training,
+    outputs_to_num_classes=None)
   print outputs_to_logits
 
   areas_masked = outputs_to_areas_N[dataset.output_names[0]]
@@ -264,11 +265,11 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
 
   _, prob_logits_pose, rot_q_angle_error, trans_sqrt_error, depth_diff_abs_error, depth_relative_error, trans_loss_error, rot_q_loss_error, trans_diff_metric_abs = train_utils.add_my_pose_loss_cars(
           FLAGS,
-          # prob_logits_pose,
-          prob_logits_pose_afterpointnet,
+          prob_logits_pose,
+          # prob_logits_pose_afterpointnet,
           rotuvd_dict_N if FLAGS.if_uvflow else pose_dict_N,
-          # prob_logits_pose_xy_from_uv if FLAGS.if_uvflow else prob_logits_pose,
-          prob_logits_pose_xy_from_uv_afterpointnet if FLAGS.if_uvflow else prob_logits_pose,
+          prob_logits_pose_xy_from_uv if FLAGS.if_uvflow else prob_logits_pose,
+          # prob_logits_pose_xy_from_uv_afterpointnet if FLAGS.if_uvflow else prob_logits_pose,
           pose_dict_N,
           masks_float,
           weights_normalized / (tf.log(tf.clip_by_value(tf.gather(pose_dict_N, [6], axis=1), 1.5, 350.)) + 1e-10),
