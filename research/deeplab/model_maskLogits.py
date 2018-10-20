@@ -111,6 +111,7 @@ def single_scale_logits(FLAGS,
                        images,
                        seg_map, # [batch_size, H, W, 1], tf.float32
                        car_nums,
+                       areas_sqrt_map,
                        idx_xys,
                        bin_vals,
                        outputs_to_indices,
@@ -168,6 +169,7 @@ def single_scale_logits(FLAGS,
         images,
         seg_map,
         car_nums,
+        areas_sqrt_map,
         idx_xys,
         bin_vals,
         outputs_to_indices,
@@ -185,6 +187,7 @@ def _get_logits_mP(FLAGS,
                 images,
                 seg_maps, # [batch_size, H, W, 1] float
                 car_nums,
+                areas_sqrt_map,
                 idx_xys,
                 bin_vals,
                 outputs_to_indices,
@@ -242,10 +245,7 @@ def _get_logits_mP(FLAGS,
     Vs, Us = tf.meshgrid(v_coords, u_coords)
     features_Ys = tf.tile(tf.expand_dims(tf.expand_dims(tf.transpose(Vs + tf.shape(features)[1]), -1), 0), [tf.shape(features)[0], 1, 1, 1]) # NOTE: added hald height for computing in original size (not halfed)
     features_Xs = tf.tile(tf.expand_dims(tf.expand_dims(tf.transpose(Us), -1), 0), [tf.shape(features)[0], 1, 1, 1])
-    features_concat = tf.concat([features,
-        tf.to_float(features_Xs * model_options.decoder_output_stride),
-        tf.to_float(features_Ys) * model_options.decoder_output_stride], axis=3)
-    print '== Features_aspp/backbone, features, features_concat:', features_aspp.get_shape(), features_backbone.get_shape(), features.get_shape(), features_concat.get_shape() # (2, 34, 85, 256) (2, 34, 85, 2048) (2, 68, 170, 256) (2, 68, 170, 258)
+    print '== Features_aspp/backbone, features', features_aspp.get_shape(), features_backbone.get_shape(), features.get_shape() # (2, 34, 85, 256) (2, 34, 85, 2048) (2, 68, 170, 256) (2, 68, 170, 258)
     features_weight = refine_by_decoder(
         features_aspp,
         end_points,
@@ -258,10 +258,6 @@ def _get_logits_mP(FLAGS,
         is_training=is_training,
         fine_tune_batch_norm=fine_tune_batch_norm,
         decoder_scope=WEIGHTS_DECODER_SCOPE)
-    features_weight_concat = tf.concat([features_weight,
-        tf.to_float(features_Xs) * model_options.decoder_output_stride,
-        tf.to_float(features_Ys) * model_options.decoder_output_stride], axis=3)
-
 
     if FLAGS.if_zoom:
         zoom_height_start = images.get_shape()[1].value // 4
@@ -271,23 +267,22 @@ def _get_logits_mP(FLAGS,
                 [-1, zoom_height_end-zoom_height_start, -1, -1])
                 # [-1, 176, -1, -1])
 
-        # print images_zoom.get_shape()
-
         model_options_zoom = common.ModelOptions(
                 outputs_to_num_classes=outputs_to_num_classes,
                 crop_size=[images_zoom.get_shape()[1].value, images_zoom.get_shape()[2].value],
                 atrous_rates=FLAGS.atrous_rates,
                 output_stride=FLAGS.output_stride/2)
-        # with tf.variable_scope('feature_zoom'):
-        features_aspp_zoom, end_points_zoom, _ = extract_features(
-          images_zoom,
-          model_options_zoom,
-          weight_decay=weight_decay,
-          reuse=reuse,
-          is_training=is_training,
-          fine_tune_batch_norm=fine_tune_batch_norm,
-          fine_tune_feature_extractor=fine_tune_feature_extractor)
+        with tf.variable_scope('feature_zoom'):
+            features_aspp_zoom, end_points_zoom, _ = extract_features(
+              images_zoom,
+              model_options_zoom,
+              weight_decay=weight_decay,
+              reuse=reuse,
+              is_training=is_training,
+              fine_tune_batch_norm=fine_tune_batch_norm,
+              fine_tune_feature_extractor=fine_tune_feature_extractor)
         print '||||||||||||||| features_aspp_zoom ', features_aspp_zoom.get_shape()
+        # print end_points_zoom
 
         decoder_height_zoom = scale_dimension(model_options_zoom.crop_size[0],
                   1.0 / model_options_zoom.decoder_output_stride)
@@ -304,7 +299,8 @@ def _get_logits_mP(FLAGS,
             reuse=reuse,
             is_training=is_training,
             fine_tune_batch_norm=fine_tune_batch_norm,
-            decoder_scope_posefix='-zoom')
+            decoder_scope_posefix='-zoom',
+            end_points_prefix='feature_zoom')
 
         print '== Zoom Features_aspp, features:', features_aspp_zoom.get_shape(), features_zoom.get_shape()
 
@@ -320,12 +316,33 @@ def _get_logits_mP(FLAGS,
             is_training=is_training,
             fine_tune_batch_norm=fine_tune_batch_norm,
             decoder_scope=WEIGHTS_DECODER_SCOPE,
-            decoder_scope_posefix='-zoom')
+            decoder_scope_posefix='-zoom',
+            end_points_prefix='feature_zoom')
 
-        features_zoom_padded = tf.concat([tf.zeros_like(features_zoom), features_zoom, tf.zeros_like(features_zoom), tf.zeros_like(features_zoom)], axis=1)
-        features_weight_zoom_padded = tf.concat([tf.zeros_like(features_weight_zoom), features_weight_zoom, tf.zeros_like(features_weight_zoom), tf.zeros_like(features_weight_zoom)], axis=1)
+        # features_zoom_padded = tf.concat([tf.zeros_like(features_zoom), features_zoom, tf.zeros_like(features_zoom), tf.zeros_like(features_zoom)], axis=1)
+        # features_weight_zoom_padded = tf.concat([tf.zeros_like(features_weight_zoom), features_weight_zoom, tf.zeros_like(features_weight_zoom), tf.zeros_like(features_weight_zoom)], axis=1)
 
-        features = tf.add(features, features_zoom_padded)
+        # features = tf.add(features, features_zoom_padded)
+        # features_weight = tf.add(features_weight, features_weight_zoom_padded)
+
+        height_feat = features.get_shape()[1].value
+        features = tf.concat([tf.slice(features, [0, 0, 0, 0], [-1, height_feat//4, -1, -1]),
+            tf.slice(features, [0, height_feat//4, 0, 0], [-1, height_feat//4, -1, -1])/2. + features_zoom/2.,
+            tf.slice(features, [0, height_feat//4*2, 0, 0], [-1, height_feat//4, -1, -1]),
+            tf.slice(features, [0, height_feat//4*3, 0, 0], [-1, height_feat//4, -1, -1])], axis=1)
+        features_weight = tf.concat([tf.slice(features_weight, [0, 0, 0, 0], [-1, height_feat//4, -1, -1]),
+            tf.slice(features_weight, [0, height_feat//4, 0, 0], [-1, height_feat//4, -1, -1])/2. + features_weight_zoom/2.,
+            tf.slice(features_weight, [0, height_feat//4*2, 0, 0], [-1, height_feat//4, -1, -1]),
+            tf.slice(features_weight, [0, height_feat//4*3, 0, 0], [-1, height_feat//4, -1, -1])], axis=1)
+
+  features_concat = tf.concat([features,
+        tf.to_float(features_Xs * model_options.decoder_output_stride),
+        tf.to_float(features_Ys) * model_options.decoder_output_stride,
+        areas_sqrt_map], axis=3)
+  features_weight_concat = tf.concat([features_weight,
+      tf.to_float(features_Xs) * model_options.decoder_output_stride,
+      tf.to_float(features_Ys) * model_options.decoder_output_stride,
+      areas_sqrt_map], axis=3)
 
   outputs_to_logits_N = {}
   outputs_to_logits_map = {}
@@ -374,6 +391,10 @@ def _get_logits_mP(FLAGS,
         print '||||||||added grids to y'
 
     outputs_to_logits_map[output] = logits
+
+    # areas_sqrt_N = get_areas_N(seg_maps, car_nums)
+    # print areas_N.get_shape()
+    # programPause = raw_input("Press the <ENTER> key to continue...")
 
     # Working
     with tf.variable_scope('per_car_logits_aggre_2'):
@@ -434,6 +455,30 @@ def _get_logits_mP(FLAGS,
 
   return outputs_to_logits_N, outputs_to_logits_map, outputs_to_weights_map, outputs_to_areas_N, outputs_to_weightsum_N
 
+def get_areas_N(seg_maps, car_nums):
+    with tf.variable_scope('per_car_area'):
+        num_samples = tf.shape(seg_maps)[0]
+        init_array = tf.TensorArray(tf.float32, size=num_samples, infer_shape=False) # https://stackoverflow.com/questions/43270849/tensorflow-map-fn-tensorarray-has-inconsistent-shapes
+        def loop_body_per_sample(i, ta):
+            seg_map_sample = tf.gather(seg_maps, i) # (68, 170, 1)
+            car_num_sample = tf.gather(car_nums, i) # ()
+            seg_one_hot_sample = tf.one_hot(tf.cast(tf.squeeze(seg_map_sample), tf.int32), depth=car_num_sample+1) # (68, 170, ?+1)
+            seg_one_hot_sample = tf.transpose(tf.slice(seg_one_hot_sample, [0, 0, 1], [-1, -1, -1]), [2, 0, 1]) # (?, 68, 170)
+
+            def per_car(seg_one_hot_car):
+                seg_one_hot_car_bool = tf.cast(seg_one_hot_car, tf.bool)
+                area_car = tf.to_float(tf.reduce_sum(seg_one_hot_car))
+                return tf.cond(tf.equal(tf.size(area_car), 0),
+                        lambda: tf.zeros([1], dtype=tf.float32),
+                        lambda: tf.reshape(tf.sqrt(area_car), [-1]))
+            areas_sample = tf.map_fn(per_car, seg_one_hot_sample, dtype=tf.float32) # [?, 1]
+
+            return i + 1, ta.write(i, areas_sample)
+
+        _, areas_all = tf.while_loop(lambda i, ta: i < num_samples, loop_body_per_sample, [0, init_array])
+
+    areas_N = tf.reshape(areas_all.concat(), [-1, 1])
+    return areas_N
 
 def extract_features(images,
                      model_options,
@@ -564,7 +609,8 @@ def refine_by_decoder(features,
                       decoder_scope=DECODER_SCOPE,
                       weights_initializer=None,
                       decoder_depth=256,
-                      decoder_scope_posefix=''):
+                      decoder_scope_posefix='',
+                      end_points_prefix=None):
   """Adds the decoder to obtain sharper segmentation results.
 
   Args:
@@ -621,7 +667,7 @@ def refine_by_decoder(features,
                   feature_extractor.name_scope[model_variant], name)
             decoder_features_list.append(
                 slim.conv2d(
-                    end_points[feature_name],
+                    end_points[feature_name if end_points_prefix is None else '%s/%s'%(end_points_prefix, feature_name)],
                     48,
                     1,
                     scope='feature_projection' + str(i)))

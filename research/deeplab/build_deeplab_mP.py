@@ -126,11 +126,15 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
     logits_map = tf.stack(logits_samples_list, axis=0) # (3, 272, 680, 17)
     return logits_map
 
+  areas_sqrt_N = model.get_areas_N(samples['seg_rescaled'], samples['car_nums'])
+  areas_sqrt_map = logits_cars_to_map(areas_sqrt_N, rescale=True)
+
   outputs_to_logits, outputs_to_logits_map, outputs_to_weights_map, outputs_to_areas_N, outputs_to_weightsum_N = model.single_scale_logits(
     FLAGS,
     samples[common.IMAGE],
     samples['seg_rescaled'],
     samples['car_nums'],
+    areas_sqrt_map,
     idx_xys,
     bin_centers_tensors,
     outputs_to_indices,

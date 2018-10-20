@@ -414,8 +414,8 @@ def main(unused_argv):
         print training_vars
         print '---- [TRAINABLE VARS] ----'
         print trainable_vars
-        print '- set2 - set2'
-        print set(set2) - set(set1)
+        print '- trainable_vars - training_vars'
+        print set(trainable_vars) - set(trainable_vars)
         print '---- [TENSORS] ----'
         for op in tf.get_default_graph().get_operations():
             print str(op.name)
@@ -592,6 +592,7 @@ def main(unused_argv):
     # print summaries
 
     init_assign_op, init_feed_dict = train_utils.model_init(
+        FLAGS,
         FLAGS.restore_logdir,
         FLAGS.tf_initial_checkpoint,
         FLAGS.if_restore,
@@ -600,9 +601,22 @@ def main(unused_argv):
         # ignore_including=['_weights/BatchNorm', 'decoder_weights'],
         ignore_including=None,
         ignore_missing_vars=True)
+    init_assign_op_zoom, init_feed_dict_zoom = train_utils.model_init(
+        FLAGS,
+        FLAGS.restore_logdir,
+        FLAGS.tf_initial_checkpoint,
+        FLAGS.if_restore,
+        FLAGS.initialize_last_layer,
+        last_layers,
+        # ignore_including=['_weights/BatchNorm', 'decoder_weights'],
+        ignore_including=None,
+        ignore_missing_vars=True,
+        if_restore_for_zoom=True)
 
     def InitAssignFn(sess):
         sess.run(init_assign_op, init_feed_dict)
+        if FLAGS.if_zoom:
+            sess.run(init_assign_op_zoom, init_feed_dict_zoom)
 
     # Start the training.
     slim.learning.train(

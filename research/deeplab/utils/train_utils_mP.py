@@ -277,13 +277,14 @@ def add_l1_regression_loss_cars(logits,
 
 
 
-def model_init(restore_logdir,
+def model_init(FLAGS, restore_logdir,
                       tf_initial_checkpoint,
                       restore_logged,
                       initialize_last_layer,
                       last_layers,
                       ignore_including=None,
-                      ignore_missing_vars=True):
+                      ignore_missing_vars=True,
+                      if_restore_for_zoom=False):
   """Gets the function initializing model variables from a checkpoint.
 
   Args:
@@ -307,7 +308,8 @@ def model_init(restore_logdir,
   if tf.train.latest_checkpoint(restore_logdir) and restore_logged:
     tf_initial_checkpoint = tf.train.latest_checkpoint(restore_logdir)
     tf.logging.info('==== Ignoring initialization; restoring from logged checkpoint: %s'%tf_initial_checkpoint)
-    exclude_list = ['pointnet_scope']
+    # exclude_list = ['pointnet_scope']
+    exclude_list = []
 
   tf.logging.info('==== Initializing model from path: %s', tf_initial_checkpoint)
 
@@ -321,11 +323,22 @@ def model_init(restore_logdir,
   # print exclude_list
 
   variables_to_restore = slim.get_variables_to_restore(exclude=exclude_list)
+  if FLAGS.if_zoom and if_restore_for_zoom:
+      variables_to_restore_dict = {}
+      for var in variables_to_restore:
+          # if 'xception' in var.op.name or 'mobilenet' in var.op.name:
+          if 'feature_zoom' in var.op.name:
+              variables_to_restore_dict[var.op.name.replace('feature_zoom/', '')] = var
+      variables_to_restore = variables_to_restore_dict
+
+  print variables_to_restore
   # for variable in variables_to_restore:
+      # print variable
   #     if '_weights/BatchNorm' in variable.op.name:
   #         print 'wwwwwwwww', variable.op.name
   #     else:
   #         print variable.op.name
+  # programPause = raw_input("Press the <ENTER> key to continue...")
   variables_to_restore_ignored = []
   if ignore_including is not None:
       for ignore_name in ignore_including:
