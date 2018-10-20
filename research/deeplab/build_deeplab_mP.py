@@ -257,7 +257,6 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
       pointnet_logits = pointnet.get_model(logits_batch, None, \
         is_training=is_training, bn_decay=bn_decay, cat_num=None, \
         part_num=logits_batch.get_shape()[2], batch_size=logits_batch.get_shape()[0], num_point=49, weight_decay=None)
-  # tf.losses.mean_squared_error(tf.zeros_like(pointnet_logits), pointnet_logits)
   print pointnet_logits.get_shape(), '++++++++3'
   pointnet_logits_unpadded = _unpadding(pointnet_logits, append_left_idx=False)
   print pointnet_logits_unpadded.get_shape(), '++++++++4'
