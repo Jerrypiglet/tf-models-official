@@ -279,7 +279,6 @@ def main(unused_argv):
     tf.summary.scalar(('total_loss_val/'+pattern%'loss_reg_Zdepth_metric').replace(':0', ''), depth_diff_abs_error_pl)
     summaries = tf.summary.merge_all()
 
-    depth_diff_abs_error_list = []
 
 
     def _process_batch(sess, batch):
@@ -341,6 +340,8 @@ def main(unused_argv):
         start = time.time()
         # tf.logging.info('Starting visualization at ' + time.strftime('%Y-%m-%d-%H:%M:%S',time.gmtime()))
         tf.logging.info('Visualizing with model %s', last_checkpoint)
+
+        depth_diff_abs_error_list = []
 
         with sv.managed_session('',
                 start_standard_services=False) as sess:
