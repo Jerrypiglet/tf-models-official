@@ -134,7 +134,7 @@ flags.DEFINE_boolean('if_uvflow', False,
 flags.DEFINE_boolean('if_depth_only', False,
         'True: regression to depth only.')
 
-flags.DEFINE_boolean('if_zoom', False,
+flags.DEFINE_boolean('if_zoom', True,
         'True: zoom into 1/4 height to 1/2 height.')
 
 flags.DEFINE_boolean('if_summary_shape_metrics', True,

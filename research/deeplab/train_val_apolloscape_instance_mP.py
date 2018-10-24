@@ -203,7 +203,7 @@ flags.DEFINE_float('max_scale_factor', 1.0,
 flags.DEFINE_float('scale_factor_step_size', 0.,
                    'Scale factor step size for data augmentation.')
 
-flags.DEFINE_boolean('if_zoom', False,
+flags.DEFINE_boolean('if_zoom', True,
         'True: zoom into 1/4 height to 1/2 height.')
 
 # For `xception_65`, use atrous_rates = [12, 24, 36] if output_stride = 8, or

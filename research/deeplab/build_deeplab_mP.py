@@ -164,7 +164,7 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
           if output == 'z' and FLAGS.if_log_depth:
               print prob_logits.get_shape(), '++++++++1'
 
-              ## TEMP pointnet on cls logits
+
               # logits_masked = tf.multiply(outputs_to_logits[output], masks_float)
               # logits_batch = _pad_N_to_batch(logits_masked, 49, samples['car_nums'])
               # print logits_batch.get_shape(), '++++++++2'
@@ -258,11 +258,9 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
   logits_batch = _pad_N_to_batch(logits_masked, 49, samples['car_nums'])
   print logits_batch.get_shape(), '++++++++2'
   with tf.variable_scope('pointnet_scope'):
-      # Pointnet and DGCNN
       pointnet_logits = pointnet.get_model(logits_batch, None, \
         is_training=is_training, bn_decay=bn_decay, cat_num=None, \
         part_num=logits_batch.get_shape()[2], batch_size=logits_batch.get_shape()[0], num_point=49, weight_decay=None)
-      # Pointnet from Peng
       # pointnet_logits, end_points = pointnet.get_model(logits_batch, is_training=is_training, bn_decay=bn_decay)
       # transform = end_points['transform'] # BxKxK
       # K = transform.get_shape()[1].value
@@ -274,8 +272,12 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
   pointnet_logits_unpadded = _unpadding(pointnet_logits, append_left_idx=False)
   print pointnet_logits_unpadded.get_shape(), '++++++++4'
   cls_logits = tf.multiply(pointnet_logits_unpadded, masks_float)
+  # tf.losses.mean_squared_error(tf.zeros_like(cls_logits), cls_logits)
   cls_logits_z = tf.gather(cls_logits, [2], axis=1)
   cls_logits_rect = tf.concat([tf.gather(cls_logits, [0, 1], axis=1), tf.where(cls_logits_z>20., cls_logits_z, tf.gather(prob_logits_pose, [6], axis=1))], axis=1)
+  # cls_logits_rect = cls_logits
+  # prob_logits_pose = tf.concat([tf.gather(prob_logits_pose, [0, 1, 2, 3, 4, 5], axis=1), tf.gather(cls_logits_rect, [2], axis=1)], axis=1)
+  # prob_logits_pose_xy_from_uv = tf.concat([tf.gather(prob_logits_pose_xy_from_uv, [0, 1, 2, 3, 4, 5], axis=1), tf.gather(cls_logits_rect, [2], axis=1)], axis=1)
   prob_logits_pose = cls_logits
   prob_logits_pose_xy_from_uv = cls_logits
 

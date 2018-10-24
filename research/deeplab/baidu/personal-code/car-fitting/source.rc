@@ -1,6 +1,0 @@
-export PYTHONPATH=$PYTHONPATH:/home/peng/baidu/video-segmentation
-export PYTHONPATH=$PYTHONPATH:/home/peng/baidu/VideoSegRec/DeMoN
-export PYTHONPATH=$PYTHONPATH:/home/peng/baidu/VideoSegRec/seg_transfer
-export PYTHONPATH=$PYTHONPATH:/home/peng/baidu/VideoSegRec/car_fitting
-export PYTHONPATH=$PYTHONPATH:/home/peng/pointnet2/utils/
-
