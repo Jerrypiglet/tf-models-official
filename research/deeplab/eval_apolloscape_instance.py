@@ -270,6 +270,8 @@ def main(unused_argv):
     # global_step = graph.get_tensor_by_name('global_step')
     global_step = tf.train.get_or_create_global_step()
     depth_diff_abs_error = graph.get_tensor_by_name(pattern%'depth_diff_abs_error')
+    pose_dict_N = graph.get_tensor_by_name(pattern%'pose_dict_N')
+    prob_logits_pose = graph.get_tensor_by_name(pattern%'prob_logits_pose')
     loss_cls_ALL = graph.get_tensor_by_name(pattern%'loss_cls_ALL')
     depth_diff_abs_error_thres2_8_pl = tf.placeholder(tf.float32, shape=(), name="depth_diff_abs_error_thres2_8")
     depth_diff_abs_error_pl = tf.placeholder(tf.float32, shape=(), name="depth_diff_abs_error")
@@ -279,7 +281,6 @@ def main(unused_argv):
     tf.summary.scalar(('total_loss_val/'+pattern%'loss_reg_Zdepth_metric').replace(':0', ''), depth_diff_abs_error_pl)
     summaries = tf.summary.merge_all()
 
-    depth_diff_abs_error_list = []
 
 
     def _process_batch(sess, batch):
@@ -291,8 +292,10 @@ def main(unused_argv):
         image_name = graph.get_tensor_by_name(pattern%common.IMAGE_NAME)
         mask = graph.get_tensor_by_name(pattern%'not_ignore_mask_in_loss')
         if FLAGS.val_split != 'test':
-            depth_diff_abs_error_out = sess.run(depth_diff_abs_error)
+            depth_diff_abs_error_out, pose_dict_N_out, prob_logits_pose_out = sess.run([depth_diff_abs_error, pose_dict_N, prob_logits_pose])
             depth_diff_abs_error_list.append(depth_diff_abs_error_out)
+            pose_dict_N_list.append(pose_dict_N_out)
+            prob_logits_pose_list.append(prob_logits_pose_out)
             print depth_diff_abs_error_out.shape
             # label_pose_shape_map = graph.get_tensor_by_name(pattern%'label_pose_shape_map')
             # vis = graph.get_tensor_by_name(pattern%'vis')
@@ -342,6 +345,10 @@ def main(unused_argv):
         # tf.logging.info('Starting visualization at ' + time.strftime('%Y-%m-%d-%H:%M:%S',time.gmtime()))
         tf.logging.info('Visualizing with model %s', last_checkpoint)
 
+        depth_diff_abs_error_list = []
+        pose_dict_N_list = []
+        prob_logits_pose_list = []
+
         with sv.managed_session('',
                 start_standard_services=False) as sess:
             sv.start_queue_runners(sess)
@@ -363,6 +370,11 @@ def main(unused_argv):
             summaries_out, global_step_out = sess.run([summaries, global_step], feed_dict={depth_diff_abs_error_thres2_8_pl: depth_diff_abs_error_thres2_8_out, depth_diff_abs_error_pl: depth_diff_abs_error_out})
             print global_step_out, depth_diff_abs_error_thres2_8_out, depth_diff_abs_error_out
             summary_writer.add_summary(summaries_out, global_step_out)
+
+            pose_dict_N_all = np.vstack(pose_dict_N_list)
+            prob_logits_pose_all = np.vstack(prob_logits_pose_list)
+            savemat('eval-%s_%d.mat'%(FLAGS.restore_name, num_iters), {'depth_diff_abs_errors':depth_diff_abs_errors, 'pose_dict_N':pose_dict_N_all, 'prob_logits_pose':prob_logits_pose_all})
+            print 'Mat saved to '+'eval-%s_%d.mat'%(FLAGS.restore_name, num_iters)
 
 
 if __name__ == '__main__':
