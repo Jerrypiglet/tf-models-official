@@ -111,8 +111,8 @@ def add_my_pose_loss_cars(FLAGS, prob_logits, labels, prob_logits_in_metric, lab
 
     # trans_dim_weights = 1./ tf.constant([[200., 50., 0.3]], dtype=tf.float32)
     trans_dim_weights = tf.constant([[1., 1., 10.]], dtype=tf.float32) if not(FLAGS.if_depth) else tf.constant([[1., 1., 1.]], dtype=tf.float32)
-    if FLAGS.if_depth_only:
-        trans_dim_weights = tf.constant([[0., 0., 1.]], dtype=tf.float32)
+    # if FLAGS.if_depth_only:
+    #     trans_dim_weights = tf.constant([[0., 0., 1.]], dtype=tf.float32)
     # trans_dim_weights = tf.ones([1, 3], dtype=tf.float32)
     # trans_dim_weights = tf.constant([[1./100., 1./50., 4.]], dtype=tf.float32)
     # trans_loss = smooth_l1_loss(tf.multiply(trans_dim_weights, trans), tf.multiply(trans_dim_weights, trans_gt),
@@ -124,8 +124,10 @@ def add_my_pose_loss_cars(FLAGS, prob_logits, labels, prob_logits_in_metric, lab
     # trans_loss_error = tf.multiply(tf.abs(log_depth_logits - log_depth_labels), weights_normalized)
     trans_loss_error = tf.multiply(tf.abs(tf.multiply(trans - trans_gt, trans_dim_weights)), weights_normalized)
     trans_loss = tf.reduce_sum(trans_loss_error) / pixels_valid * balance_trans # L1
+    # trans_loss_error =  tf.losses.huber_loss(trans_gt, trans, weights=weights_normalized, delta=5., loss_collection=None, reduction=tf.losses.Reduction.NONE)
+    # trans_loss = tf.reduce_sum(trans_loss_error) / pixels_valid * balance_trans # Huber
     trans_loss = tf.identity(trans_loss, name=name+'_trans')
-    # tf.losses.add_loss(trans_loss, loss_collection=loss_collection)
+    tf.losses.add_loss(trans_loss, loss_collection=loss_collection)
 
     if not(if_depth):
         trans_in_metric_with_depth = tf.concat([tf.gather(trans_in_metric, [0, 1], axis=1), 1./tf.gather(trans_in_metric, [2], axis=1)], axis=1)
@@ -171,7 +173,7 @@ def add_my_pose_loss_cars(FLAGS, prob_logits, labels, prob_logits_in_metric, lab
     else:
         rot_q_loss_error = tf.multiply(tf.norm(rot - rot_gt, axis=1, keepdims=True), weights_normalized)
         rot_q_loss = tf.reduce_sum(rot_q_loss_error) / pixels_valid * balance_rot
-        rot_q_loss = tf.identity(rot_q_loss, name=name+'_rot_quat'),
+        rot_q_loss = tf.identity(rot_q_loss, name=name+'_rot_quat')
         tf.losses.add_loss(rot_q_loss, loss_collection=loss_collection)
 
         rot_q_unit = tf.nn.l2_normalize(rot, axis=1)

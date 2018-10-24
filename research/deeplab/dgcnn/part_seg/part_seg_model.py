@@ -18,7 +18,7 @@ def get_model(point_cloud, input_label, is_training, cat_num, part_num, \
   num_point = point_cloud.get_shape()[1].value
   input_image = tf.expand_dims(point_cloud, -1)
 
-  k = 5
+  k = 2
   adj = tf_util.pairwise_distance(point_cloud)
   nn_idx = tf_util.knn(adj, k=k)
   print '++++', input_image.get_shape()
@@ -127,6 +127,8 @@ def get_model(point_cloud, input_label, is_training, cat_num, part_num, \
             bn=False, scope='seg/conv4', weight_decay=weight_decay, is_dist=True)
 
   net2 = tf.reshape(net2, [batch_size, num_point, part_num])
+
+  net2 = net2 + point_cloud
 
   return net2
 

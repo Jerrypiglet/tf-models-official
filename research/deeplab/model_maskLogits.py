@@ -335,14 +335,20 @@ def _get_logits_mP(FLAGS,
             tf.slice(features_weight, [0, height_feat//4*2, 0, 0], [-1, height_feat//4, -1, -1]),
             tf.slice(features_weight, [0, height_feat//4*3, 0, 0], [-1, height_feat//4, -1, -1])], axis=1)
 
+  # features_concat = tf.concat([features,
+  #       tf.to_float(features_Xs * model_options.decoder_output_stride),
+  #       tf.to_float(features_Ys) * model_options.decoder_output_stride,
+  #       areas_sqrt_map], axis=3)
+  # features_weight_concat = tf.concat([features_weight,
+  #     tf.to_float(features_Xs) * model_options.decoder_output_stride,
+  #     tf.to_float(features_Ys) * model_options.decoder_output_stride,
+  #     areas_sqrt_map], axis=3)
   features_concat = tf.concat([features,
         tf.to_float(features_Xs * model_options.decoder_output_stride),
-        tf.to_float(features_Ys) * model_options.decoder_output_stride,
-        areas_sqrt_map], axis=3)
+        tf.to_float(features_Ys) * model_options.decoder_output_stride], axis=3)
   features_weight_concat = tf.concat([features_weight,
       tf.to_float(features_Xs) * model_options.decoder_output_stride,
-      tf.to_float(features_Ys) * model_options.decoder_output_stride,
-      areas_sqrt_map], axis=3)
+      tf.to_float(features_Ys) * model_options.decoder_output_stride], axis=3)
 
   outputs_to_logits_N = {}
   outputs_to_logits_map = {}
