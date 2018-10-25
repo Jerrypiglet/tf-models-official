@@ -251,35 +251,35 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
   # return pose_dict_N, rotuvd_dict_N_2_quat_xy_dinvd_dict_N(rotuvd_dict_N)
 
   ## TMP: applying pointnet on xyz
-  xy_prob_logits_pose_z = tf.concat([tf.gather(pose_dict_N, [0, 1, 2, 3, 4, 5], axis=1), tf.clip_by_value(tf.gather(prob_logits_pose, [6], axis=1), 1.5, 350.)], axis=1)
-  # xy_prob_logits_pose_z = tf.gather(pose_dict_N, [4, 5, 6], axis=1)
-  # xy_prob_logits_pose_z = pose_dict_N
-  logits_masked = tf.multiply(xy_prob_logits_pose_z, masks_float)
-  logits_batch = _pad_N_to_batch(logits_masked, 49, samples['car_nums'])
-  print logits_batch.get_shape(), '++++++++2'
-  with tf.variable_scope('pointnet_scope'):
-      pointnet_logits = pointnet.get_model(logits_batch, None, \
-        is_training=is_training, bn_decay=bn_decay, cat_num=None, \
-        part_num=logits_batch.get_shape()[2], batch_size=logits_batch.get_shape()[0], num_point=49, weight_decay=None)
-      # pointnet_logits, end_points = pointnet.get_model(logits_batch, is_training=is_training, bn_decay=bn_decay)
-      # transform = end_points['transform'] # BxKxK
-      # K = transform.get_shape()[1].value
-      # mat_diff = tf.matmul(transform, tf.transpose(transform, perm=[0,2,1]))
-      # mat_diff -= tf.constant(np.eye(K), dtype=tf.float32)
-      # mat_diff_loss = tf.nn.l2_loss(mat_diff)
-      # tf.losses.add_loss(mat_diff_loss*0.001, loss_collection=tf.GraphKeys.LOSSES)
-  print pointnet_logits.get_shape(), '++++++++3'
-  pointnet_logits_unpadded = _unpadding(pointnet_logits, append_left_idx=False)
-  print pointnet_logits_unpadded.get_shape(), '++++++++4'
-  cls_logits = tf.multiply(pointnet_logits_unpadded, masks_float)
-  # tf.losses.mean_squared_error(tf.zeros_like(cls_logits), cls_logits)
-  # cls_logits_z = tf.gather(cls_logits, [2], axis=1)
-  # cls_logits_rect = tf.concat([tf.gather(cls_logits, [0, 1], axis=1), tf.where(cls_logits_z>20., cls_logits_z, tf.gather(prob_logits_pose, [6], axis=1))], axis=1)
-  # cls_logits_rect = cls_logits
-  # prob_logits_pose = tf.concat([tf.gather(prob_logits_pose, [0, 1, 2, 3, 4, 5], axis=1), tf.gather(cls_logits_rect, [2], axis=1)], axis=1)
-  # prob_logits_pose_xy_from_uv = tf.concat([tf.gather(prob_logits_pose_xy_from_uv, [0, 1, 2, 3, 4, 5], axis=1), tf.gather(cls_logits_rect, [2], axis=1)], axis=1)
-  prob_logits_pose = cls_logits
-  prob_logits_pose_xy_from_uv = cls_logits
+  # xy_prob_logits_pose_z = tf.concat([tf.gather(pose_dict_N, [0, 1, 2, 3, 4, 5], axis=1), tf.clip_by_value(tf.gather(prob_logits_pose, [6], axis=1), 1.5, 350.)], axis=1)
+  # # xy_prob_logits_pose_z = tf.gather(pose_dict_N, [4, 5, 6], axis=1)
+  # # xy_prob_logits_pose_z = pose_dict_N
+  # logits_masked = tf.multiply(xy_prob_logits_pose_z, masks_float)
+  # logits_batch = _pad_N_to_batch(logits_masked, 49, samples['car_nums'])
+  # print logits_batch.get_shape(), '++++++++2'
+  # with tf.variable_scope('pointnet_scope'):
+  #     pointnet_logits = pointnet.get_model(logits_batch, None, \
+  #       is_training=is_training, bn_decay=bn_decay, cat_num=None, \
+  #       part_num=logits_batch.get_shape()[2], batch_size=logits_batch.get_shape()[0], num_point=49, weight_decay=None)
+  #     # pointnet_logits, end_points = pointnet.get_model(logits_batch, is_training=is_training, bn_decay=bn_decay)
+  #     # transform = end_points['transform'] # BxKxK
+  #     # K = transform.get_shape()[1].value
+  #     # mat_diff = tf.matmul(transform, tf.transpose(transform, perm=[0,2,1]))
+  #     # mat_diff -= tf.constant(np.eye(K), dtype=tf.float32)
+  #     # mat_diff_loss = tf.nn.l2_loss(mat_diff)
+  #     # tf.losses.add_loss(mat_diff_loss*0.001, loss_collection=tf.GraphKeys.LOSSES)
+  # print pointnet_logits.get_shape(), '++++++++3'
+  # pointnet_logits_unpadded = _unpadding(pointnet_logits, append_left_idx=False)
+  # print pointnet_logits_unpadded.get_shape(), '++++++++4'
+  # cls_logits = tf.multiply(pointnet_logits_unpadded, masks_float)
+  # # tf.losses.mean_squared_error(tf.zeros_like(cls_logits), cls_logits)
+  # # cls_logits_z = tf.gather(cls_logits, [2], axis=1)
+  # # cls_logits_rect = tf.concat([tf.gather(cls_logits, [0, 1], axis=1), tf.where(cls_logits_z>20., cls_logits_z, tf.gather(prob_logits_pose, [6], axis=1))], axis=1)
+  # # cls_logits_rect = cls_logits
+  # # prob_logits_pose = tf.concat([tf.gather(prob_logits_pose, [0, 1, 2, 3, 4, 5], axis=1), tf.gather(cls_logits_rect, [2], axis=1)], axis=1)
+  # # prob_logits_pose_xy_from_uv = tf.concat([tf.gather(prob_logits_pose_xy_from_uv, [0, 1, 2, 3, 4, 5], axis=1), tf.gather(cls_logits_rect, [2], axis=1)], axis=1)
+  # prob_logits_pose = cls_logits
+  # prob_logits_pose_xy_from_uv = cls_logits
 
   # thres_mask = tf.to_float(tf.abs(cls_logits_z - tf.gather(pose_dict_N, [6], axis=1)>2.8))
   _, prob_logits_pose, rot_q_angle_error, trans_sqrt_error, depth_diff_abs_error, depth_relative_error, trans_loss_error, rot_q_loss_error, trans_diff_metric_abs = train_utils.add_my_pose_loss_cars(
@@ -302,10 +302,10 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
           if_depth=FLAGS.if_depth,
           # log_depth_logits=tf.log(tf.gather(prob_logits_pose_afterpointnet, [6], axis=1)),
           # log_depth_logits=tf.gather(cls_logits_rect, [2], axis=1),
-          log_depth_logits=cls_logits,
+          log_depth_logits=cls_logits if FLAGS.if_pointnet else None,
           # log_depth_logits=tf.where(cls_logits_z>20., cls_logits_z, tf.gather(prob_logits_pose, [6], axis=1)),
           # log_depth_labels = tf.log(tf.clip_by_value(tf.gather(pose_dict_N, [6], axis=1), 1.5, 350.)))
-          log_depth_labels =tf.gather(pose_dict_N, [4,5,6], axis=1))
+          log_depth_labels =tf.gather(pose_dict_N, [4,5,6], axis=1) if FLAGS.if_pointnet else None)
   if not(FLAGS.if_depth_only):
       rot_q_loss_error_map = tf.identity(logits_cars_to_map(rot_q_loss_error), name=is_training_prefix+'rot_q_loss_error_map')
       rot_q_angle_error_map = tf.identity(logits_cars_to_map(rot_q_angle_error), name=is_training_prefix+'rot_q_angle_error_map')
@@ -435,8 +435,8 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
             loss_slice_crossentropy_list.append(loss_slice_crossentropy)
             if is_training:
                 # and output2 == 'z_afterpointnet':
-                tf.losses.add_loss(loss_slice_crossentropy, loss_collection=None)
-                # tf.losses.add_loss(loss_slice_crossentropy, loss_collection=tf.GraphKeys.LOSSES)
+                # tf.losses.add_loss(loss_slice_crossentropy, loss_collection=None)
+                tf.losses.add_loss(loss_slice_crossentropy, loss_collection=tf.GraphKeys.LOSSES)
   loss_crossentropy = tf.identity(tf.add_n(loss_slice_crossentropy_list), name=is_training_prefix+'loss_cls_ALL')
   # label_id = tf.concat(label_id_list, axis=1)
   # label_id_map = logits_cars_to_map(label_id)

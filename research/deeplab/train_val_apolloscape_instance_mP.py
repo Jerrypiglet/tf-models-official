@@ -203,8 +203,11 @@ flags.DEFINE_float('max_scale_factor', 1.0,
 flags.DEFINE_float('scale_factor_step_size', 0.,
                    'Scale factor step size for data augmentation.')
 
-flags.DEFINE_boolean('if_zoom', True,
+flags.DEFINE_boolean('if_zoom', False,
         'True: zoom into 1/4 height to 1/2 height.')
+
+flags.DEFINE_boolean('if_pointnet', False,
+        'if use pointnet')
 
 # For `xception_65`, use atrous_rates = [12, 24, 36] if output_stride = 8, or
 # rates = [6, 12, 18] if output_stride = 16. For `mobilenet_v2`, use None. Note
@@ -404,7 +407,8 @@ def main(unused_argv):
 
       # Keep trainable variables for last layers ONLY.
       # weight_scopes = [output_name+'_weights' for output_name in dataset.output_names] + ['decoder_weights']
-      grads_and_vars = train_utils.filter_gradients(['pointnet_scope'], grads_and_vars)
+      if FLAGS.if_pointnet:
+        grads_and_vars = train_utils.filter_gradients(['pointnet_scope'], grads_and_vars)
       print '==== variables_to_train: %d'%len(grads_and_vars), [grad_and_var[1].op.name for grad_and_var in grads_and_vars]
 
       if FLAGS.if_print_tensors or FLAGS.if_debug:
@@ -601,17 +605,18 @@ def main(unused_argv):
         # ignore_including=['_weights/BatchNorm', 'decoder_weights'],
         ignore_including=None,
         ignore_missing_vars=True)
-    init_assign_op_zoom, init_feed_dict_zoom = train_utils.model_init(
-        FLAGS,
-        FLAGS.restore_logdir,
-        FLAGS.tf_initial_checkpoint,
-        FLAGS.if_restore,
-        FLAGS.initialize_last_layer,
-        last_layers,
-        # ignore_including=['_weights/BatchNorm', 'decoder_weights'],
-        ignore_including=None,
-        ignore_missing_vars=True,
-        if_restore_for_zoom=True)
+    if FLAGS.if_zoom:
+        init_assign_op_zoom, init_feed_dict_zoom = train_utils.model_init(
+            FLAGS,
+            FLAGS.restore_logdir,
+            FLAGS.tf_initial_checkpoint,
+            FLAGS.if_restore,
+            FLAGS.initialize_last_layer,
+            last_layers,
+            # ignore_including=['_weights/BatchNorm', 'decoder_weights'],
+            ignore_including=None,
+            ignore_missing_vars=True,
+            if_restore_for_zoom=True)
 
     def InitAssignFn(sess):
         sess.run(init_assign_op, init_feed_dict)

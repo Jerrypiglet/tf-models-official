@@ -137,6 +137,9 @@ flags.DEFINE_boolean('if_depth_only', False,
 flags.DEFINE_boolean('if_zoom', True,
         'True: zoom into 1/4 height to 1/2 height.')
 
+flags.DEFINE_boolean('if_pointnet', False,
+        'if use pointnet')
+
 flags.DEFINE_boolean('if_summary_shape_metrics', True,
                      'Save image metrics to summary.')
 

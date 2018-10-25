@@ -272,15 +272,15 @@ def _get_logits_mP(FLAGS,
                 crop_size=[images_zoom.get_shape()[1].value, images_zoom.get_shape()[2].value],
                 atrous_rates=FLAGS.atrous_rates,
                 output_stride=FLAGS.output_stride/2)
-        with tf.variable_scope('feature_zoom'):
-            features_aspp_zoom, end_points_zoom, _ = extract_features(
-              images_zoom,
-              model_options_zoom,
-              weight_decay=weight_decay,
-              reuse=reuse,
-              is_training=is_training,
-              fine_tune_batch_norm=fine_tune_batch_norm,
-              fine_tune_feature_extractor=fine_tune_feature_extractor)
+        # with tf.variable_scope('feature_zoom'):
+        features_aspp_zoom, end_points_zoom, _ = extract_features(
+          images_zoom,
+          model_options_zoom,
+          weight_decay=weight_decay,
+          reuse=reuse,
+          is_training=is_training,
+          fine_tune_batch_norm=fine_tune_batch_norm,
+          fine_tune_feature_extractor=fine_tune_feature_extractor)
         print '||||||||||||||| features_aspp_zoom ', features_aspp_zoom.get_shape()
         # print end_points_zoom
 
@@ -299,8 +299,8 @@ def _get_logits_mP(FLAGS,
             reuse=reuse,
             is_training=is_training,
             fine_tune_batch_norm=fine_tune_batch_norm,
-            decoder_scope_posefix='-zoom',
-            end_points_prefix='feature_zoom')
+            decoder_scope_posefix='-zoom')
+            # end_points_prefix='feature_zoom')
 
         print '== Zoom Features_aspp, features:', features_aspp_zoom.get_shape(), features_zoom.get_shape()
 
@@ -316,39 +316,38 @@ def _get_logits_mP(FLAGS,
             is_training=is_training,
             fine_tune_batch_norm=fine_tune_batch_norm,
             decoder_scope=WEIGHTS_DECODER_SCOPE,
-            decoder_scope_posefix='-zoom',
-            end_points_prefix='feature_zoom')
+            decoder_scope_posefix='-zoom')
+            # end_points_prefix='feature_zoom')
 
-        # features_zoom_padded = tf.concat([tf.zeros_like(features_zoom), features_zoom, tf.zeros_like(features_zoom), tf.zeros_like(features_zoom)], axis=1)
-        # features_weight_zoom_padded = tf.concat([tf.zeros_like(features_weight_zoom), features_weight_zoom, tf.zeros_like(features_weight_zoom), tf.zeros_like(features_weight_zoom)], axis=1)
+        features_zoom_padded = tf.concat([tf.zeros_like(features_zoom), features_zoom, tf.zeros_like(features_zoom), tf.zeros_like(features_zoom)], axis=1)
+        features_weight_zoom_padded = tf.concat([tf.zeros_like(features_weight_zoom), features_weight_zoom, tf.zeros_like(features_weight_zoom), tf.zeros_like(features_weight_zoom)], axis=1)
+        features = tf.add(features, features_zoom_padded)
+        features_weight = tf.add(features_weight, features_weight_zoom_padded)
 
-        # features = tf.add(features, features_zoom_padded)
-        # features_weight = tf.add(features_weight, features_weight_zoom_padded)
+        # height_feat = features.get_shape()[1].value
+        # features = tf.concat([tf.slice(features, [0, 0, 0, 0], [-1, height_feat//4, -1, -1]),
+        #     tf.slice(features, [0, height_feat//4, 0, 0], [-1, height_feat//4, -1, -1])/2. + features_zoom/2.,
+        #     tf.slice(features, [0, height_feat//4*2, 0, 0], [-1, height_feat//4, -1, -1]),
+        #     tf.slice(features, [0, height_feat//4*3, 0, 0], [-1, height_feat//4, -1, -1])], axis=1)
+        # features_weight = tf.concat([tf.slice(features_weight, [0, 0, 0, 0], [-1, height_feat//4, -1, -1]),
+        #     tf.slice(features_weight, [0, height_feat//4, 0, 0], [-1, height_feat//4, -1, -1])/2. + features_weight_zoom/2.,
+        #     tf.slice(features_weight, [0, height_feat//4*2, 0, 0], [-1, height_feat//4, -1, -1]),
+        #     tf.slice(features_weight, [0, height_feat//4*3, 0, 0], [-1, height_feat//4, -1, -1])], axis=1)
 
-        height_feat = features.get_shape()[1].value
-        features = tf.concat([tf.slice(features, [0, 0, 0, 0], [-1, height_feat//4, -1, -1]),
-            tf.slice(features, [0, height_feat//4, 0, 0], [-1, height_feat//4, -1, -1])/2. + features_zoom/2.,
-            tf.slice(features, [0, height_feat//4*2, 0, 0], [-1, height_feat//4, -1, -1]),
-            tf.slice(features, [0, height_feat//4*3, 0, 0], [-1, height_feat//4, -1, -1])], axis=1)
-        features_weight = tf.concat([tf.slice(features_weight, [0, 0, 0, 0], [-1, height_feat//4, -1, -1]),
-            tf.slice(features_weight, [0, height_feat//4, 0, 0], [-1, height_feat//4, -1, -1])/2. + features_weight_zoom/2.,
-            tf.slice(features_weight, [0, height_feat//4*2, 0, 0], [-1, height_feat//4, -1, -1]),
-            tf.slice(features_weight, [0, height_feat//4*3, 0, 0], [-1, height_feat//4, -1, -1])], axis=1)
-
-  # features_concat = tf.concat([features,
-  #       tf.to_float(features_Xs * model_options.decoder_output_stride),
-  #       tf.to_float(features_Ys) * model_options.decoder_output_stride,
-  #       areas_sqrt_map], axis=3)
-  # features_weight_concat = tf.concat([features_weight,
-  #     tf.to_float(features_Xs) * model_options.decoder_output_stride,
-  #     tf.to_float(features_Ys) * model_options.decoder_output_stride,
-  #     areas_sqrt_map], axis=3)
   features_concat = tf.concat([features,
         tf.to_float(features_Xs * model_options.decoder_output_stride),
-        tf.to_float(features_Ys) * model_options.decoder_output_stride], axis=3)
+        tf.to_float(features_Ys) * model_options.decoder_output_stride,
+        areas_sqrt_map], axis=3)
   features_weight_concat = tf.concat([features_weight,
       tf.to_float(features_Xs) * model_options.decoder_output_stride,
-      tf.to_float(features_Ys) * model_options.decoder_output_stride], axis=3)
+      tf.to_float(features_Ys) * model_options.decoder_output_stride,
+      areas_sqrt_map], axis=3)
+  # features_concat = tf.concat([features,
+  #       tf.to_float(features_Xs * model_options.decoder_output_stride),
+  #       tf.to_float(features_Ys) * model_options.decoder_output_stride], axis=3)
+  # features_weight_concat = tf.concat([features_weight,
+  #     tf.to_float(features_Xs) * model_options.decoder_output_stride,
+  #     tf.to_float(features_Ys) * model_options.decoder_output_stride], axis=3)
 
   outputs_to_logits_N = {}
   outputs_to_logits_map = {}
