@@ -392,7 +392,7 @@ def main(unused_argv):
       print '------ total_loss', total_loss
       for loss_item in tf.get_collection(tf.GraphKeys.LOSSES, first_clone_scope):
           print loss_item
-      # programPause = raw_input("Press the <ENTER> key to continue...")
+      programPause = raw_input("Press the <ENTER> key to continue...")
       total_loss = tf.check_numerics(total_loss, 'Loss is inf or nan.')
       summaries.add(tf.summary.scalar('total_loss/train', total_loss))
 

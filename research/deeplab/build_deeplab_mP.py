@@ -273,8 +273,8 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
   print pointnet_logits_unpadded.get_shape(), '++++++++4'
   cls_logits = tf.multiply(pointnet_logits_unpadded, masks_float)
   # tf.losses.mean_squared_error(tf.zeros_like(cls_logits), cls_logits)
-  cls_logits_z = tf.gather(cls_logits, [2], axis=1)
-  cls_logits_rect = tf.concat([tf.gather(cls_logits, [0, 1], axis=1), tf.where(cls_logits_z>20., cls_logits_z, tf.gather(prob_logits_pose, [6], axis=1))], axis=1)
+  # cls_logits_z = tf.gather(cls_logits, [2], axis=1)
+  # cls_logits_rect = tf.concat([tf.gather(cls_logits, [0, 1], axis=1), tf.where(cls_logits_z>20., cls_logits_z, tf.gather(prob_logits_pose, [6], axis=1))], axis=1)
   # cls_logits_rect = cls_logits
   # prob_logits_pose = tf.concat([tf.gather(prob_logits_pose, [0, 1, 2, 3, 4, 5], axis=1), tf.gather(cls_logits_rect, [2], axis=1)], axis=1)
   # prob_logits_pose_xy_from_uv = tf.concat([tf.gather(prob_logits_pose_xy_from_uv, [0, 1, 2, 3, 4, 5], axis=1), tf.gather(cls_logits_rect, [2], axis=1)], axis=1)
@@ -291,7 +291,8 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
           prob_logits_pose,
           pose_dict_N,
           masks_float,
-          weights_normalized / (tf.log(tf.clip_by_value(tf.gather(pose_dict_N, [6], axis=1), 1.5, 350.)) + 1e-10),
+          weights_normalized,
+          # / (tf.clip_by_value(tf.gather(pose_dict_N, [6], axis=1), 1.5, 350.) + 1e-10),
           balance_rot=balance_rot_reg_loss,
           balance_trans=balance_trans_reg_loss,
           upsample_logits=FLAGS.upsample_logits,
@@ -301,7 +302,7 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
           if_depth=FLAGS.if_depth,
           # log_depth_logits=tf.log(tf.gather(prob_logits_pose_afterpointnet, [6], axis=1)),
           # log_depth_logits=tf.gather(cls_logits_rect, [2], axis=1),
-          log_depth_logits=cls_logits_rect,
+          log_depth_logits=cls_logits,
           # log_depth_logits=tf.where(cls_logits_z>20., cls_logits_z, tf.gather(prob_logits_pose, [6], axis=1)),
           # log_depth_labels = tf.log(tf.clip_by_value(tf.gather(pose_dict_N, [6], axis=1), 1.5, 350.)))
           log_depth_labels =tf.gather(pose_dict_N, [4,5,6], axis=1))
