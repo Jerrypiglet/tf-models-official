@@ -57,7 +57,7 @@ def set_shape_and_resize(tensorlist, height_ori, width_ori, height, width):
     return tensorlist, tensorlist_out
 
 
-def _get_data(dataset, model_options, data_provider, dataset_split, codes_cons):
+def _get_data(dataset, model_options, config, data_provider, dataset_split, codes_cons):
   """Gets data from data provider.
 
   Args:
@@ -175,6 +175,7 @@ def _get_data(dataset, model_options, data_provider, dataset_split, codes_cons):
         tf.gather(rotuvd_dict_quat_dinvd, [5], axis=1) - tf.gather(bbox_c_dict, [1], axis=1),
         tf.gather(rotuvd_dict_quat_dinvd, [6], axis=1)], axis=1)
 
+
     return image, vis, depth, image_name, height, width, seg_rescaled_float, seg_float, mask, mask_rescaled_float, pose_dict_quat_dinvd, rotuvd_dict_quat_dinvd, bbox_dict, bbox_c_dict, quat_deltauv_dinvd_dict, shape_dict, shape_id_dict, idxs
   else:
     return image, image_name, height, width, seg_float, mask
@@ -182,6 +183,7 @@ def _get_data(dataset, model_options, data_provider, dataset_split, codes_cons):
 
 def get(dataset,
     model_options,
+    config,
         codes,
         batch_size,
         num_readers=1,
@@ -239,7 +241,7 @@ def get(dataset,
       shuffle=is_training)
   codes_cons = tf.constant(np.transpose(codes), dtype=tf.float32)
   if dataset_split != common.TEST_SET:
-    image, vis, depth, image_name, height, width, seg_rescaled, seg, mask, mask_rescaled_float, pose_dict, rotuvd_dict, bbox_dict,  bbox_c_dict, quat_deltauv_dinvd_dict, shape_dict, shape_id_dict, idxs = _get_data(dataset, model_options, data_provider, dataset_split, codes_cons)
+    image, vis, depth, image_name, height, width, seg_rescaled, seg, mask, mask_rescaled_float, pose_dict, rotuvd_dict, bbox_dict,  bbox_c_dict, quat_deltauv_dinvd_dict, shape_dict, shape_id_dict, idxs = _get_data(dataset, model_options, config, data_provider, dataset_split, codes_cons)
   else:
     image, image_name, height, width, seg, mask = _get_data(dataset, model_options, data_provider, dataset_split, codes_cons)
 

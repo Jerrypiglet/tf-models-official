@@ -339,6 +339,7 @@ def main(unused_argv):
       samples = input_generator.get(
           dataset,
           model_options,
+          config,
           codes,
           clone_batch_size,
           dataset_split=FLAGS.train_split,
@@ -350,6 +351,7 @@ def main(unused_argv):
       samples_val = input_generator.get(
           dataset_val,
           model_options,
+          config,
           codes,
           clone_batch_size*7,
           dataset_split=FLAGS.val_split,
@@ -364,7 +366,7 @@ def main(unused_argv):
 
       # Define the model and create clones.
       model_fn = _build_deeplab
-      model_args = (FLAGS, inputs_queue.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_centers_tensors, bin_centers_list, bin_bounds_list, bin_size_list, dataset, codes, True)
+      model_args = (FLAGS, config, inputs_queue.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_centers_tensors, bin_centers_list, bin_bounds_list, bin_size_list, dataset, codes, True)
       clones = model_deploy.create_clones(config, model_fn, args=model_args)
 
       # Gather update_ops from the first clone. These contain, for example,
@@ -395,7 +397,7 @@ def main(unused_argv):
       print '------ total_loss', total_loss
       for loss_item in tf.get_collection(tf.GraphKeys.LOSSES, first_clone_scope):
           print loss_item
-      programPause = raw_input("Press the <ENTER> key to continue...")
+      # programPause = raw_input("Press the <ENTER> key to continue...")
       total_loss = tf.check_numerics(total_loss, 'Loss is inf or nan.')
       summaries.add(tf.summary.scalar('total_loss/train', total_loss))
 
@@ -420,9 +422,9 @@ def main(unused_argv):
         print trainable_vars
         print '- trainable_vars - training_vars'
         print set(trainable_vars) - set(trainable_vars)
-        print '---- [TENSORS] ----'
-        for op in tf.get_default_graph().get_operations():
-            print str(op.name)
+        # print '---- [TENSORS] ----'
+        # for op in tf.get_default_graph().get_operations():
+        #     print str(op.name)
 
       # grad_mult = train_utils.get_model_gradient_multipliers(
       #     last_layers, FLAGS.last_layer_gradient_multiplier)
@@ -441,7 +443,7 @@ def main(unused_argv):
     with tf.device('/device:GPU:%d'%(FLAGS.num_clones+1)):
         if FLAGS.if_val:
           ## Construct the validation graph; takes one GPU.
-          image_names, z_logits, outputs_to_weights, seg_one_hots_list, weights_normalized, areas_masked, car_nums, car_nums_list, idx_xys, reg_logits_pose_xy_from_uv, pose_dict_N, prob_logits_pose, rotuvd_dict_N, masks_float, label_uv_flow_map, logits_uv_flow_map = _build_deeplab(FLAGS, inputs_queue_val.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_centers_tensors, bin_centers_list, bin_bounds_list, bin_size_list, dataset_val, codes, is_training=False)
+          image_names, z_logits, outputs_to_weights, seg_one_hots_list, weights_normalized, areas_masked, car_nums, car_nums_list, idx_xys, reg_logits_pose_xy_from_uv, pose_dict_N, prob_logits_pose, rotuvd_dict_N, masks_float, label_uv_flow_map, logits_uv_flow_map = _build_deeplab(FLAGS, config, inputs_queue_val.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_centers_tensors, bin_centers_list, bin_bounds_list, bin_size_list, dataset_val, codes, is_training=False)
           # pose_dict_N, xyz = _build_deeplab(FLAGS, inputs_queue_val.dequeue(), outputs_to_num_classes, outputs_to_indices, bin_vals, bin_range, dataset_val, codes, is_training=False)
     if FLAGS.num_clones > 1:
         pattern_train = first_clone_scope + '/%s:0'

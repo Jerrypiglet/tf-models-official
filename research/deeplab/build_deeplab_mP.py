@@ -17,7 +17,7 @@ import part_seg_model as pointnet
 # sys.path.append(os.path.join(BASE_DIR, 'baidu/personal-code/car-fitting/network'))
 # import tf_pose_model as pointnet
 
-def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, bin_centers_tensors, bin_centers_list, bin_bounds_list, bin_size_list, dataset, codes, is_training=True):
+def _build_deeplab(FLAGS, config, samples, outputs_to_num_classes, outputs_to_indices, bin_centers_tensors, bin_centers_list, bin_bounds_list, bin_size_list, dataset, codes, is_training=True):
   """Builds a clone of DeepLab.
 
   Args:
@@ -39,97 +39,100 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
   else:
       is_training_prefix = 'val-'
 
-  # PointNet params
-  BN_INIT_DECAY = 0.5
-  BN_DECAY_DECAY_RATE = 0.5
-  BN_DECAY_DECAY_STEP = 20000.
-  BN_DECAY_CLIP = 0.99
-  bn_momentum = tf.train.exponential_decay(
-          BN_INIT_DECAY,
-          tf.train.get_or_create_global_step(),
-          BN_DECAY_DECAY_STEP,
-          BN_DECAY_DECAY_RATE,
-          staircase=True)
-  bn_decay = tf.minimum(BN_DECAY_CLIP, 1 - bn_momentum)
+  with tf.device(config.inputs_device()):
+      # PointNet params
+      BN_INIT_DECAY = 0.5
+      BN_DECAY_DECAY_RATE = 0.5
+      BN_DECAY_DECAY_STEP = 20000.
+      BN_DECAY_CLIP = 0.99
+      bn_momentum = tf.train.exponential_decay(
+              BN_INIT_DECAY,
+              tf.train.get_or_create_global_step(),
+              BN_DECAY_DECAY_STEP,
+              BN_DECAY_DECAY_RATE,
+              staircase=True)
+      bn_decay = tf.minimum(BN_DECAY_CLIP, 1 - bn_momentum)
 
-  # Add name to input and label nodes so we can add to summary.
-  model_options = common.ModelOptions(
-    outputs_to_num_classes=outputs_to_num_classes,
-    crop_size=[dataset.height, dataset.width],
-    atrous_rates=FLAGS.atrous_rates,
-    output_stride=FLAGS.output_stride)
+      # Add name to input and label nodes so we can add to summary.
+      model_options = common.ModelOptions(
+        outputs_to_num_classes=outputs_to_num_classes,
+        crop_size=[dataset.height, dataset.width],
+        atrous_rates=FLAGS.atrous_rates,
+        output_stride=FLAGS.output_stride)
 
-  samples[common.IMAGE] = tf.identity(
-      samples[common.IMAGE], name=is_training_prefix+common.IMAGE)
-  samples[common.IMAGE_NAME] = tf.identity(
-      samples[common.IMAGE_NAME], name=is_training_prefix+common.IMAGE_NAME)
-  samples['seg'] = tf.identity(samples['seg'], name=is_training_prefix+'seg')
-  masks = tf.identity(samples['mask'], name=is_training_prefix+'not_ignore_mask_in_loss')
-  masks_rescaled_float = samples['mask_rescaled_float']
+      samples[common.IMAGE] = tf.identity(
+          samples[common.IMAGE], name=is_training_prefix+common.IMAGE)
+      samples[common.IMAGE_NAME] = tf.identity(
+          samples[common.IMAGE_NAME], name=is_training_prefix+common.IMAGE_NAME)
+      samples['seg'] = tf.identity(samples['seg'], name=is_training_prefix+'seg')
+      masks = tf.identity(samples['mask'], name=is_training_prefix+'not_ignore_mask_in_loss')
+      masks_rescaled_float = samples['mask_rescaled_float']
 
-  if FLAGS.val_split != 'test':
-    samples['vis'] = tf.identity(samples['vis'], name=is_training_prefix+'vis')
-    samples['depth'] = tf.identity(samples['depth'], name=is_training_prefix+'depth')
-    # samples['pose_map'] = tf.identity(samples['pose_map'], name=is_training_prefix+'pose_map')
-    # samples['shape_map'] = tf.identity(samples['shape_map'], name=is_training_prefix+'shape_map')
-    samples['pose_dict'] = tf.identity(samples['pose_dict'], name=is_training_prefix+'pose_dict')
-    samples['rotuvd_dict'] = tf.identity(samples['rotuvd_dict'], name=is_training_prefix+'rotuvd_dict')
-    samples['bbox_dict'] = tf.identity(samples['bbox_dict'], name=is_training_prefix+'bbox_dict')
-    samples['shape_dict'] = tf.identity(samples['shape_dict'], name=is_training_prefix+'shape_dict')
+      if FLAGS.val_split != 'test':
+        samples['vis'] = tf.identity(samples['vis'], name=is_training_prefix+'vis')
+        samples['depth'] = tf.identity(samples['depth'], name=is_training_prefix+'depth')
+        # samples['pose_map'] = tf.identity(samples['pose_map'], name=is_training_prefix+'pose_map')
+        # samples['shape_map'] = tf.identity(samples['shape_map'], name=is_training_prefix+'shape_map')
+        samples['pose_dict'] = tf.identity(samples['pose_dict'], name=is_training_prefix+'pose_dict')
+        samples['rotuvd_dict'] = tf.identity(samples['rotuvd_dict'], name=is_training_prefix+'rotuvd_dict')
+        samples['bbox_dict'] = tf.identity(samples['bbox_dict'], name=is_training_prefix+'bbox_dict')
+        samples['shape_dict'] = tf.identity(samples['shape_dict'], name=is_training_prefix+'shape_dict')
 
-    car_nums_list = tf.split(samples['car_nums'], samples['car_nums'].get_shape()[0], axis=0)
+        car_nums_list = tf.split(samples['car_nums'], samples['car_nums'].get_shape()[0], axis=0)
 
-    def _unpadding(padded, append_left_idx=False): # input: [batch_size, ?, D], output: [car_num_total, D]
-        padded_list = tf.split(padded, padded.get_shape()[0])
-        unpadded_list = []
-        for idx, (padded, car_num) in enumerate(zip(padded_list, car_nums_list)):
-          unpadded = tf.slice(tf.squeeze(padded, 0), [0, 0], [tf.squeeze(car_num), padded.get_shape()[2]])
-          if append_left_idx:
-            unpadded = tf.concat([tf.zeros_like(unpadded)+idx, unpadded], axis=1)
-          unpadded_list.append(unpadded)
-        unpadded = tf.concat(unpadded_list, axis=0) # (car_num_total=?_1+...+?_bs, D)
-        return unpadded
+        def _unpadding(padded, append_left_idx=False): # input: [batch_size, ?, D], output: [car_num_total, D]
+            padded_list = tf.split(padded, padded.get_shape()[0])
+            unpadded_list = []
+            for idx, (padded, car_num) in enumerate(zip(padded_list, car_nums_list)):
+              unpadded = tf.slice(tf.squeeze(padded, 0), [0, 0], [tf.squeeze(car_num), padded.get_shape()[2]])
+              if append_left_idx:
+                unpadded = tf.concat([tf.zeros_like(unpadded)+idx, unpadded], axis=1)
+              unpadded_list.append(unpadded)
+            unpadded = tf.concat(unpadded_list, axis=0) # (car_num_total=?_1+...+?_bs, D)
+            return unpadded
 
-    def _pad_N_to_batch(pose_N, pad_to, car_nums):
-        pose_N_list = tf.split(pose_N, car_nums)
-        pose_N_list_padded = []
-        for pose_n in pose_N_list:
-            pose_n_padded = tf.concat([pose_n, tf.zeros([pad_to - tf.shape(pose_n)[0], tf.shape(pose_n)[1]], dtype=tf.float32)], axis=0)
-            pose_n_padded.set_shape([pad_to, pose_n.get_shape()[1]])
-            pose_N_list_padded.append(pose_n_padded)
-        return tf.stack(pose_N_list_padded, axis=0)
+        def _pad_N_to_batch(pose_N, pad_to, car_nums):
+            pose_N_list = tf.split(pose_N, car_nums)
+            pose_N_list_padded = []
+            for pose_n in pose_N_list:
+                pose_n_padded = tf.concat([pose_n, tf.zeros([pad_to - tf.shape(pose_n)[0], tf.shape(pose_n)[1]], dtype=tf.float32)], axis=0)
+                pose_n_padded.set_shape([pad_to, pose_n.get_shape()[1]])
+                pose_N_list_padded.append(pose_n_padded)
+            return tf.stack(pose_N_list_padded, axis=0)
 
-    idx_xys = _unpadding(samples['idxs'], True) # [N, 2]
+        idx_xys = _unpadding(samples['idxs'], True) # [N, 2]
 
-    # seg_one_hots_N_flattened = tf.tf.gather_nd(samples['seg_one_hots_flattened'], idx_xys) # [N, 272/4*680/4], tf.int32
+        # seg_one_hots_N_flattened = tf.tf.gather_nd(samples['seg_one_hots_flattened'], idx_xys) # [N, 272/4*680/4], tf.int32
 
-    seg_one_hots_list = []
-    seg_one_hots_flattened_list = []
-    seg_one_hots_flattened_rescaled_list = []
-    seg_list = tf.split(samples['seg'], samples['seg'].get_shape()[0])
+        seg_one_hots_list = []
+        seg_one_hots_flattened_list = []
+        seg_one_hots_flattened_rescaled_list = []
+        seg_list = tf.split(samples['seg'], samples['seg'].get_shape()[0])
 
-    for seg_sample, car_num in zip(seg_list, car_nums_list):
-      seg_one_hots_sample = tf.one_hot(tf.squeeze(tf.cast(seg_sample, tf.int32)), depth=tf.reshape(car_num+1, []))
-      seg_one_hots_sample = tf.slice(seg_one_hots_sample, [0, 0, 1], [-1, -1, -1])
-      seg_one_hots_list.append(tf.expand_dims(seg_one_hots_sample, 0)) # (1, 272, 680, ?)
-      seg_one_hots_flattened_list.append(tf.reshape(seg_one_hots_sample, [-1, tf.shape(seg_one_hots_sample)[2]])) # (272*680, ?)
-      seg_one_hots_sample_rescaled = tf.image.resize_nearest_neighbor(tf.expand_dims(seg_one_hots_sample, 0), [masks_rescaled_float.get_shape()[1], masks_rescaled_float.get_shape()[2]], align_corners=True)
-      seg_one_hots_flattened_rescaled_list.append(tf.reshape(seg_one_hots_sample_rescaled, [-1, tf.shape(seg_one_hots_sample)[2]])) # (272/4*680/4, ?)
+        for seg_sample, car_num in zip(seg_list, car_nums_list):
+          seg_one_hots_sample = tf.one_hot(tf.squeeze(tf.cast(seg_sample, tf.int32)), depth=tf.reshape(car_num+1, []))
+          seg_one_hots_sample = tf.slice(seg_one_hots_sample, [0, 0, 1], [-1, -1, -1])
+          seg_one_hots_list.append(tf.expand_dims(seg_one_hots_sample, 0)) # (1, 272, 680, ?)
+          seg_one_hots_flattened_list.append(tf.reshape(seg_one_hots_sample, [-1, tf.shape(seg_one_hots_sample)[2]])) # (272*680, ?)
+          seg_one_hots_sample_rescaled = tf.image.resize_nearest_neighbor(tf.expand_dims(seg_one_hots_sample, 0), [masks_rescaled_float.get_shape()[1], masks_rescaled_float.get_shape()[2]], align_corners=True)
+          seg_one_hots_flattened_rescaled_list.append(tf.reshape(seg_one_hots_sample_rescaled, [-1, tf.shape(seg_one_hots_sample)[2]])) # (272/4*680/4, ?)
 
 
-  def logits_cars_to_map(logits_cars, rescale=False):
-    logits_cars_N_list = tf.split(logits_cars, samples['car_nums'])
-    logits_samples_list = []
-    seg_one_hots_flattened_list_use = seg_one_hots_flattened_list if not(rescale) else seg_one_hots_flattened_rescaled_list
-    for seg_one_hots_sample, logits_cars_sample in zip(seg_one_hots_flattened_list_use, logits_cars_N_list): # (272*680, ?) (?, 17)
-      logits_sample = tf.matmul(seg_one_hots_sample, tf.cast(logits_cars_sample, seg_one_hots_sample.dtype))
-      logits_sample  = tf.cast(logits_sample, logits_cars_sample.dtype)
-      logits_samples_list.append(tf.reshape(logits_sample, [dataset.height if not(rescale) else tf.shape(masks_rescaled_float)[1], dataset.width if not(rescale) else tf.shape(masks_rescaled_float)[2], logits_cars_sample.get_shape()[1]]))
-    logits_map = tf.stack(logits_samples_list, axis=0) # (3, 272, 680, 17)
-    return logits_map
+      def logits_cars_to_map(logits_cars, rescale=False):
+        logits_cars_N_list = tf.split(logits_cars, samples['car_nums'])
+        logits_samples_list = []
+        seg_one_hots_flattened_list_use = seg_one_hots_flattened_list if not(rescale) else seg_one_hots_flattened_rescaled_list
+        for seg_one_hots_sample, logits_cars_sample in zip(seg_one_hots_flattened_list_use, logits_cars_N_list): # (272*680, ?) (?, 17)
+          logits_sample = tf.matmul(seg_one_hots_sample, tf.cast(logits_cars_sample, seg_one_hots_sample.dtype))
+          logits_sample  = tf.cast(logits_sample, logits_cars_sample.dtype)
+          logits_samples_list.append(tf.reshape(logits_sample, [dataset.height if not(rescale) else tf.shape(masks_rescaled_float)[1], dataset.width if not(rescale) else tf.shape(masks_rescaled_float)[2], logits_cars_sample.get_shape()[1]]))
+        logits_map = tf.stack(logits_samples_list, axis=0) # (3, 272, 680, 17)
+        return logits_map
 
-  areas_sqrt_N = model.get_areas_N(samples['seg_rescaled'], samples['car_nums'])
-  areas_sqrt_map = logits_cars_to_map(areas_sqrt_N, rescale=True)
+      areas_sqrt_N = model.get_areas_N(samples['seg_rescaled'], samples['car_nums'])
+      areas_sqrt_map = logits_cars_to_map(areas_sqrt_N, rescale=True)
+      print areas_sqrt_map, config.inputs_device()
+      programPause = raw_input("Press the <ENTER> key to continue...")
 
   outputs_to_logits, outputs_to_logits_map, outputs_to_weights_map, outputs_to_areas_N, outputs_to_weightsum_N = model.single_scale_logits(
     FLAGS,
@@ -219,11 +222,15 @@ def _build_deeplab(FLAGS, samples, outputs_to_num_classes, outputs_to_indices, b
       return tf.logical_and(tf.greater_equal(z_list, zmin), tf.less_equal(z_list, zmax))
   rotuvd_dict_N_within = tf.to_float(within_frame(680, 544, tf.gather(rotuvd_dict_N, [4], axis=1), tf.gather(rotuvd_dict_N, [5], axis=1)))
   z_N_within = tf.to_float(within_range(tf.log(tf.gather(rotuvd_dict_N, [6], axis=1)), bin_centers_list[6][0], bin_centers_list[6][-1]))
+  z_N_within_150 = tf.to_float(within_range(tf.log(tf.gather(rotuvd_dict_N, [6], axis=1)), bin_centers_list[6][0], np.log(150.)))
   # masks_float = masks_float * rotuvd_dict_N_within # [N, 1] # NOT filtering border objects
   masks_float = masks_float * z_N_within # [N, 1] # filtering depth outof range
   weights_normalized = masks_float * weights_normalized
   count_valid = tf.reduce_sum(masks_float)+1e-10
   pixels_valid = tf.reduce_sum(weights_normalized * masks_float)+1e-10
+
+  weights_normalized_150 = weights_normalized * z_N_within_150
+  pixels_valid_150 = tf.reduce_sum(weights_normalized_150 * masks_float)+1e-10
 
   def rotuvd_dict_N_2_quat_xy_dinvd_dict_N(rotuvd_dict_N_input): # u, v in original frame (not halfed)
       u = tf.gather(rotuvd_dict_N_input, [4], axis=1)
